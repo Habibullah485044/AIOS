@@ -166,7 +166,8 @@ impl Server {
             json!({"name": "aios.threat.status", "description": "Advance or update lifecycle status of a threat", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "status": {"type": "string", "enum": ["identified", "under_review", "mitigated", "accepted", "resolved"]}, "store_path": {"type": "string"}}, "required": ["id", "status"], "additionalProperties": false}}),
             json!({"name": "aios.threat.mitigate", "description": "Attach a mitigation to an identified threat and advance status to mitigated", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "mitigation": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "mitigation"], "additionalProperties": false}}),
             json!({"name": "aios.threat.assess", "description": "Calculate real-time composite risk scoring and metrics across the threat catalog", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}}),
-            json!({"name": "aios.threat.init", "description": "Initialize or reset the threat catalog with canonical STRIDE baseline threats", "inputSchema": {"type": "object", "properties": {"force": {"type": "boolean"}, "store_path": {"type": "string"}}, "additionalProperties": false}})
+            json!({"name": "aios.threat.init", "description": "Initialize or reset the threat catalog with canonical STRIDE baseline threats", "inputSchema": {"type": "object", "properties": {"force": {"type": "boolean"}, "store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.threat.config", "description": "Inspect or validate runtime threat model configuration parameters, limits, and defaults", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check"]}, "config_path": {"type": "string"}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6839,6 +6840,49 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.threat.config" => {
+                let action_opt = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let action = action_opt.as_deref().unwrap_or("show");
+                    if let Some(ref cp) = config_path_opt {
+                        if cp.contains("..") {
+                            return Err("ERR_THREAT_PATH_TRAVERSAL: config_path contains invalid traversal components".into());
+                        }
+                    }
+
+                    let config = if let Some(ref cp) = config_path_opt {
+                        aiosh_core::threat_model_config::ThreatModelConfig::load_from_path(cp)
+                            .map_err(|e| format!("ERR_THREAT_CONFIG_LOAD: {}", e))?
+                    } else {
+                        aiosh_core::threat_model_config::ThreatModelConfig::from_env()
+                    };
+
+                    match action {
+                        "show" => Ok(json!({
+                            "ok": true,
+                            "action": "show",
+                            "config": config,
+                        })),
+                        "check" => {
+                            config.validate().map_err(|e| format!("ERR_THREAT_CONFIG_VALIDATION: {}", e))?;
+                            Ok(json!({
+                                "ok": true,
+                                "action": "check",
+                                "valid": true,
+                            }))
+                        }
+                        other => Err(format!("ERR_THREAT_INVALID_INPUT: unknown config action '{}'", other)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.config", "threat.config",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             "aios.pentest.nmap" => {
                 let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(60);
@@ -12735,6 +12779,23 @@ mod tests {
             "store_path": tmp_dir.join("threats.txt").to_string_lossy().to_string()
         }));
         assert_eq!(res_bad_ext.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 10. aios.threat.config show, check, traversal
+        let res_cfg_show = server.call_tool("aios.threat.config", &json!({
+            "action": "show"
+        }));
+        assert_eq!(res_cfg_show.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        let res_cfg_check = server.call_tool("aios.threat.config", &json!({
+            "action": "check"
+        }));
+        assert_eq!(res_cfg_check.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_cfg_check.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        let res_cfg_traversal = server.call_tool("aios.threat.config", &json!({
+            "config_path": "../forbidden/config.json"
+        }));
+        assert_eq!(res_cfg_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

@@ -58,6 +58,15 @@ impl ThreatModelService {
         svc
     }
 
+    pub fn from_config(config: &crate::threat_model_config::ThreatModelConfig) -> Result<Self, String> {
+        config.validate()?;
+        if config.store_path.exists() {
+            Self::load_from_path(&config.store_path)
+        } else {
+            Ok(Self::new())
+        }
+    }
+
     pub fn validate_path(path: &Path) -> Result<PathBuf, String> {
         let p_str = path.to_string_lossy();
         if p_str.trim().is_empty() {

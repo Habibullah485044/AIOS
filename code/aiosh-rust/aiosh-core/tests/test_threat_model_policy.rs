@@ -269,3 +269,43 @@ fn test_threat_policy_persistence_and_atomic_save() {
     let err = ThreatModelSecurityPolicy::load_from_path(&file_path).unwrap_err();
     assert!(err.contains(THREATPOL_ERR_VALIDATION));
 }
+
+#[test]
+fn test_threat_policy_hardening_and_resilience() {
+    let tmp = tempdir().expect("tempdir");
+    let base_dir = tmp.path();
+
+    // 1. Non-existent path handling
+    let missing_path = base_dir.join("non_existent_policy.json");
+    let err_missing = ThreatModelSecurityPolicy::load_from_path(&missing_path).unwrap_err();
+    assert!(err_missing.contains(aiosh_core::threat_model_policy::THREATPOL_ERR_IO));
+
+    // 2. Zero tempfile leakage on save
+    let save_target = base_dir.join("subdir/nested/hardened_policy.json");
+    let policy = ThreatModelSecurityPolicy::default();
+    policy.save_to_path(&save_target).expect("nested save should succeed");
+
+    let entries = fs::read_dir(save_target.parent().unwrap()).expect("read_dir");
+    let tmp_files: Vec<_> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("tmp"))
+        .collect();
+    assert!(tmp_files.is_empty(), "Found leaked temporary files: {:?}", tmp_files);
+
+    // 3. Rejection of unmitigated critical transition with empty space mitigation
+    let mut entry = make_test_threat("THREAT-HARDEN-01", ThreatCategory::Spoofing, ThreatSeverity::Critical, vec!["CWE-287"]);
+    let verdict = policy.evaluate_mitigation(&entry, "   \t\n   ");
+    match verdict {
+        ThreatPolicyVerdict::Deny { code, .. } => assert_eq!(code, THREATPOL_ERR_DENIED),
+        other => panic!("expected Deny, got {:?}", other),
+    }
+
+    // 4. Invariant that critical unmitigated transition cannot bypass even if status was already UnderReview
+    entry.status = ThreatStatus::UnderReview;
+    let verdict_trans = policy.evaluate_transition(&entry, ThreatStatus::Accepted);
+    match verdict_trans {
+        ThreatPolicyVerdict::Deny { code, .. } => assert_eq!(code, THREATPOL_ERR_CRITICAL_UNMITIGATED),
+        other => panic!("expected Deny, got {:?}", other),
+    }
+}
+

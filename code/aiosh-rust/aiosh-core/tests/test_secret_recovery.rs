@@ -142,3 +142,34 @@ fn test_secret_recovery_repair_quarantine() {
 
     let _ = fs::remove_dir_all(&tmp_dir);
 }
+
+#[test]
+fn test_secret_recovery_hardening() {
+    // 1. Rejection of UNC paths
+    assert!(SecretRecoveryService::validate_path(std::path::Path::new("\\\\evil_server\\share\\vault.json")).is_err());
+    assert!(SecretRecoveryService::validate_path(std::path::Path::new("//evil_server/share/vault.json")).is_err());
+
+    // 2. Quarantine payload scrubbing
+    let tmp_dir = std::env::temp_dir().join("test_sec_rec_hardening");
+    let _ = fs::create_dir_all(&tmp_dir);
+    let vault_path = tmp_dir.join("vault.json");
+
+    let mut secrets = HashMap::new();
+    let mut bad_rec = create_sample_vault_record("bad_rec", "secret_to_scrub");
+    bad_rec.payload_hex = "invalid_hex!!".into();
+    secrets.insert("bad_rec".into(), bad_rec);
+
+    let payload = VaultPayload {
+        version: "1.0".into(),
+        secrets,
+    };
+    fs::write(&vault_path, serde_json::to_string_pretty(&payload).unwrap()).expect("write bad vault");
+
+    let rep = SecretRecoveryService::repair_vault(&vault_path, true).expect("repair vault");
+    let q_path = rep.quarantined_path.expect("quarantine path present");
+    let q_content = fs::read_to_string(&q_path).expect("read quarantine");
+    assert!(q_content.contains("[SCRUBBED_ON_QUARANTINE]"));
+    assert!(!q_content.contains("invalid_hex!!"));
+
+    let _ = fs::remove_dir_all(&tmp_dir);
+}

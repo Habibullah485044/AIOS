@@ -77,7 +77,11 @@ pub struct SecretRecoveryService;
 impl SecretRecoveryService {
     pub fn validate_path(path: &Path) -> Result<PathBuf, String> {
         let p_str = path.to_string_lossy();
-        if p_str.contains("..") || p_str.chars().any(|c| c.is_control()) {
+        if p_str.contains("..")
+            || p_str.starts_with("\\\\")
+            || p_str.starts_with("//")
+            || p_str.chars().any(|c| c.is_control())
+        {
             return Err(format!("{}: Path contains forbidden sequences: {}", SECREC_ERR_PATH_TRAVERSAL, p_str));
         }
         Ok(path.to_path_buf())
@@ -349,7 +353,11 @@ impl SecretRecoveryService {
                                     recovered_count += 1;
                                 } else {
                                     dropped_count += 1;
-                                    corrupt_records.push(v.clone());
+                                    let mut scrubbed = v.clone();
+                                    if let Some(obj) = scrubbed.as_object_mut() {
+                                        obj.insert("payload_hex".into(), serde_json::json!("[SCRUBBED_ON_QUARANTINE]"));
+                                    }
+                                    corrupt_records.push(scrubbed);
                                     actions.push(SecretRecoveryAction {
                                         action_type: "DroppedCorruptedRecord".into(),
                                         target_id: Some(k.clone()),
@@ -359,7 +367,13 @@ impl SecretRecoveryService {
                             }
                             Err(_) => {
                                 dropped_count += 1;
-                                corrupt_records.push(v.clone());
+                                let mut scrubbed = v.clone();
+                                if let Some(obj) = scrubbed.as_object_mut() {
+                                    if obj.contains_key("payload_hex") {
+                                        obj.insert("payload_hex".into(), serde_json::json!("[SCRUBBED_ON_QUARANTINE]"));
+                                    }
+                                }
+                                corrupt_records.push(scrubbed);
                                 actions.push(SecretRecoveryAction {
                                     action_type: "DroppedMalformedRecord".into(),
                                     target_id: Some(k.clone()),

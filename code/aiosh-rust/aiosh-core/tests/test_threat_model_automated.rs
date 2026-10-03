@@ -387,3 +387,34 @@ fn test_threat_negative_cases() {
     let empty_mit_err = catalog.attach_mitigation("T-DUP", "").unwrap_err();
     assert!(empty_mit_err.contains("Mitigation cannot be empty"));
 }
+
+/// Hardening Test: Resource Bounds, Malformed Data, and Zero Temp Leakage (T-02758)
+#[test]
+fn test_threat_automated_hardening_zero_leak() {
+    let dir = tempdir().unwrap();
+
+    // 1. Oversized store file (> 1 MiB) rejected with THREATSVC_ERR_FILE_SIZE
+    let oversized_path = dir.path().join("oversized_threats.json");
+    let huge_data = "x".repeat(1024 * 1024 + 10);
+    std::fs::write(&oversized_path, huge_data).unwrap();
+    let load_huge_err = ThreatModelService::load_from_path(&oversized_path).unwrap_err();
+    assert!(load_huge_err.contains(THREATSVC_ERR_FILE_SIZE));
+
+    // 2. Malformed JSON file rejected with THREATSVC_ERR_PARSE
+    let malformed_path = dir.path().join("malformed_threats.json");
+    std::fs::write(&malformed_path, "{ unclosed json").unwrap();
+    let load_parse_err = ThreatModelService::load_from_path(&malformed_path).unwrap_err();
+    assert!(load_parse_err.contains(THREATSVC_ERR_PARSE));
+
+    // 3. Successful atomic write leaves ZERO .tmp files
+    let valid_path = dir.path().join("clean_threats.json");
+    let svc = ThreatModelService::with_canonical_threats();
+    assert!(svc.save_to_path(&valid_path).is_ok());
+    assert!(valid_path.exists());
+
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().to_string();
+        assert!(!name.contains(".tmp."), "Found leaked temporary file: {}", name);
+    }
+}

@@ -37,6 +37,7 @@ pub struct ThreatRiskAssessment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThreatModelService {
     pub snapshot: ThreatModelSnapshot,
+    pub policy: Option<crate::threat_model_policy::ThreatModelSecurityPolicy>,
 }
 
 impl Default for ThreatModelService {
@@ -49,7 +50,13 @@ impl ThreatModelService {
     pub fn new() -> Self {
         Self {
             snapshot: ThreatModelSnapshot::new("1.0.0"),
+            policy: None,
         }
+    }
+
+    pub fn with_policy(mut self, policy: crate::threat_model_policy::ThreatModelSecurityPolicy) -> Self {
+        self.policy = Some(policy);
+        self
     }
 
     pub fn with_canonical_threats() -> Self {
@@ -117,7 +124,7 @@ impl ThreatModelService {
         let snapshot: ThreatModelSnapshot = serde_json::from_str(&content)
             .map_err(|e| format!("{}: Failed deserializing JSON: {}", THREATSVC_ERR_PARSE, e))?;
 
-        Ok(Self { snapshot })
+        Ok(Self { snapshot, policy: None })
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
@@ -153,6 +160,14 @@ impl ThreatModelService {
     }
 
     pub fn register_threat(&mut self, entry: ThreatEntry) -> Result<(), String> {
+        if let Some(ref pol) = self.policy {
+            match pol.evaluate_registration(&entry) {
+                crate::threat_model_policy::ThreatPolicyVerdict::Deny { reason, code } => {
+                    return Err(format!("{}: {}", code, reason));
+                }
+                _ => {}
+            }
+        }
         if self.snapshot.threats.len() >= MAX_THREAT_ENTRIES_CAPACITY {
             return Err(format!(
                 "{}: Threat catalog reached maximum capacity of {}",
@@ -174,12 +189,28 @@ impl ThreatModelService {
     pub fn update_status(&mut self, id: &str, new_status: ThreatStatus) -> Result<(), String> {
         let entry = self.snapshot.get_entry_mut(id)
             .ok_or_else(|| format!("{}: Threat '{}' not found", THREATSVC_ERR_NOT_FOUND, id))?;
+        if let Some(ref pol) = self.policy {
+            match pol.evaluate_transition(entry, new_status) {
+                crate::threat_model_policy::ThreatPolicyVerdict::Deny { reason, code } => {
+                    return Err(format!("{}: {}", code, reason));
+                }
+                _ => {}
+            }
+        }
         entry.transition_to(new_status)
     }
 
     pub fn attach_mitigation(&mut self, id: &str, mitigation: &str) -> Result<(), String> {
         let entry = self.snapshot.get_entry_mut(id)
             .ok_or_else(|| format!("{}: Threat '{}' not found", THREATSVC_ERR_NOT_FOUND, id))?;
+        if let Some(ref pol) = self.policy {
+            match pol.evaluate_mitigation(entry, mitigation) {
+                crate::threat_model_policy::ThreatPolicyVerdict::Deny { reason, code } => {
+                    return Err(format!("{}: {}", code, reason));
+                }
+                _ => {}
+            }
+        }
         entry.add_mitigation(mitigation)
     }
 

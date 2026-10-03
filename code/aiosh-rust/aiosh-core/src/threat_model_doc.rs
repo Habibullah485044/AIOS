@@ -132,11 +132,21 @@ impl ThreatDocRepository {
         self.topics.iter().find(|t| t.id == trimmed)
     }
 
+    /// Renders a topic to Markdown or returns an error if not found.
+    pub fn render_markdown(&self, id: &str) -> Result<String, String> {
+        let topic = self.get_topic(id)
+            .ok_or_else(|| format!("{}: Topic '{}' not found", THREATDOC_ERR_NOT_FOUND, id))?;
+        Ok(topic.to_markdown())
+    }
+
     /// Searches documentation topics by query keywords with relevance scoring.
     pub fn search(&self, query: &str) -> Result<Vec<ThreatDocSearchResult>, String> {
         let q = query.trim();
         if q.is_empty() {
-            return Ok(Vec::new());
+            return Err(format!("{}: Query cannot be empty", THREATDOC_ERR_QUERY_BOUNDS));
+        }
+        if q.chars().any(|c| c.is_control()) {
+            return Err(format!("{}: Query contains control characters", THREATDOC_ERR_QUERY_BOUNDS));
         }
         if q.len() > MAX_THREAT_DOC_QUERY_LEN {
             return Err(format!(

@@ -12566,5 +12566,177 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_mcp_threat_model_tools_execution() {
+        let mut server = Server::open();
+        let tools = server.tool_manifest();
+        let tool_names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+
+        // 1. Tool manifest discovery: verify all 7 tools registered
+        assert!(tool_names.contains(&"aios.threat.list"));
+        assert!(tool_names.contains(&"aios.threat.get"));
+        assert!(tool_names.contains(&"aios.threat.register"));
+        assert!(tool_names.contains(&"aios.threat.status"));
+        assert!(tool_names.contains(&"aios.threat.mitigate"));
+        assert!(tool_names.contains(&"aios.threat.assess"));
+        assert!(tool_names.contains(&"aios.threat.init"));
+
+        let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_threat_test_{}_{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("threat_model.json").to_string_lossy().to_string();
+
+        // 2. aios.threat.init - happy path: initializes canonical baseline
+        let res_init = server.call_tool("aios.threat.init", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_init.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_init.get("initialized").and_then(|v| v.as_bool()), Some(true));
+        let count = res_init.get("count").and_then(|v| v.as_u64()).unwrap();
+        assert_eq!(count, 7);
+
+        // Negative: aios.threat.init without force when store exists
+        let res_init_no_force = server.call_tool("aios.threat.init", &json!({
+            "store_path": store_path,
+            "force": false
+        }));
+        assert_eq!(res_init_no_force.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. aios.threat.list - list all canonical threats
+        let res_list = server.call_tool("aios.threat.list", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(7));
+
+        // List with status filter
+        let res_list_filter = server.call_tool("aios.threat.list", &json!({
+            "store_path": store_path,
+            "status": "identified"
+        }));
+        assert_eq!(res_list_filter.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 4. aios.threat.get - retrieve canonical threat
+        let res_get = server.call_tool("aios.threat.get", &json!({
+            "id": "THREAT-SPOOF-01",
+            "store_path": store_path
+        }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            res_get.get("threat").and_then(|t| t.get("id")).and_then(|v| v.as_str()),
+            Some("THREAT-SPOOF-01")
+        );
+
+        // Negative: get non-existent threat
+        let res_get_missing = server.call_tool("aios.threat.get", &json!({
+            "id": "THREAT-NONEXISTENT",
+            "store_path": store_path
+        }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 5. aios.threat.register - happy path
+        let res_reg = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-UNIT-01",
+            "title": "MCP Input Injection",
+            "description": "Adversary injects malicious JSON payload to trigger memory exhaustion",
+            "category": "tampering",
+            "severity": "high",
+            "component": "mcp_server",
+            "cwes": ["CWE-20", "CWE-400"],
+            "mitigations": ["Enforce strict size checks"],
+            "store_path": store_path
+        }));
+        assert_eq!(res_reg.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_reg.get("id").and_then(|v| v.as_str()), Some("THREAT-UNIT-01"));
+
+        // Negative: duplicate ID registration
+        let res_reg_dup = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-UNIT-01",
+            "title": "Duplicate Threat",
+            "description": "Attempting to register the same threat ID again",
+            "category": "spoofing",
+            "severity": "low",
+            "component": "mcp_server",
+            "store_path": store_path
+        }));
+        assert_eq!(res_reg_dup.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // Negative: invalid category
+        let res_reg_bad_cat = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-UNIT-02",
+            "title": "Invalid Category Threat",
+            "description": "Valid description text",
+            "category": "invalid_category",
+            "severity": "low",
+            "component": "mcp_server",
+            "store_path": store_path
+        }));
+        assert_eq!(res_reg_bad_cat.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // Negative: private key in description
+        let res_reg_secret = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-UNIT-03",
+            "title": "Secret Leaking Threat",
+            "description": "Threat containing -----BEGIN RSA PRIVATE KEY----- secret",
+            "category": "information_disclosure",
+            "severity": "critical",
+            "component": "crypto",
+            "store_path": store_path
+        }));
+        assert_eq!(res_reg_secret.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. aios.threat.status - update lifecycle state
+        let res_status = server.call_tool("aios.threat.status", &json!({
+            "id": "THREAT-UNIT-01",
+            "status": "under_review",
+            "store_path": store_path
+        }));
+        assert_eq!(res_status.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_status.get("status").and_then(|v| v.as_str()), Some("under_review"));
+
+        // 7. aios.threat.mitigate - attach mitigation and transition to mitigated
+        let res_mit = server.call_tool("aios.threat.mitigate", &json!({
+            "id": "THREAT-UNIT-01",
+            "mitigation": "Implemented bounded reader limiting MCP input to 1 MiB",
+            "store_path": store_path
+        }));
+        assert_eq!(res_mit.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_mit.get("status").and_then(|v| v.as_str()), Some("mitigated"));
+
+        // Verify status persisted
+        let res_get_updated = server.call_tool("aios.threat.get", &json!({
+            "id": "THREAT-UNIT-01",
+            "store_path": store_path
+        }));
+        assert_eq!(
+            res_get_updated.get("threat").and_then(|t| t.get("status")).and_then(|v| v.as_str()),
+            Some("mitigated")
+        );
+
+        // 8. aios.threat.assess - calculate metrics
+        let res_assess = server.call_tool("aios.threat.assess", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_assess.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let assess = res_assess.get("assessment").unwrap();
+        assert!(assess.get("total_threats").and_then(|v| v.as_u64()).unwrap() >= 8);
+        assert!(assess.get("mitigated_count").and_then(|v| v.as_u64()).unwrap() >= 1);
+
+        // 9. Path traversal & security checks
+        let res_traversal = server.call_tool("aios.threat.list", &json!({
+            "store_path": "../forbidden/threats.json"
+        }));
+        assert_eq!(res_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_bad_ext = server.call_tool("aios.threat.list", &json!({
+            "store_path": tmp_dir.join("threats.txt").to_string_lossy().to_string()
+        }));
+        assert_eq!(res_bad_ext.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
 

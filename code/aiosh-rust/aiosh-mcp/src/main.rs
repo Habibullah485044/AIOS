@@ -12810,5 +12810,66 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_mcp_threat_model_hardening() {
+        let mut server = Server::open();
+        let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_threat_hard_{}_{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("hardened_threats.json").to_string_lossy().to_string();
+
+        // 1. Failure modes return explicit standard result envelope (ok: false, error message)
+        let res_missing_id = server.call_tool("aios.threat.get", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_missing_id.get("ok").and_then(|v| v.as_bool()), Some(false));
+        let err_text = res_missing_id.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(err_text.contains("ERR_THREAT_INVALID_INPUT") || err_text.contains("missing required parameter"));
+
+        // 2. Control characters rejected with explicit failure envelope
+        let res_control_chars = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-HARD-01",
+            "title": "Title with null\0byte",
+            "description": "Description with control chars",
+            "category": "spoofing",
+            "severity": "low",
+            "component": "test",
+            "store_path": store_path
+        }));
+        assert_eq!(res_control_chars.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. Oversized string payload rejected
+        let huge_title = "A".repeat(500);
+        let res_oversized = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-HARD-02",
+            "title": huge_title,
+            "description": "Valid description",
+            "category": "tampering",
+            "severity": "high",
+            "component": "test",
+            "store_path": store_path
+        }));
+        assert_eq!(res_oversized.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. Oversized store file rejected by safe loader
+        let oversized_path = tmp_dir.join("oversized.json");
+        let huge_data = "x".repeat(1024 * 1024 + 100);
+        let _ = std::fs::write(&oversized_path, huge_data);
+        let res_oversized_file = server.call_tool("aios.threat.list", &json!({
+            "store_path": oversized_path.to_string_lossy().to_string()
+        }));
+        // Safe loader returns empty service on oversized file rather than exhausting memory
+        assert_eq!(res_oversized_file.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_oversized_file.get("count").and_then(|v| v.as_u64()), Some(0));
+
+        // 5. Confirm no temp files leaked in parent directory
+        let entries = std::fs::read_dir(&tmp_dir).unwrap();
+        for entry in entries {
+            let name = entry.unwrap().file_name().to_string_lossy().to_string();
+            assert!(!name.contains(".tmp."), "Temp file was not cleaned up: {}", name);
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
 

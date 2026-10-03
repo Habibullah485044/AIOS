@@ -135,7 +135,14 @@ impl Server {
             json!({"name": "aios.secret.rotate", "description": "Rotate an existing secret's payload, updating its version and SHA-256 fingerprint", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "value": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "value"], "additionalProperties": false}}),
             json!({"name": "aios.secret.revoke", "description": "Revoke an active secret, disabling future retrieval", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
             json!({"name": "aios.secret.config", "description": "Inspect or validate runtime secrets configuration", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check"]}, "config_path": {"type": "string"}}, "additionalProperties": false}}),
-            json!({"name": "aios.secret.policy", "description": "Inspect, validate, or update runtime secrets security policy", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check", "set-mode"]}, "policy_path": {"type": "string"}, "mode": {"type": "string", "enum": ["enforcing", "permissive", "disabled"]}}, "additionalProperties": false}})
+            json!({"name": "aios.secret.policy", "description": "Inspect, validate, or update runtime secrets security policy", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check", "set-mode"]}, "policy_path": {"type": "string"}, "mode": {"type": "string", "enum": ["enforcing", "permissive", "disabled"]}}, "additionalProperties": false}}),
+            json!({"name": "aios.threat.list", "description": "Query and list registered threats with optional filtering by status, severity, category", "inputSchema": {"type": "object", "properties": {"status": {"type": "string", "enum": ["identified", "under_review", "mitigated", "accepted", "resolved"]}, "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]}, "category": {"type": "string", "enum": ["spoofing", "tampering", "repudiation", "information_disclosure", "denial_of_service", "elevation_of_privilege", "supply_chain_risk"]}, "store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.threat.get", "description": "Retrieve detailed threat specification and mitigations by ID", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
+            json!({"name": "aios.threat.register", "description": "Register a new threat entry in the threat model catalog", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "category": {"type": "string"}, "severity": {"type": "string"}, "component": {"type": "string"}, "cwes": {"type": "array", "items": {"type": "string"}}, "mitigations": {"type": "array", "items": {"type": "string"}}, "store_path": {"type": "string"}}, "required": ["id", "title", "description", "category", "severity", "component"], "additionalProperties": false}}),
+            json!({"name": "aios.threat.status", "description": "Advance or update lifecycle status of a threat", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "status": {"type": "string", "enum": ["identified", "under_review", "mitigated", "accepted", "resolved"]}, "store_path": {"type": "string"}}, "required": ["id", "status"], "additionalProperties": false}}),
+            json!({"name": "aios.threat.mitigate", "description": "Attach a mitigation to an identified threat and advance status to mitigated", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "mitigation": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "mitigation"], "additionalProperties": false}}),
+            json!({"name": "aios.threat.assess", "description": "Calculate real-time composite risk scoring and metrics across the threat catalog", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.threat.init", "description": "Initialize or reset the threat catalog with canonical STRIDE baseline threats", "inputSchema": {"type": "object", "properties": {"force": {"type": "boolean"}, "store_path": {"type": "string"}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6537,6 +6544,90 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.secret.policy", "secret.policy",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.list" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.list scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.list", "threat.list",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.get" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.get scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.get", "threat.get",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.register" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.register scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.register", "threat.register",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.status" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.status scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.status", "threat.status",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.mitigate" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.mitigate scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.mitigate", "threat.mitigate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.assess" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.assess scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.assess", "threat.assess",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.threat.init" => {
+                let f = move || -> Result<Value, String> {
+                    Ok(json!({ "ok": true, "message": "aios.threat.init scaffold" }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.threat.init", "threat.init",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,

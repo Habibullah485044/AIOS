@@ -113,3 +113,44 @@ fn test_threat_doc_list_by_category() {
     assert_eq!(policy_topics.len(), 1);
     assert_eq!(policy_topics[0].id, "threat.policy.gates");
 }
+
+#[test]
+fn test_threat_doc_hardening_and_boundary_checks() {
+    let repo = ThreatDocRepository::new();
+
+    // 1. Exact query length boundary at 128 characters
+    let query_128 = "a ".repeat(64); // exactly 128 chars
+    assert_eq!(query_128.len(), 128);
+    let res_128 = repo.search(&query_128);
+    assert!(res_128.is_ok(), "128 character query should succeed");
+
+    let query_129 = format!("{}x", query_128);
+    assert_eq!(query_129.len(), 129);
+    let err_129 = repo.search(&query_129).unwrap_err();
+    assert!(err_129.contains(THREATDOC_ERR_QUERY_BOUNDS));
+
+    // 2. Traversal injection attempts in get_topic
+    let malicious_ids = [
+        "../threat.arch.stride",
+        "..\\threat.arch.stride",
+        "threat..arch",
+        "/etc/shadow",
+        "C:\\Windows\\System32",
+        "COM1",
+        "NUL",
+        "topic\x7fname",
+    ];
+    for bad_id in malicious_ids {
+        assert!(
+            repo.get_topic(bad_id).is_none(),
+            "Expected None for malicious topic id: {}",
+            bad_id
+        );
+    }
+
+    // 3. Snippet length guarantee
+    let search_res = repo.search("architecture").unwrap();
+    for hit in search_res {
+        assert!(hit.snippet.len() <= MAX_THREAT_DOC_SNIPPET_LEN + 3); // max snippet + "..."
+    }
+}

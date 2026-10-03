@@ -1,6 +1,6 @@
 # Specification: Secrets Handling Recovery & Validation (SPEC-SECRETS-RECOVERY)
 
-- **Status**: SPECIFIED
+- **Status**: IMPLEMENTED & HARDENED
 - **Date**: 2026-10-03
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Secrets Handling Recovery & Validation
 - **Binding**: ADR-0035 §G-1
@@ -10,10 +10,11 @@ The Secrets Handling Recovery and Validation subsystem provides deterministic in
 
 ## 2. Invariants & Guarantees
 1. **Zero-Disclosure Invariant**: Plaintext secret payloads, decryption keys, and private seeds are never logged in validation reports, repair actions, or error outputs.
-2. **Crash Consistency**: Mutations are written to a temporary staging file (`<path>.tmp`), flushed to disk, and replaced via atomic filesystem rename (`std::fs::rename`).
-3. **Pre-Mutation Snapshot**: High-risk mutations or explicit backups snapshot current vault state to `<path>.bak`.
-4. **Path Sanitization**: All vault, backup, and quarantine paths reject path traversal (`..`), control characters, and symlink targets outside trust bounds.
-5. **Deterministic Repair**: Salvageable records are preserved; malformed or unparseable records are quarantined to `<path>.corrupt.<timestamp>` to prevent permanent data loss while restoring vault usability.
+2. **Quarantine Scrubbing**: Quarantined corrupt records stored in `<vault>.corrupt.<ts>.json` have any `payload_hex` values scrubbed with `"[SCRUBBED_ON_QUARANTINE]"` to prevent residual credential exposure on disk.
+3. **Crash Consistency**: Mutations are written to a temporary staging file (`<path>.tmp`), flushed to disk, and replaced via atomic filesystem rename (`std::fs::rename`).
+4. **Pre-Mutation Snapshot**: High-risk mutations or explicit backups snapshot current vault state to `<path>.bak`.
+5. **Path Sanitization**: All vault, backup, and quarantine paths reject path traversal (`..`), UNC paths (`\\\\`, `//`), and control characters.
+6. **Deterministic Repair**: Salvageable records are preserved; malformed or unparseable records are quarantined to prevent permanent data loss while restoring vault usability.
 
 ## 3. Data Structures
 
@@ -83,7 +84,17 @@ pub struct SecretRecoveryReport {
 
 ## 5. CLI Interface Reference
 The operator CLI provides subcommands under `aiosh secret recovery`:
-- `aiosh secret recovery check [--store <PATH>] [--json]`: Run read-only integrity inspection.
-- `aiosh secret recovery backup [--store <PATH>] [--json]`: Create `<store>.bak` snapshot.
-- `aiosh secret recovery restore [--store <PATH>] [--json]`: Revert vault to `<store>.bak`.
-- `aiosh secret recovery repair [--store <PATH>] [--quarantine] [--json]`: Repair vault and quarantine corrupt records.
+- `aiosh secret recovery check [--store <PATH>] [--json]`: Run read-only integrity inspection. Returns exit code 0 if Healthy, 1 if Corrupted or Missing, 2 on invalid arguments.
+- `aiosh secret recovery backup [--store <PATH>] [--json]`: Create `<store>.bak` snapshot atomically.
+- `aiosh secret recovery restore [--store <PATH>] [--json]`: Revert vault to `<store>.bak` after verifying backup integrity.
+- `aiosh secret recovery repair [--store <PATH>] [--quarantine] [--json]`: Repair vault, dropping or quarantining corrupt records and regenerating a valid vault.
+
+## 6. Evidence Links
+- Research: `docs/tasks/evidence/T-02691-recovery-validation-research.md`
+- Specification: `docs/tasks/evidence/T-02692-recovery-validation-specification.md`
+- Scaffold: `docs/tasks/evidence/T-02693-recovery-validation-scaffold.md`
+- Implementation: `docs/tasks/evidence/T-02694-recovery-validation-implementation.md`
+- Unit Test: `docs/tasks/evidence/T-02695-recovery-validation-unit-test.md`
+- Integration: `docs/tasks/evidence/T-02696-recovery-validation-integration.md`
+- Security Review: `docs/tasks/evidence/T-02697-recovery-validation-security-review.md`
+- Hardening: `docs/tasks/evidence/T-02698-recovery-validation-hardening.md`

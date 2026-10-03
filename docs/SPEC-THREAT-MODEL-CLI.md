@@ -1,6 +1,6 @@
 # Specification: Threat Model Maintenance CLI Surface (SPEC-THREAT-MODEL-CLI)
 
-- **Status**: SPECIFIED
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-03
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Threat Model Maintenance CLI Surface
 - **Binding**: ADR-0036 §B-1
@@ -13,10 +13,12 @@ The `aiosh threat` subcommand exposes administrative and operational capabilitie
 | Invariant | Name | Description |
 |---|---|---|
 | `THREATCLI1` | **Audit Completeness** | Every execution of `aiosh threat` emits exactly one audit row into the append-only SQLite ring via `Ctx.emit(...)`. |
-| `THREATCLI2` | **Path Traversal Hygiene** | Custom path flags (`--path`) are passed to `ThreatModelService::validate_path` rejecting relative traversal, UNC paths, and symlinks. |
+| `THREATCLI2` | **Path Traversal Hygiene** | Custom path flags (`--path`) are passed to `ThreatModelService::validate_path` rejecting relative traversal, UNC paths, control characters, and symlinks. |
 | `THREATCLI3` | **Standardized Exit Codes** | `0` = Success, `1` = Domain validation failure, `2` = Usage syntax error, `3` = Storage / I/O error. |
 | `THREATCLI4` | **Zero Secret Disclosure** | CLI output streams scrub private key blocks and sensitive token patterns. |
-| `THREATCLI5` | **Atomic Persistence** | Catalog mutations write to temporary staging files before executing atomic rename. |
+| `THREATCLI5` | **Atomic Persistence** | Catalog mutations write to temporary staging files (`.{fname}.tmp.{pid}.{nanos}`) before executing atomic rename. |
+| `THREATCLI6` | **Terminal Sanitization** | Dynamic output fields are sanitized with `sanitize_terminal_output` to prevent ANSI escape injection (CWE-150 / CWE-116). |
+| `THREATCLI7` | **Audit Target Provenance** | Targeted audit records bind the target threat ID in `classify_and_emit` (`target: Some(&id)`). |
 
 ## 3. Subcommand Grammar & Synopsis
 
@@ -76,3 +78,9 @@ SUBCOMMANDS:
 - `1`: Domain validation or constraint failure (e.g., duplicate ID, invalid state transition).
 - `2`: Command line usage error (missing required arguments or invalid flag syntax).
 - `3`: Filesystem I/O or JSON parsing error.
+
+## 5. Verification & Test Matrix
+- Unit Tests: `aiosh-cli::threat_cli_tests::test_threat_cli_help_and_unknown`
+- Unit Tests: `aiosh-cli::threat_cli_tests::test_threat_cli_path_validation`
+- Unit Tests: `aiosh-cli::threat_cli_tests::test_threat_cli_lifecycle_and_operations`
+- Integration Tests: `aiosh-cli::threat_cli_tests::test_threat_cli_integration_e2e`

@@ -20138,6 +20138,101 @@ mod secret_cli_tests {
     }
 }
 
+#[cfg(test)]
+mod threat_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_threat_cli_help_and_unknown() {
+        assert_eq!(cmd_threat(&[]), 0);
+        assert_eq!(cmd_threat(&s(&["--help"])), 0);
+        assert_eq!(cmd_threat(&s(&["-h"])), 0);
+        assert_eq!(cmd_threat(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_threat(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_threat_cli_path_validation() {
+        assert_eq!(cmd_threat(&s(&["list", "--path", "../threats.json"])), 2);
+        assert_eq!(cmd_threat(&s(&["list", "--path", "threats.txt"])), 2);
+        assert_eq!(cmd_threat(&s(&["list", "--path", "bad\nthreats.json"])), 2);
+        assert_eq!(cmd_threat(&s(&["list", "--path", "\\\\evil\\share\\t.json"])), 2);
+    }
+
+    #[test]
+    fn test_threat_cli_lifecycle_and_operations() {
+        let tmp_dir = std::env::temp_dir().join("test_threat_cli_lifecycle");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("threats.json").to_string_lossy().to_string();
+
+        // 1. Initialize catalog
+        assert_eq!(cmd_threat(&s(&["init", "--path", &store])), 0);
+        // Duplicate init without --force fails -> 1
+        assert_eq!(cmd_threat(&s(&["init", "--path", &store])), 1);
+        // Init with --force succeeds -> 0
+        assert_eq!(cmd_threat(&s(&["init", "--path", &store, "--force"])), 0);
+
+        // 2. List threats
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store])), 0);
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--status", "mitigated"])), 0);
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--severity", "critical"])), 0);
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--category", "spoofing"])), 0);
+
+        // 3. Show threat
+        assert_eq!(cmd_threat(&s(&["show", "THREAT-SPOOF-01", "--path", &store])), 0);
+        assert_eq!(cmd_threat(&s(&["show", "THREAT-SPOOF-01", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_threat(&s(&["show", "THREAT-NONEXISTENT", "--path", &store])), 1);
+        assert_eq!(cmd_threat(&s(&["show"])), 2);
+
+        // 4. Register threat
+        assert_eq!(cmd_threat(&s(&[
+            "register",
+            "--id", "THREAT-CLI-01",
+            "--title", "CLI Test Threat",
+            "--desc", "Detailed description of CLI test threat",
+            "--cat", "tampering",
+            "--sev", "high",
+            "--comp", "cli_tester",
+            "--cwes", "CWE-20,CWE-22",
+            "--path", &store,
+        ])), 0);
+
+        // Register missing flags -> 2
+        assert_eq!(cmd_threat(&s(&["register", "--id", "THREAT-BAD"])), 2);
+        // Register invalid category -> 1
+        assert_eq!(cmd_threat(&s(&[
+            "register",
+            "--id", "THREAT-BAD-CAT",
+            "--title", "Bad Cat",
+            "--desc", "Description",
+            "--cat", "not_a_category",
+            "--sev", "high",
+            "--comp", "c",
+            "--path", &store,
+        ])), 1);
+
+        // 5. Status update
+        assert_eq!(cmd_threat(&s(&["status", "THREAT-CLI-01", "under_review", "--path", &store])), 0);
+        assert_eq!(cmd_threat(&s(&["status", "THREAT-CLI-01", "invalid_status", "--path", &store])), 1);
+        assert_eq!(cmd_threat(&s(&["status", "THREAT-CLI-01"])), 2);
+
+        // 6. Mitigate threat
+        assert_eq!(cmd_threat(&s(&["mitigate", "THREAT-CLI-01", "Applied automated unit testing mitigation", "--path", &store])), 0);
+        assert_eq!(cmd_threat(&s(&["mitigate"])), 2);
+
+        // 7. Assess risk
+        assert_eq!(cmd_threat(&s(&["assess", "--path", &store])), 0);
+        assert_eq!(cmd_threat(&s(&["assess", "--path", &store, "--json"])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 
 
 

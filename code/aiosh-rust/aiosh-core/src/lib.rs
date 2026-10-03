@@ -167,6 +167,7 @@ pub mod system_update_policy;
 pub mod system_update_recovery;
 pub mod system_update_service;
 pub mod task_service;
+pub mod threat_model_data_model;
 pub mod toolchain_config;
 pub mod toolchain_service;
 pub mod triage;

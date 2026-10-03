@@ -1,9 +1,12 @@
 # Specification: Threat Model Security Policy (SPEC-THREAT-MODEL-POLICY)
 
-- **Status**: APPROVED
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-03
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Threat Model Security Policy
 - **Binding**: ADR-0035 §F-2, ADR-0036 §B-1
+- **Source Code**: [`code/aiosh-rust/aiosh-core/src/threat_model_policy.rs`](../code/aiosh-rust/aiosh-core/src/threat_model_policy.rs)
+- **Unit Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_policy.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_policy.rs)
+- **Integration Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_policy_integration.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_policy_integration.rs)
 
 ## 1. Overview
 The Threat Model Security Policy subsystem establishes declarative governance over threat entry registration, lifecycle status transitions, mitigation requirements, and catalog-wide risk ceilings across the AIOS kernel.

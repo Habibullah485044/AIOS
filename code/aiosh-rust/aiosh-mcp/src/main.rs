@@ -12738,5 +12738,77 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_mcp_threat_model_integration() {
+        let mut server = Server::open();
+        let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_threat_integ_{}_{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("threat_model_integ.json").to_string_lossy().to_string();
+
+        let initial_audit_count: i64 = server.ring.conn().query_row(
+            "SELECT COUNT(*) FROM audit_ring WHERE tool LIKE 'aios.threat.%'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+
+        // 1. Initialize store via MCP tool
+        let init_res = server.call_tool("aios.threat.init", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(init_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 2. Register end-to-end threat via MCP
+        let reg_res = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-INTEG-01",
+            "title": "Cross-Substrate Drift Injection",
+            "description": "Adversary attempts to manipulate threat state bypassing PEP fabric",
+            "category": "tampering",
+            "severity": "critical",
+            "component": "pep_fabric",
+            "cwes": ["CWE-284", "CWE-353"],
+            "mitigations": ["Cryptographic hash chain on threat model snapshots"],
+            "store_path": store_path
+        }));
+        assert_eq!(reg_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 3. Status advance
+        let stat_res = server.call_tool("aios.threat.status", &json!({
+            "id": "THREAT-INTEG-01",
+            "status": "under_review",
+            "store_path": store_path
+        }));
+        assert_eq!(stat_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 4. Attach mitigation
+        let mit_res = server.call_tool("aios.threat.mitigate", &json!({
+            "id": "THREAT-INTEG-01",
+            "mitigation": "Enforce kernel-level tamper resistance",
+            "store_path": store_path
+        }));
+        assert_eq!(mit_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. Assess risk
+        let assess_res = server.call_tool("aios.threat.assess", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(assess_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 6. Cross-substrate parity: verify file was atomically written and loads cleanly via ThreatModelService
+        let direct_svc = aiosh_core::threat_model_service::ThreatModelService::load_from_path(std::path::Path::new(&store_path)).expect("load from path");
+        let integ_threat = direct_svc.get_threat("THREAT-INTEG-01").expect("threat must exist in store");
+        assert_eq!(integ_threat.status, aiosh_core::threat_model_data_model::ThreatStatus::Mitigated);
+        assert_eq!(integ_threat.mitigations.len(), 2);
+
+        // 7. Cross-substrate SQLite audit ring check: every consequential action wrote an audit row
+        let final_audit_count: i64 = server.ring.conn().query_row(
+            "SELECT COUNT(*) FROM audit_ring WHERE tool LIKE 'aios.threat.%'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert!(final_audit_count >= initial_audit_count + 5, "Audit rows must be written for each MCP invocation");
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
 

@@ -292,6 +292,10 @@ impl ThreatModelService {
         }
     }
 
+    pub fn observability_report(&self, ring: Option<&crate::audit::AuditRing>) -> Result<crate::threat_model_observability::ThreatModelObservabilityReport, String> {
+        crate::threat_model_observability::ThreatModelObservabilityReport::generate(self, ring)
+    }
+
     fn populate_canonical_threats(&mut self) {
         let threats = vec![
             (

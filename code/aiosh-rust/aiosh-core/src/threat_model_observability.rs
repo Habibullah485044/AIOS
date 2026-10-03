@@ -150,4 +150,20 @@ impl ThreatModelObservabilityReport {
 
         Ok(())
     }
+
+    /// Serializes report to pretty-printed JSON.
+    pub fn to_json(&self) -> Result<String, String> {
+        self.validate()?;
+        serde_json::to_string_pretty(self)
+            .map_err(|e| format!("{}: JSON serialization error: {}", THREATOBS_ERR_VALIDATION, e))
+    }
+
+    /// Deserializes and validates report from JSON.
+    pub fn from_json(json_str: &str) -> Result<Self, String> {
+        let report: Self = serde_json::from_str(json_str)
+            .map_err(|e| format!("{}: JSON parsing error: {}", THREATOBS_ERR_VALIDATION, e))?;
+        report.validate()?;
+        Ok(report)
+    }
 }
+

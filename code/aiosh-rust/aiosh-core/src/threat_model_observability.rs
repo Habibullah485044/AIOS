@@ -131,20 +131,20 @@ impl ThreatModelObservabilityReport {
         }
 
         for (k, _) in &self.threats_by_category {
-            if k.len() > MAX_TELEMETRY_TEXT_LEN {
-                return Err(format!("{}: category label exceeds max length", THREATOBS_ERR_VALIDATION));
+            if k.len() > MAX_TELEMETRY_TEXT_LEN || k.chars().any(|c| c.is_control()) {
+                return Err(format!("{}: category label violates sanitization or length limits", THREATOBS_ERR_VALIDATION));
             }
         }
 
         for (k, _) in &self.threats_by_severity {
-            if k.len() > MAX_TELEMETRY_TEXT_LEN {
-                return Err(format!("{}: severity label exceeds max length", THREATOBS_ERR_VALIDATION));
+            if k.len() > MAX_TELEMETRY_TEXT_LEN || k.chars().any(|c| c.is_control()) {
+                return Err(format!("{}: severity label violates sanitization or length limits", THREATOBS_ERR_VALIDATION));
             }
         }
 
         for (k, _) in &self.threats_by_status {
-            if k.len() > MAX_TELEMETRY_TEXT_LEN {
-                return Err(format!("{}: status label exceeds max length", THREATOBS_ERR_VALIDATION));
+            if k.len() > MAX_TELEMETRY_TEXT_LEN || k.chars().any(|c| c.is_control()) {
+                return Err(format!("{}: status label violates sanitization or length limits", THREATOBS_ERR_VALIDATION));
             }
         }
 

@@ -230,8 +230,9 @@ fn main() {
         Some("sandbox") | Some("sb") => cmd_sandbox(&args[1..]),
         Some("privilege") | Some("priv") => cmd_privilege(&args[1..]),
         Some("secret") | Some("sec") => cmd_secret(&args[1..]),
+        Some("threat") | Some("threats") | Some("tm") => cmd_threat(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox|privilege|secret> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control\n  aiosh privilege <eval|status|policy-list|policy-add|policy-remove|report>  Privilege Escalation Prevention Control\n  aiosh secret <store|get|list|rotate|revoke>  Secrets Handling & Runtime Vault Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox|privilege|secret|threat> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control\n  aiosh privilege <eval|status|policy-list|policy-add|policy-remove|report>  Privilege Escalation Prevention Control\n  aiosh secret <store|get|list|rotate|revoke>  Secrets Handling & Runtime Vault Control\n  aiosh threat <list|show|register|status|mitigate|assess|init>  Threat Model Maintenance & Risk Control");
             0
         }
         Some(other) => {
@@ -18841,6 +18842,77 @@ fn cmd_secret(args: &[String]) -> i32 {
             );
             if is_json {
                 println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
+fn cmd_threat(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let path_str = parse_flag(rest, "--path")
+        .unwrap_or_else(|| aiosh_core::threat_model_service::DEFAULT_THREAT_MODEL_PATH.to_string());
+
+    match sub {
+        Some("list") => {
+            classify_and_emit(
+                &mut ctx, "threat", "list", json!({ "path": path_str }),
+                "success", None, Some("Listed threats"), "operator", None,
+            );
+            println!("aiosh threat list scaffold");
+            0
+        }
+        Some("show") => {
+            let id = rest.first().map(|s| s.as_str()).unwrap_or_default();
+            if id.is_empty() {
+                eprintln!("Usage: aiosh threat show <ID>");
+                return 2;
+            }
+            classify_and_emit(
+                &mut ctx, "threat", "show", json!({ "id": id, "path": path_str }),
+                "success", None, Some("Shown threat"), "operator", None,
+            );
+            println!("aiosh threat show scaffold: {}", id);
+            0
+        }
+        Some("register") => {
+            println!("aiosh threat register scaffold");
+            0
+        }
+        Some("status") => {
+            println!("aiosh threat status scaffold");
+            0
+        }
+        Some("mitigate") => {
+            println!("aiosh threat mitigate scaffold");
+            0
+        }
+        Some("assess") => {
+            println!("aiosh threat assess scaffold");
+            0
+        }
+        Some("init") => {
+            println!("aiosh threat init scaffold");
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh threat — Threat Model Maintenance & Risk Control\n\nUsage: aiosh threat <list|show|register|status|mitigate|assess|init> [OPTIONS]");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown threat subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "threat", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
             } else {
                 eprintln!("{}", sanitize_terminal(&msg));
             }

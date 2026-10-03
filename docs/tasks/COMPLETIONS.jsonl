@@ -2720,3 +2720,4 @@
 {"seq":2720,"ts":"2026-10-03T10:34:20Z","event":"completed","task_id":2720,"note":"threat model service verification and evidence completed","evidence":[]}
 {"seq":2721,"ts":"2026-10-03T10:36:20Z","event":"completed","task_id":2721,"note":"threat model CLI surface research completed","evidence":[]}
 {"seq":2722,"ts":"2026-10-03T10:36:58Z","event":"completed","task_id":2722,"note":"threat model CLI specification completed","evidence":[]}
+{"seq":2723,"ts":"2026-10-03T10:39:22Z","event":"completed","task_id":2723,"note":"threat model CLI scaffold completed","evidence":[]}

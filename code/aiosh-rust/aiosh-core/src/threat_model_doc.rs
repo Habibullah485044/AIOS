@@ -56,6 +56,29 @@ pub struct ThreatDocTopic {
     pub related_topics: Vec<String>,
 }
 
+impl ThreatDocTopic {
+    /// Formats topic into human-readable Markdown.
+    pub fn to_markdown(&self) -> String {
+        let mut md = format!(
+            "# {}\n\n**Category**: `{}`\n**ID**: `{}`\n\n{}\n\n",
+            self.title,
+            self.category.as_str(),
+            self.id,
+            self.summary
+        );
+        for sec in &self.sections {
+            md.push_str(&format!("## {}\n\n{}\n\n", sec.title, sec.content));
+        }
+        if !self.related_topics.is_empty() {
+            md.push_str("### Related Topics\n\n");
+            for rel in &self.related_topics {
+                md.push_str(&format!("- `{}`\n", rel));
+            }
+        }
+        md
+    }
+}
+
 /// A search hit with scoring and text snippet.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreatDocSearchResult {
@@ -89,6 +112,11 @@ impl ThreatDocRepository {
     /// Lists all registered documentation topics.
     pub fn list_topics(&self) -> &[ThreatDocTopic] {
         &self.topics
+    }
+
+    /// Filters documentation topics by category.
+    pub fn list_by_category(&self, cat: ThreatDocCategory) -> Vec<&ThreatDocTopic> {
+        self.topics.iter().filter(|t| t.category == cat).collect()
     }
 
     /// Looks up a documentation topic by ID with input sanitization.

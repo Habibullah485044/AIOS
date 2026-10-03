@@ -78,8 +78,22 @@ fn test_observability_validation_rejection() {
     let service = SecretService::new();
     let mut report = SecretObservabilityReport::generate(&service, None).unwrap();
 
+    // 1. Empty timestamp rejected
     report.generated_at_utc = "  ".to_string();
     let err = report.validate().unwrap_err();
     assert!(err.contains(SECOBS_ERR_VALIDATION));
     assert!(err.contains("timestamp cannot be empty"));
+
+    // 2. Non-RFC3339 timestamp rejected
+    report.generated_at_utc = "not-a-timestamp".to_string();
+    let err2 = report.validate().unwrap_err();
+    assert!(err2.contains(SECOBS_ERR_VALIDATION));
+    assert!(err2.contains("valid RFC3339 timestamp"));
+
+    // 3. Unsanitized key with control characters rejected
+    report.generated_at_utc = chrono::Utc::now().to_rfc3339();
+    report.secrets_by_scope.insert("scope\x00bad".to_string(), 1);
+    let err3 = report.validate().unwrap_err();
+    assert!(err3.contains(SECOBS_ERR_VALIDATION));
+    assert!(err3.contains("scope key fails sanitization"));
 }

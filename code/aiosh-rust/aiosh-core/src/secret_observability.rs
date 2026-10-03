@@ -105,12 +105,28 @@ impl SecretObservabilityReport {
             return Err(format!("{}: generated_at_utc timestamp cannot be empty", SECOBS_ERR_VALIDATION));
         }
 
+        if chrono::DateTime::parse_from_rfc3339(&self.generated_at_utc).is_err() {
+            return Err(format!("{}: generated_at_utc must be a valid RFC3339 timestamp", SECOBS_ERR_VALIDATION));
+        }
+
         if self.secrets_by_scope.len() > MAX_OUTCOME_DISTRIBUTION_ENTRIES {
             return Err(format!("{}: secrets_by_scope exceeds capacity limit", SECOBS_ERR_VALIDATION));
         }
 
         if self.secrets_by_kind.len() > MAX_OUTCOME_DISTRIBUTION_ENTRIES {
             return Err(format!("{}: secrets_by_kind exceeds capacity limit", SECOBS_ERR_VALIDATION));
+        }
+
+        for (k, _) in &self.secrets_by_scope {
+            if k.len() > MAX_TELEMETRY_TEXT_LEN || k.chars().any(|c| c.is_control()) {
+                return Err(format!("{}: scope key fails sanitization bounds", SECOBS_ERR_VALIDATION));
+            }
+        }
+
+        for (k, _) in &self.secrets_by_kind {
+            if k.len() > MAX_TELEMETRY_TEXT_LEN || k.chars().any(|c| c.is_control()) {
+                return Err(format!("{}: kind key fails sanitization bounds", SECOBS_ERR_VALIDATION));
+            }
         }
 
         Ok(())

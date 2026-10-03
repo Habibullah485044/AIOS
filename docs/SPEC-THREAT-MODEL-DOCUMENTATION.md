@@ -1,9 +1,12 @@
 # Specification: Threat Model Documentation (SPEC-THREAT-MODEL-DOCUMENTATION)
 
-- **Status**: DRAFT (Task T-02782)
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-03
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Threat Model Documentation
 - **Binding**: ADR-0035 §H-1, ADR-0036 §D-1
+- **Source Code**: [`code/aiosh-rust/aiosh-core/src/threat_model_doc.rs`](../code/aiosh-rust/aiosh-core/src/threat_model_doc.rs)
+- **Unit Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_doc.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_doc.rs)
+- **Integration Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_doc_integration.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_doc_integration.rs)
 
 ## 1. Overview
 The Threat Model Documentation subsystem provides an embedded, offline reference manual and full-text search engine for Threat Model Maintenance within AIOS. It operates purely in-memory with compile-time seeded canonical knowledge, requiring zero network access and enforcing strict input bounds to prevent resource exhaustion and log injection.

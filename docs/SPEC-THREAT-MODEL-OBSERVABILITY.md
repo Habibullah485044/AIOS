@@ -1,9 +1,12 @@
 # Specification: Threat Model Observability (SPEC-THREAT-MODEL-OBSERVABILITY)
 
-- **Status**: DRAFT (Task T-02772)
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-03
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Threat Model Observability
 - **Binding**: ADR-0035 §G-1, ADR-0036 §C-2
+- **Source Code**: [`code/aiosh-rust/aiosh-core/src/threat_model_observability.rs`](../code/aiosh-rust/aiosh-core/src/threat_model_observability.rs)
+- **Unit Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_observability.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_observability.rs)
+- **Integration Tests**: [`code/aiosh-rust/aiosh-core/tests/test_threat_model_observability_integration.rs`](../code/aiosh-rust/aiosh-core/tests/test_threat_model_observability_integration.rs)
 
 ## 1. Overview
 The Threat Model Observability subsystem provides point-in-time metrics aggregation, STRIDE category distributions, severity distributions, lifecycle status progression tracking, risk exposure scoring, and audit trail correlation for the AIOS Threat Model Maintenance catalog.

@@ -171,6 +171,7 @@ pub mod threat_model_data_model;
 pub mod threat_model_service;
 pub mod threat_model_config;
 pub mod threat_model_policy;
+pub mod threat_model_observability;
 pub mod toolchain_config;
 pub mod toolchain_service;
 pub mod triage;
@@ -515,6 +516,13 @@ pub use threat_model_policy::{
     THREATPOL_ERR_CRITICAL_UNMITIGATED, THREATPOL_ERR_CATEGORY_PROHIBITED,
     THREATPOL_ERR_CAPACITY_EXCEEDED, THREATPOL_ERR_IO, THREATPOL_ERR_PARSE,
     MAX_THREAT_SECURITY_POLICY_BYTES,
+};
+pub use threat_model_observability::{
+    ThreatModelObservabilityReport, sanitize_telemetry_text as sanitize_threat_telemetry_text,
+    THREATOBS_ERR_VALIDATION, THREATOBS_ERR_SERVICE_INACCESSIBLE,
+    MAX_TELEMETRY_TEXT_LEN as MAX_THREAT_TELEMETRY_TEXT_LEN,
+    MAX_OUTCOME_DISTRIBUTION_ENTRIES as MAX_THREAT_DISTRIBUTION_ENTRIES,
+    MAX_AUDIT_LOG_TAIL_ITEMS as MAX_THREAT_AUDIT_LOG_TAIL_ITEMS,
 };
 
 

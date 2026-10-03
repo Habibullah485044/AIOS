@@ -2729,3 +2729,4 @@
 {"seq":2729,"ts":"2026-10-03T10:52:38Z","event":"completed","task_id":2729,"note":"threat model CLI documentation completed","evidence":[]}
 {"seq":2730,"ts":"2026-10-03T10:53:56Z","event":"completed","task_id":2730,"note":"threat model CLI verification and evidence completed; 30 tasks finished","evidence":[]}
 {"seq":2731,"ts":"2026-10-03T11:01:48Z","event":"completed","task_id":2731,"note":"threat model MCP research completed","evidence":[]}
+{"seq":2732,"ts":"2026-10-03T11:03:06Z","event":"completed","task_id":2732,"note":"threat model MCP specification completed","evidence":[]}

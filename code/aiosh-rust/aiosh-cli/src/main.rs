@@ -18924,7 +18924,13 @@ fn cmd_threat(args: &[String]) -> i32 {
                 println!("{:<18} {:<24} {:<10} {:<14} {}", "ID", "CATEGORY", "SEVERITY", "STATUS", "TITLE");
                 println!("{:-<18} {:-<24} {:-<10} {:-<14} {:-<30}", "", "", "", "", "");
                 for t in &threats {
-                    println!("{:<18} {:<24} {:<10} {:<14} {}", t.id, t.category.as_str(), t.severity.as_str(), t.status.as_str(), t.title);
+                    println!("{:<18} {:<24} {:<10} {:<14} {}",
+                        sanitize_terminal_output(&t.id),
+                        sanitize_terminal_output(t.category.as_str()),
+                        sanitize_terminal_output(t.severity.as_str()),
+                        sanitize_terminal_output(t.status.as_str()),
+                        sanitize_terminal_output(&t.title),
+                    );
                 }
             }
             0
@@ -18954,7 +18960,7 @@ fn cmd_threat(args: &[String]) -> i32 {
                         let msg = format!("Failed to load threat model: {}", e);
                         classify_and_emit(
                             &mut ctx, "threat", "show", json!({ "error": &msg }),
-                            "failure", None, Some("Load failure"), "operator", None,
+                            "failure", Some(&id), Some("Load failure"), "operator", None,
                         );
                         if is_json {
                             println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
@@ -18972,25 +18978,25 @@ fn cmd_threat(args: &[String]) -> i32 {
                 Some(entry) => {
                     classify_and_emit(
                         &mut ctx, "threat", "show", json!({ "id": id, "path": path_str }),
-                        "success", None, Some("Displayed threat"), "operator", None,
+                        "success", Some(&id), Some("Displayed threat"), "operator", None,
                     );
                     if is_json {
                         println!("{}", json!({ "code": 0, "threat": entry }));
                     } else {
-                        println!("ID:          {}", entry.id);
-                        println!("Title:       {}", entry.title);
-                        println!("Category:    {}", entry.category.as_str());
-                        println!("Severity:    {}", entry.severity.as_str());
-                        println!("Status:      {}", entry.status.as_str());
-                        println!("Component:   {}", entry.component);
-                        println!("Description: {}", entry.description);
-                        println!("CWE IDs:     {}", entry.cwe_ids.join(", "));
+                        println!("ID:          {}", sanitize_terminal_output(&entry.id));
+                        println!("Title:       {}", sanitize_terminal_output(&entry.title));
+                        println!("Category:    {}", sanitize_terminal_output(entry.category.as_str()));
+                        println!("Severity:    {}", sanitize_terminal_output(entry.severity.as_str()));
+                        println!("Status:      {}", sanitize_terminal_output(entry.status.as_str()));
+                        println!("Component:   {}", sanitize_terminal_output(&entry.component));
+                        println!("Description: {}", sanitize_terminal_output(&entry.description));
+                        println!("CWE IDs:     {}", sanitize_terminal_output(&entry.cwe_ids.join(", ")));
                         println!("Mitigations:");
                         if entry.mitigations.is_empty() {
                             println!("  (none recorded)");
                         } else {
                             for m in &entry.mitigations {
-                                println!("  - {}", m);
+                                println!("  - {}", sanitize_terminal_output(m));
                             }
                         }
                     }
@@ -19000,7 +19006,7 @@ fn cmd_threat(args: &[String]) -> i32 {
                     let msg = format!("Threat '{}' not found in catalog", id);
                     classify_and_emit(
                         &mut ctx, "threat", "show", json!({ "id": id, "error": &msg }),
-                        "failure", None, Some("Threat not found"), "operator", None,
+                        "failure", Some(&id), Some("Threat not found"), "operator", None,
                     );
                     if is_json {
                         println!("{}", json!({ "code": 1, "error": { "code": "THREAT_NOT_FOUND", "message": msg } }));
@@ -19137,12 +19143,12 @@ fn cmd_threat(args: &[String]) -> i32 {
 
             classify_and_emit(
                 &mut ctx, "threat", "register", json!({ "id": id, "path": path_str }),
-                "success", None, Some("Registered threat"), "operator", None,
+                "success", Some(&id), Some("Registered threat"), "operator", None,
             );
             if is_json {
                 println!("{}", json!({ "code": 0, "message": format!("Threat '{}' registered successfully", id) }));
             } else {
-                println!("Threat '{}' registered successfully.", id);
+                println!("Threat '{}' registered successfully.", sanitize_terminal_output(&id));
             }
             0
         }
@@ -19209,7 +19215,7 @@ fn cmd_threat(args: &[String]) -> i32 {
                 let msg = format!("Failed to update status: {}", e);
                 classify_and_emit(
                     &mut ctx, "threat", "status", json!({ "id": id, "error": &msg }),
-                    "failure", None, Some("Status update failed"), "operator", None,
+                    "failure", Some(&id), Some("Status update failed"), "operator", None,
                 );
                 if is_json {
                     println!("{}", json!({ "code": 1, "error": { "code": "STATUS_UPDATE_FAILED", "message": msg } }));
@@ -19231,12 +19237,12 @@ fn cmd_threat(args: &[String]) -> i32 {
 
             classify_and_emit(
                 &mut ctx, "threat", "status", json!({ "id": id, "status": status.as_str() }),
-                "success", None, Some("Updated threat status"), "operator", None,
+                "success", Some(&id), Some("Updated threat status"), "operator", None,
             );
             if is_json {
                 println!("{}", json!({ "code": 0, "message": format!("Threat '{}' transitioned to status '{}'", id, status.as_str()) }));
             } else {
-                println!("Threat '{}' transitioned to status '{}'.", id, status.as_str());
+                println!("Threat '{}' transitioned to status '{}'.", sanitize_terminal_output(&id), sanitize_terminal_output(status.as_str()));
             }
             0
         }
@@ -19291,7 +19297,7 @@ fn cmd_threat(args: &[String]) -> i32 {
                 let msg = format!("Failed to attach mitigation: {}", e);
                 classify_and_emit(
                     &mut ctx, "threat", "mitigate", json!({ "id": id, "error": &msg }),
-                    "failure", None, Some("Attach mitigation failed"), "operator", None,
+                    "failure", Some(&id), Some("Attach mitigation failed"), "operator", None,
                 );
                 if is_json {
                     println!("{}", json!({ "code": 1, "error": { "code": "MITIGATE_FAILED", "message": msg } }));
@@ -19320,12 +19326,12 @@ fn cmd_threat(args: &[String]) -> i32 {
 
             classify_and_emit(
                 &mut ctx, "threat", "mitigate", json!({ "id": id, "mitigation": &mitigation_text }),
-                "success", None, Some("Mitigation attached"), "operator", None,
+                "success", Some(&id), Some("Mitigation attached"), "operator", None,
             );
             if is_json {
                 println!("{}", json!({ "code": 0, "message": format!("Mitigation recorded for threat '{}'", id) }));
             } else {
-                println!("Mitigation recorded for threat '{}'. Status updated to mitigated.", id);
+                println!("Mitigation recorded for threat '{}'. Status updated to mitigated.", sanitize_terminal_output(&id));
             }
             0
         }

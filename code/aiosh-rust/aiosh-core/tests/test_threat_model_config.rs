@@ -107,4 +107,47 @@ fn test_threat_model_config_rejections() {
     let res_oversized = ThreatModelConfig::load_from_path(&oversized_path);
     assert!(res_oversized.is_err());
     assert!(res_oversized.unwrap_err().contains(THREATCONF_ERR_BOUNDS));
+
+    // 3. Malformed JSON
+    let malformed_path = dir.path().join("malformed.json");
+    std::fs::write(&malformed_path, "{ broken json:").unwrap();
+    let res_malformed = ThreatModelConfig::load_from_path(&malformed_path);
+    assert!(res_malformed.is_err());
+    assert!(res_malformed.unwrap_err().contains(THREATCONF_ERR_PARSE));
+}
+
+#[test]
+fn test_threat_model_config_hardening() {
+    let dir = tempdir().unwrap();
+
+    // 1. Validation rejection prevents file creation
+    let mut invalid_cfg = ThreatModelConfig::default();
+    invalid_cfg.max_threat_capacity = 999999;
+    let target_path = dir.path().join("invalid_cfg.json");
+    let res_save = invalid_cfg.save_to_path(&target_path);
+    assert!(res_save.is_err());
+    assert!(!target_path.exists());
+
+    // 2. Zero leftover tempfiles after save
+    let valid_cfg = ThreatModelConfig::default();
+    let valid_path = dir.path().join("valid_cfg.json");
+    assert!(valid_cfg.save_to_path(&valid_path).is_ok());
+    assert!(valid_path.exists());
+
+    // Ensure no .tmp files exist in directory
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let entry = entry.unwrap();
+        let fname = entry.file_name().to_string_lossy().to_string();
+        assert!(!fname.contains("tmp"), "Leaked temporary file found: {}", fname);
+    }
+
+    // 3. Control character rejection
+    let mut ctrl_cfg = ThreatModelConfig::default();
+    ctrl_cfg.store_path = PathBuf::from("threats\0bad.json");
+    assert!(ctrl_cfg.validate().is_err());
+
+    // 4. Overly long path rejection (> 1024 chars)
+    let mut long_cfg = ThreatModelConfig::default();
+    long_cfg.store_path = PathBuf::from("a/".repeat(600) + "threats.json");
+    assert!(long_cfg.validate().is_err());
 }

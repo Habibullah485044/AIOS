@@ -104,19 +104,27 @@ impl ThreatModelConfig {
         Ok(config)
     }
 
-    /// Atomically saves configuration to a JSON file.
+    /// Atomically saves configuration to a JSON file with zero temp-leak guarantees.
     pub fn save_to_path<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
         self.validate()?;
         let p = path.as_ref();
         if let Some(parent) = p.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("{}: cannot create directory {:?}: {}", THREATCONF_ERR_IO, parent, e))?;
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("{}: cannot create directory {:?}: {}", THREATCONF_ERR_IO, parent, e))?;
+            }
         }
         let data = serde_json::to_string_pretty(self)
             .map_err(|e| format!("{}: serialization failed: {}", THREATCONF_ERR_PARSE, e))?;
-        let temp_path = p.with_extension(format!("tmp.{}", std::process::id()));
-        std::fs::write(&temp_path, &data)
-            .map_err(|e| format!("{}: failed writing tempfile: {}", THREATCONF_ERR_IO, e))?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_path = p.with_extension(format!("tmp.{}.{}", std::process::id(), nanos));
+        if let Err(e) = std::fs::write(&temp_path, &data) {
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(format!("{}: failed writing tempfile: {}", THREATCONF_ERR_IO, e));
+        }
         std::fs::rename(&temp_path, p).map_err(|e| {
             let _ = std::fs::remove_file(&temp_path);
             format!("{}: failed renaming to {:?}: {}", THREATCONF_ERR_IO, p, e)

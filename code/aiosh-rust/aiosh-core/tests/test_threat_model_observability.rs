@@ -161,3 +161,33 @@ fn test_observability_json_roundtrip() {
     let err = ThreatModelObservabilityReport::from_json("{ corrupt }").unwrap_err();
     assert!(err.contains(THREATOBS_ERR_VALIDATION));
 }
+
+#[test]
+fn test_threat_observability_hardening_and_cardinality() {
+    use aiosh_core::threat_model_observability::MAX_OUTCOME_DISTRIBUTION_ENTRIES;
+
+    let service = ThreatModelService::new();
+    let mut report = service.observability_report(None).unwrap();
+
+    // 1. Cardinality boundary test: inserting > 128 categories violates validate()
+    for i in 0..(MAX_OUTCOME_DISTRIBUTION_ENTRIES + 5) {
+        report.threats_by_category.insert(format!("cat_{}", i), 1);
+    }
+    let err = report.validate().unwrap_err();
+    assert!(err.contains(THREATOBS_ERR_VALIDATION));
+    assert!(err.contains("threats_by_category exceeds max entries"));
+
+    // 2. Strict sanitization of ANSI escapes and control sequences
+    let ansi_polluted = "\x1b[31;1mDanger\x1b[0m\x00\x08Payload";
+    let cleaned = sanitize_telemetry_text(ansi_polluted);
+    assert!(!cleaned.contains('\x00'));
+    assert!(!cleaned.contains('\x08'));
+    assert!(!cleaned.contains('\x1b'));
+
+    // 3. Zero-disclosure invariant on serialized JSON
+    let mut report_clean = service.observability_report(None).unwrap();
+    report_clean.threats_by_category.insert("tampering".into(), 1);
+    let json_output = report_clean.to_json().unwrap();
+    assert!(!json_output.contains("BEGIN PRIVATE KEY"));
+    assert!(!json_output.contains("BEGIN RSA PRIVATE KEY"));
+}

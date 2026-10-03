@@ -126,3 +126,27 @@ fn test_threat_model_snapshot() {
     assert_eq!(snapshot.filter_by_severity(ThreatSeverity::High).len(), 2);
     assert_eq!(snapshot.filter_by_status(ThreatStatus::Identified).len(), 2);
 }
+
+#[test]
+fn test_threat_model_hardening() {
+    let mut entry = ThreatEntry::new(
+        "THREAT-HARDEN-1", "Harden Test", "Safe desc",
+        ThreatCategory::Tampering, ThreatSeverity::High, "kernel", vec![], vec![]
+    ).unwrap();
+
+    // 1. Transition to Mitigated without mitigations is rejected fail-closed
+    assert!(entry.transition_to(ThreatStatus::Mitigated).is_err());
+
+    // 2. Add mitigation, then transition succeeds
+    assert!(entry.add_mitigation("Apply cryptographically signed payload").is_ok());
+    assert!(entry.transition_to(ThreatStatus::Mitigated).is_ok());
+
+    // 3. Secret pattern in mitigation rejected
+    assert!(entry.add_mitigation("Key: -----BEGIN PRIVATE KEY----- secret").is_err());
+
+    // 4. Secret pattern in description rejected
+    assert!(ThreatEntry::new(
+        "THREAT-HARDEN-2", "Key leak", "Desc with -----BEGIN RSA PRIVATE KEY-----",
+        ThreatCategory::InformationDisclosure, ThreatSeverity::Critical, "store", vec![], vec![]
+    ).is_err());
+}

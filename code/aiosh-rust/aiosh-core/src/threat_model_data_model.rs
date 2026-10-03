@@ -214,6 +214,9 @@ impl ThreatEntry {
         if desc.chars().any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t') {
             return Err(format!("{}: Threat description contains forbidden control characters", THREAT_ERR_CONTROL_CHARS));
         }
+        if desc.contains("BEGIN PRIVATE KEY") || desc.contains("BEGIN RSA PRIVATE KEY") {
+            return Err(format!("{}: Secret or private key material detected in threat description", THREAT_ERR_BOUNDS_EXCEEDED));
+        }
         Ok(())
     }
 
@@ -274,6 +277,12 @@ impl ThreatEntry {
                 next_status
             ));
         }
+        if next_status == ThreatStatus::Mitigated && self.mitigations.is_empty() {
+            return Err(format!(
+                "{}: Cannot transition to 'mitigated' without at least one mitigation recorded",
+                THREAT_ERR_INVALID_TRANSITION
+            ));
+        }
         self.status = next_status;
         self.updated_at = utcnow_iso();
         Ok(())
@@ -286,6 +295,9 @@ impl ThreatEntry {
         }
         if trimmed.len() > MAX_THREAT_MITIGATION_LEN {
             return Err(format!("{}: Mitigation exceeds max length {}", THREAT_ERR_BOUNDS_EXCEEDED, MAX_THREAT_MITIGATION_LEN));
+        }
+        if trimmed.contains("BEGIN PRIVATE KEY") || trimmed.contains("BEGIN RSA PRIVATE KEY") {
+            return Err(format!("{}: Secret or private key material detected in mitigation", THREAT_ERR_BOUNDS_EXCEEDED));
         }
         if self.mitigations.len() >= MAX_MITIGATIONS_COUNT {
             return Err(format!("{}: Mitigations count reached max {}", THREAT_ERR_BOUNDS_EXCEEDED, MAX_MITIGATIONS_COUNT));

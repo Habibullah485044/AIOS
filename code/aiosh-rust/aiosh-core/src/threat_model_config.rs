@@ -55,19 +55,110 @@ impl Default for ThreatModelConfig {
 }
 
 impl ThreatModelConfig {
+    /// Validates structural invariants and numerical boundaries.
     pub fn validate(&self) -> Result<(), String> {
-        unimplemented!("T-02743 scaffold: ThreatModelConfig::validate")
+        if self.version.is_empty() || !self.version.starts_with("1.") {
+            return Err(format!("{}: invalid version '{}'", THREATCONF_ERR_VALIDATION, self.version));
+        }
+        let store_str = self.store_path.to_string_lossy();
+        if store_str.trim().is_empty() {
+            return Err(format!("{}: store_path cannot be empty", THREATCONF_ERR_VALIDATION));
+        }
+        if store_str.contains("..") {
+            return Err(format!("{}: store_path cannot contain directory traversal '..'", THREATCONF_ERR_VALIDATION));
+        }
+        if store_str.chars().any(|c| c.is_control()) || store_str.len() > 1024 {
+            return Err(format!("{}: store_path contains invalid control characters or exceeds 1024 bytes", THREATCONF_ERR_VALIDATION));
+        }
+        if self.max_threat_capacity < MIN_MAX_THREAT_CAPACITY || self.max_threat_capacity > MAX_MAX_THREAT_CAPACITY {
+            return Err(format!(
+                "{}: max_threat_capacity {} out of bounds ({}..{})",
+                THREATCONF_ERR_BOUNDS, self.max_threat_capacity, MIN_MAX_THREAT_CAPACITY, MAX_MAX_THREAT_CAPACITY
+            ));
+        }
+        if self.max_store_file_bytes < MIN_MAX_STORE_FILE_BYTES || self.max_store_file_bytes > MAX_MAX_STORE_FILE_BYTES {
+            return Err(format!(
+                "{}: max_store_file_bytes {} out of bounds ({}..{})",
+                THREATCONF_ERR_BOUNDS, self.max_store_file_bytes, MIN_MAX_STORE_FILE_BYTES, MAX_MAX_STORE_FILE_BYTES
+            ));
+        }
+        Ok(())
     }
 
-    pub fn load_from_path<P: AsRef<Path>>(_path: P) -> Result<Self, String> {
-        unimplemented!("T-02743 scaffold: ThreatModelConfig::load_from_path")
+    /// Loads configuration from a JSON file path with bounds checking.
+    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let p = path.as_ref();
+        let meta = std::fs::symlink_metadata(p)
+            .map_err(|e| format!("{}: cannot stat {:?}: {}", THREATCONF_ERR_IO, p, e))?;
+        if meta.file_type().is_symlink() {
+            return Err(format!("{}: symlinks rejected for config files", THREATCONF_ERR_VALIDATION));
+        }
+        if meta.len() > MAX_CONFIG_FILE_BYTES {
+            return Err(format!("{}: config file size {} exceeds max {}", THREATCONF_ERR_BOUNDS, meta.len(), MAX_CONFIG_FILE_BYTES));
+        }
+        let data = std::fs::read_to_string(p)
+            .map_err(|e| format!("{}: cannot read {:?}: {}", THREATCONF_ERR_IO, p, e))?;
+        let config: Self = serde_json::from_str(&data)
+            .map_err(|e| format!("{}: invalid JSON in {:?}: {}", THREATCONF_ERR_PARSE, p, e))?;
+        config.validate()?;
+        Ok(config)
     }
 
-    pub fn save_to_path<P: AsRef<Path>>(&self, _path: P) -> Result<(), String> {
-        unimplemented!("T-02743 scaffold: ThreatModelConfig::save_to_path")
+    /// Atomically saves configuration to a JSON file.
+    pub fn save_to_path<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        self.validate()?;
+        let p = path.as_ref();
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("{}: cannot create directory {:?}: {}", THREATCONF_ERR_IO, parent, e))?;
+        }
+        let data = serde_json::to_string_pretty(self)
+            .map_err(|e| format!("{}: serialization failed: {}", THREATCONF_ERR_PARSE, e))?;
+        let temp_path = p.with_extension(format!("tmp.{}", std::process::id()));
+        std::fs::write(&temp_path, &data)
+            .map_err(|e| format!("{}: failed writing tempfile: {}", THREATCONF_ERR_IO, e))?;
+        std::fs::rename(&temp_path, p).map_err(|e| {
+            let _ = std::fs::remove_file(&temp_path);
+            format!("{}: failed renaming to {:?}: {}", THREATCONF_ERR_IO, p, e)
+        })?;
+        Ok(())
     }
 
+    /// Loads configuration with environment variable overrides.
     pub fn from_env() -> Self {
-        unimplemented!("T-02743 scaffold: ThreatModelConfig::from_env")
+        let mut config = if let Ok(custom_path_raw) = std::env::var("AIOS_THREAT_MODEL_CONFIG") {
+            let custom_path = custom_path_raw.trim();
+            if !custom_path.is_empty() && !custom_path.contains("..") && !custom_path.chars().any(|c| c.is_control()) && custom_path.len() <= 1024 {
+                Self::load_from_path(custom_path).unwrap_or_default()
+            } else {
+                Self::default()
+            }
+        } else if Path::new(DEFAULT_THREAT_CONFIG_PATH).exists() {
+            Self::load_from_path(DEFAULT_THREAT_CONFIG_PATH).unwrap_or_default()
+        } else {
+            Self::default()
+        };
+
+        if let Ok(store_raw) = std::env::var("AIOS_THREAT_MODEL_PATH") {
+            let store = store_raw.trim();
+            if !store.is_empty() && !store.contains("..") && !store.chars().any(|c| c.is_control()) && store.len() <= 1024 {
+                config.store_path = PathBuf::from(store);
+            }
+        }
+        if let Ok(cap_str) = std::env::var("AIOS_THREAT_CAPACITY") {
+            if let Ok(cap) = cap_str.trim().parse::<usize>() {
+                if (MIN_MAX_THREAT_CAPACITY..=MAX_MAX_THREAT_CAPACITY).contains(&cap) {
+                    config.max_threat_capacity = cap;
+                }
+            }
+        }
+        if let Ok(file_size_str) = std::env::var("AIOS_THREAT_MAX_STORE_FILE") {
+            if let Ok(fsz) = file_size_str.trim().parse::<u64>() {
+                if (MIN_MAX_STORE_FILE_BYTES..=MAX_MAX_STORE_FILE_BYTES).contains(&fsz) {
+                    config.max_store_file_bytes = fsz;
+                }
+            }
+        }
+        config
     }
 }

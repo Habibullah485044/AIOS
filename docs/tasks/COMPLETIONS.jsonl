@@ -2713,3 +2713,4 @@
 {"seq":2713,"ts":"2026-10-03T10:23:14Z","event":"completed","task_id":2713,"note":"threat model service scaffold completed","evidence":[]}
 {"seq":2714,"ts":"2026-10-03T10:24:37Z","event":"completed","task_id":2714,"note":"threat model service implementation completed","evidence":[]}
 {"seq":2715,"ts":"2026-10-03T10:27:47Z","event":"completed","task_id":2715,"note":"threat model service unit test completed","evidence":[]}
+{"seq":2716,"ts":"2026-10-03T10:30:43Z","event":"completed","task_id":2716,"note":"threat model service integration completed","evidence":[]}

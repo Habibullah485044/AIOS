@@ -12932,5 +12932,85 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_mcp_threat_model_automated_vectors() {
+        let mut server = Server::open();
+        let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_autothreat_{}_{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("autothreat_store.json").to_string_lossy().to_string();
+
+        let initial_audit_count: i64 = server.ring.conn().query_row(
+            "SELECT COUNT(*) FROM audit_ring WHERE tool LIKE 'aios.threat.%'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+
+        // 1. AUTOTHREAT10: Canonical init
+        let init_res = server.call_tool("aios.threat.init", &json!({
+            "force": true,
+            "store_path": store_path
+        }));
+        assert_eq!(init_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 2. AUTOTHREAT2: List threats
+        let list_res = server.call_tool("aios.threat.list", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(list_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(list_res.get("count").and_then(|v| v.as_u64()), Some(7));
+
+        // 3. Register new threat
+        let reg_res = server.call_tool("aios.threat.register", &json!({
+            "id": "THREAT-INTEG-AUTO-1",
+            "title": "Kernel Hostcall Memory Corruption",
+            "description": "Buffer overrun in memory map handling",
+            "category": "elevation_of_privilege",
+            "severity": "critical",
+            "component": "kernel.mem",
+            "store_path": store_path
+        }));
+        assert_eq!(reg_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 4. AUTOTHREAT1: Status transition to under_review
+        let stat_res = server.call_tool("aios.threat.status", &json!({
+            "id": "THREAT-INTEG-AUTO-1",
+            "status": "under_review",
+            "store_path": store_path
+        }));
+        assert_eq!(stat_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. Mitigate threat
+        let mit_res = server.call_tool("aios.threat.mitigate", &json!({
+            "id": "THREAT-INTEG-AUTO-1",
+            "mitigation": "Enforce bounds-checked buffer allocator",
+            "store_path": store_path
+        }));
+        assert_eq!(mit_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 6. AUTOTHREAT6: Assess risk
+        let assess_res = server.call_tool("aios.threat.assess", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(assess_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 7. Config check
+        let cfg_res = server.call_tool("aios.threat.config", &json!({
+            "action": "show"
+        }));
+        assert_eq!(cfg_res.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 8. Confirm SQLite Audit Ring records all transactions
+        let final_audit_count: i64 = server.ring.conn().query_row(
+            "SELECT COUNT(*) FROM audit_ring WHERE tool LIKE 'aios.threat.%'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+
+        assert!(final_audit_count >= initial_audit_count + 7, "Consequential threat tool calls must write audit rows");
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
+
 

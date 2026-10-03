@@ -2773,3 +2773,4 @@
 {"seq":2773,"ts":"2026-10-03T18:12:03Z","event":"completed","task_id":2773,"note":"threat model observability scaffold completed","evidence":[]}
 {"seq":2774,"ts":"2026-10-03T18:13:28Z","event":"completed","task_id":2774,"note":"threat model observability implementation completed","evidence":[]}
 {"seq":2775,"ts":"2026-10-03T18:17:17Z","event":"completed","task_id":2775,"note":"threat model observability unit test completed","evidence":[]}
+{"seq":2776,"ts":"2026-10-03T18:22:10Z","event":"completed","task_id":2776,"note":"threat model observability integration tests completed","evidence":[]}

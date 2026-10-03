@@ -59,6 +59,18 @@ impl ThreatModelService {
         self
     }
 
+    pub fn set_policy(&mut self, policy: crate::threat_model_policy::ThreatModelSecurityPolicy) {
+        self.policy = Some(policy);
+    }
+
+    pub fn policy(&self) -> Option<&crate::threat_model_policy::ThreatModelSecurityPolicy> {
+        self.policy.as_ref()
+    }
+
+    pub fn policy_mut(&mut self) -> Option<&mut crate::threat_model_policy::ThreatModelSecurityPolicy> {
+        self.policy.as_mut()
+    }
+
     pub fn with_canonical_threats() -> Self {
         let mut svc = Self::new();
         svc.populate_canonical_threats();

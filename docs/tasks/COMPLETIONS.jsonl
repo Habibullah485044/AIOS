@@ -2672,3 +2672,4 @@
 {"seq":2672,"ts":"2026-10-03T08:37:22Z","event":"completed","task_id":2672,"note":"observability specification completed","evidence":[]}
 {"seq":2673,"ts":"2026-10-03T08:41:53Z","event":"completed","task_id":2673,"note":"observability scaffold completed","evidence":[]}
 {"seq":2674,"ts":"2026-10-03T08:45:01Z","event":"completed","task_id":2674,"note":"observability implementation completed","evidence":[]}
+{"seq":2675,"ts":"2026-10-03T08:48:50Z","event":"completed","task_id":2675,"note":"observability unit tests passing","evidence":[]}

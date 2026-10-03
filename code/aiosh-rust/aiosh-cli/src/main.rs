@@ -18686,8 +18686,151 @@ fn cmd_secret(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("recovery") => {
+            let recovery_sub = rest.first().map(|s| s.as_str()).unwrap_or("check");
+            let store_path = parse_flag(rest, "--store").unwrap_or_else(|| aiosh_core::secret_service::DEFAULT_SECRETS_VAULT_PATH.to_string());
+            let store = std::path::Path::new(&store_path);
+
+            if let Err(e) = aiosh_core::secret_recovery::SecretRecoveryService::validate_path(store) {
+                let msg = format!("invalid store path: {}", e);
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            match recovery_sub {
+                "check" | "status" => {
+                    match aiosh_core::secret_recovery::SecretRecoveryService::validate_vault(store) {
+                        Ok(report) => {
+                            let success = report.status == aiosh_core::secret_recovery::SecretVaultStatus::Healthy;
+                            classify_and_emit(
+                                &mut ctx, "secret", "recovery.check", json!({ "status": format!("{:?}", report.status), "issues": report.issues.len() }),
+                                if success { "success" } else { "failure" }, None, Some("Checked vault integrity"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": if success { 0 } else { 1 }, "data": report, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("Secrets Vault Integrity Status: {:?}", report.status);
+                                println!("  Path:        {}", report.vault_path);
+                                println!("  Total:       {}", report.total_records);
+                                println!("  Valid:       {}", report.valid_records);
+                                println!("  Corrupted:   {}", report.corrupted_records);
+                                println!("  Has Backup:  {}", report.has_backup);
+                                if !report.issues.is_empty() {
+                                    println!("  Issues ({}):", report.issues.len());
+                                    for i in &report.issues {
+                                        println!("    - [{:?}] {}: {}", i.severity, i.issue_type, i.details);
+                                    }
+                                }
+                            }
+                            if success { 0 } else { 1 }
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VALIDATE_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                "backup" => {
+                    match aiosh_core::secret_recovery::SecretRecoveryService::create_backup(store) {
+                        Ok(backup_path) => {
+                            let p_str = backup_path.to_string_lossy().to_string();
+                            classify_and_emit(
+                                &mut ctx, "secret", "recovery.backup", json!({ "backup_path": &p_str }),
+                                "success", None, Some("Created secrets vault backup"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "backup_path": p_str }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("[+] Vault backup snapshot created: {}", p_str);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "BACKUP_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                "restore" => {
+                    match aiosh_core::secret_recovery::SecretRecoveryService::restore_from_backup(store) {
+                        Ok(report) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "recovery.restore", json!({ "recovered": report.records_recovered }),
+                                "success", None, Some("Restored vault from backup"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("[+] Vault successfully restored from backup snapshot.");
+                                println!("  Records recovered: {}", report.records_recovered);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RESTORE_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                "repair" => {
+                    let quarantine = rest.iter().any(|arg| arg == "--quarantine");
+                    match aiosh_core::secret_recovery::SecretRecoveryService::repair_vault(store, quarantine) {
+                        Ok(report) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "recovery.repair", json!({ "recovered": report.records_recovered, "dropped": report.records_dropped }),
+                                "success", None, Some("Repaired secrets vault"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("[+] Vault repair finished successfully.");
+                                println!("  Records recovered: {}", report.records_recovered);
+                                println!("  Records dropped:   {}", report.records_dropped);
+                                if let Some(q) = report.quarantined_path {
+                                    println!("  Quarantine path:   {}", q);
+                                }
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REPAIR_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                unknown => {
+                    let msg = format!("unknown secret recovery action: {} (expected: check, backup, restore, repair)", unknown);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy|observability|doc> [OPTIONS]\n\nCommands:\n  store          Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get            Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list           List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate         Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke         Revoke a secret (--id <ID> [--store <PATH>])\n  config         Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy         Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])\n  observability  Inspect secrets observability report (aiosh secret observability [--store <PATH>])\n  doc            Browse and search offline secrets documentation (aiosh secret doc <list|get|search>)");
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy|observability|doc|recovery> [OPTIONS]\n\nCommands:\n  store          Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get            Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list           List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate         Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke         Revoke a secret (--id <ID> [--store <PATH>])\n  config         Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy         Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])\n  observability  Inspect secrets observability report (aiosh secret observability [--store <PATH>])\n  doc            Browse and search offline secrets documentation (aiosh secret doc <list|get|search>)\n  recovery       Inspect, backup, restore, or repair vaulted store (aiosh secret recovery <check|backup|restore|repair> [--store <PATH>] [--quarantine])");
             0
         }
         Some(unknown) => {
@@ -19364,6 +19507,53 @@ mod secret_cli_tests {
         assert_eq!(cmd_secret(&s(&["doc", "search", "--query", "policy", "--json"])), 0);
         assert_eq!(cmd_secret(&s(&["doc", "search"])), 2);
         assert_eq!(cmd_secret(&s(&["doc", "unknown_action"])), 2);
+    }
+
+    #[test]
+    fn test_secret_cli_recovery() {
+        let tmp_dir = std::env::temp_dir().join("test_sec_cli_recovery");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("vault.json").to_string_lossy().to_string();
+
+        // 1. Initial check on missing vault -> 1
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", &store])), 1);
+
+        // 2. Store a secret to create a valid healthy vault
+        assert_eq!(cmd_secret(&s(&[
+            "store",
+            "--id", "sec_rec_key",
+            "--name", "RecKey",
+            "--kind", "api_key",
+            "--value", "val12345678",
+            "--store", &store,
+        ])), 0);
+
+        // 3. Check on healthy vault -> 0
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", &store, "--json"])), 0);
+
+        // 4. Create backup -> 0
+        assert_eq!(cmd_secret(&s(&["recovery", "backup", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["recovery", "backup", "--store", &store, "--json"])), 0);
+
+        // 5. Corrupt vault file
+        std::fs::write(&store, "{ bad json").expect("corrupt vault");
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", &store])), 1);
+
+        // 6. Restore from backup -> 0
+        assert_eq!(cmd_secret(&s(&["recovery", "restore", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", &store])), 0);
+
+        // 7. Repair -> 0
+        assert_eq!(cmd_secret(&s(&["recovery", "repair", "--store", &store, "--quarantine"])), 0);
+
+        // 8. Path traversal attempt -> 2
+        assert_eq!(cmd_secret(&s(&["recovery", "check", "--store", "../bad/vault.json"])), 2);
+
+        // 9. Unknown action -> 2
+        assert_eq!(cmd_secret(&s(&["recovery", "unknown_act", "--store", &store])), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
 

@@ -317,3 +317,73 @@ fn test_autothreat10_canonical_init() {
         assert!(!t.mitigations.is_empty());
     }
 }
+
+/// Unit Test: ID Syntax & Boundary Validation (T-02755)
+#[test]
+fn test_threat_boundary_id_syntax() {
+    // 1. Empty ID rejected
+    assert!(ThreatEntry::validate_id("").is_err());
+    assert!(ThreatEntry::validate_id("   ").is_err());
+
+    // 2. Control characters in ID rejected
+    assert!(ThreatEntry::validate_id("THREAT\0BAD").is_err());
+    assert!(ThreatEntry::validate_id("THREAT\nBAD").is_err());
+
+    // 3. Excessive length (> 64 chars) rejected
+    let long_id = "A".repeat(65);
+    assert!(ThreatEntry::validate_id(&long_id).is_err());
+
+    // 4. Dot rejected, underscores and dashes allowed
+    assert!(ThreatEntry::validate_id("T_123.abc").is_err());
+    assert!(ThreatEntry::validate_id("THREAT-CORE-001").is_ok());
+    assert!(ThreatEntry::validate_id("T_123_abc").is_ok());
+}
+
+/// Unit Test: Title and Description Length Boundaries (T-02755)
+#[test]
+fn test_threat_boundary_title_and_description() {
+    // 1. Empty title rejected
+    assert!(ThreatEntry::validate_title("").is_err());
+    assert!(ThreatEntry::validate_title("   ").is_err());
+
+    // 2. Max title boundary (128 chars)
+    let max_title = "T".repeat(128);
+    assert!(ThreatEntry::validate_title(&max_title).is_ok());
+    let over_title = "T".repeat(129);
+    assert!(ThreatEntry::validate_title(&over_title).is_err());
+
+    // 3. Max description boundary (2048 chars)
+    let max_desc = "D".repeat(2048);
+    assert!(ThreatEntry::validate_description(&max_desc).is_ok());
+    let over_desc = "D".repeat(2049);
+    assert!(ThreatEntry::validate_description(&over_desc).is_err());
+}
+
+/// Unit Test: Duplicate Registration & Missing Mitigations Negative Path (T-02755)
+#[test]
+fn test_threat_negative_cases() {
+    let mut catalog = ThreatModelService::new();
+    let entry = ThreatEntry::new(
+        "T-DUP",
+        "Duplicate Threat Test",
+        "Description",
+        ThreatCategory::Spoofing,
+        ThreatSeverity::Low,
+        "test",
+        vec![],
+        vec![],
+    ).unwrap();
+    assert!(catalog.register_threat(entry.clone()).is_ok());
+
+    // 1. Duplicate registration fails
+    let dup_err = catalog.register_threat(entry).unwrap_err();
+    assert!(dup_err.contains(THREAT_ERR_DUPLICATE_ID));
+
+    // 2. Attaching to nonexistent threat fails
+    let nonexist_err = catalog.attach_mitigation("T-NONEXIST", "Some fix").unwrap_err();
+    assert!(nonexist_err.contains(THREATSVC_ERR_NOT_FOUND));
+
+    // 3. Empty mitigation string rejected
+    let empty_mit_err = catalog.attach_mitigation("T-DUP", "").unwrap_err();
+    assert!(empty_mit_err.contains("Mitigation cannot be empty"));
+}

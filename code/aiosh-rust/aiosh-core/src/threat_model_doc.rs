@@ -159,6 +159,7 @@ impl ThreatDocRepository {
 
         let query_tokens: Vec<String> = q
             .to_lowercase()
+            .replace('_', " ")
             .split_whitespace()
             .map(|s| s.to_string())
             .collect();
@@ -225,7 +226,7 @@ impl ThreatDocRepository {
                 sections: vec![
                     ThreatDocSection {
                         title: "STRIDE Classification Matrix".into(),
-                        content: "Threats are categorized under Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, and Elevation of Privilege.".into(),
+                        content: "Threats are categorized under Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege, and Supply Chain Risk.".into(),
                     },
                     ThreatDocSection {
                         title: "Security Invariants".into(),

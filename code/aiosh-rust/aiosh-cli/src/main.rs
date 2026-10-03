@@ -18576,8 +18576,118 @@ fn cmd_secret(args: &[String]) -> i32 {
             }
             0
         }
+        Some("doc") | Some("docs") => {
+            let doc_sub = rest.first().map(|s| s.as_str()).unwrap_or("list");
+            let repo = aiosh_core::secret_doc::SecretDocRepository::new();
+            match doc_sub {
+                "list" => {
+                    let topics = repo.list_topics();
+                    classify_and_emit(
+                        &mut ctx, "secret", "doc.list", json!({ "count": topics.len() }),
+                        "success", None, Some("Listed secrets documentation topics"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": topics, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Secrets Vault Documentation Topics ({}):", topics.len());
+                        for t in topics {
+                            println!("  [{}] {} ({}) - {}", t.id, t.title, t.category.as_str(), t.summary);
+                        }
+                    }
+                    0
+                }
+                "get" => {
+                    let topic_id = parse_flag(rest, "--id").or_else(|| if rest.len() > 1 && !rest[1].starts_with("--") { Some(rest[1].clone()) } else { None });
+                    let topic_id = match topic_id {
+                        Some(id) => id,
+                        None => {
+                            let msg = "missing required parameter: topic ID (use `aiosh secret doc get <topic_id>`)";
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match repo.get_topic(&topic_id) {
+                        Some(t) => {
+                            let md = repo.render_markdown(&topic_id).unwrap_or_default();
+                            classify_and_emit(
+                                &mut ctx, "secret", "doc.get", json!({ "topic_id": &topic_id }),
+                                "success", None, Some("Retrieved secrets documentation topic"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "topic": t, "markdown": md }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("{}", md);
+                            }
+                            0
+                        }
+                        None => {
+                            let msg = format!("topic not found: {}", topic_id);
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "TOPIC_NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                "search" => {
+                    let query = parse_flag(rest, "--query").or_else(|| if rest.len() > 1 && !rest[1].starts_with("--") { Some(rest[1..].join(" ")) } else { None });
+                    let query = match query {
+                        Some(q) => q,
+                        None => {
+                            let msg = "missing required parameter: query (use `aiosh secret doc search <query>`)";
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match repo.search(&query) {
+                        Ok(results) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "doc.search", json!({ "query": &query, "count": results.len() }),
+                                "success", None, Some("Searched secrets documentation"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": results, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("Search Results for '{}' ({} found):", query, results.len());
+                                for r in &results {
+                                    println!("  * [{}] {} (score: {}) - {}", r.topic_id, r.title, r.score, r.snippet);
+                                }
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SEARCH_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                unknown => {
+                    let msg = format!("unknown secret doc action: {}", unknown);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy|observability> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy  Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])\n  observability  Inspect secrets observability report (aiosh secret observability [--store <PATH>])");
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy|observability|doc> [OPTIONS]\n\nCommands:\n  store          Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get            Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list           List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate         Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke         Revoke a secret (--id <ID> [--store <PATH>])\n  config         Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy         Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])\n  observability  Inspect secrets observability report (aiosh secret observability [--store <PATH>])\n  doc            Browse and search offline secrets documentation (aiosh secret doc <list|get|search>)");
             0
         }
         Some(unknown) => {
@@ -19240,6 +19350,20 @@ mod secret_cli_tests {
         assert_eq!(cmd_secret(&s(&["metrics"])), 0);
         assert_eq!(cmd_secret(&s(&["metrics", "--json"])), 0);
         assert_eq!(cmd_secret(&s(&["observability", "--store", "../forbidden/vault.json"])), 2);
+    }
+
+    #[test]
+    fn test_secret_cli_doc() {
+        assert_eq!(cmd_secret(&s(&["doc", "list"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "list", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "get", "secrets-overview"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "get", "--id", "secrets-overview", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "get", "nonexistent_topic"])), 1);
+        assert_eq!(cmd_secret(&s(&["doc", "get"])), 2);
+        assert_eq!(cmd_secret(&s(&["doc", "search", "encryption"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "search", "--query", "policy", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["doc", "search"])), 2);
+        assert_eq!(cmd_secret(&s(&["doc", "unknown_action"])), 2);
     }
 }
 

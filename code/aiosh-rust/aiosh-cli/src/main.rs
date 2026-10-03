@@ -18858,51 +18858,560 @@ fn cmd_threat(args: &[String]) -> i32 {
 
     let path_str = parse_flag(rest, "--path")
         .unwrap_or_else(|| aiosh_core::threat_model_service::DEFAULT_THREAT_MODEL_PATH.to_string());
+    let path = std::path::Path::new(&path_str);
+
+    // Validate path hygiene early
+    if let Err(e) = aiosh_core::threat_model_service::ThreatModelService::validate_path(path) {
+        let msg = format!("Invalid threat model path: {}", e);
+        classify_and_emit(
+            &mut ctx, "threat", sub.unwrap_or("unknown"), json!({ "error": &msg, "path": path_str }),
+            "failure", None, Some("Path validation failed"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "error": { "code": "INVALID_PATH", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(&msg));
+        }
+        return 2;
+    }
 
     match sub {
         Some("list") => {
+            let service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        classify_and_emit(
+                            &mut ctx, "threat", "list", json!({ "error": &msg }),
+                            "failure", None, Some("Load failure"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            let filter_status = parse_flag(rest, "--status").and_then(|s| aiosh_core::ThreatStatus::parse_status(&s));
+            let filter_sev = parse_flag(rest, "--severity").and_then(|s| aiosh_core::ThreatSeverity::parse_severity(&s));
+            let filter_cat = parse_flag(rest, "--category").and_then(|s| aiosh_core::ThreatCategory::parse_category(&s));
+
+            let mut threats: Vec<&aiosh_core::ThreatEntry> = service.list_threats().iter().collect();
+            if let Some(st) = filter_status {
+                threats.retain(|t| t.status == st);
+            }
+            if let Some(sv) = filter_sev {
+                threats.retain(|t| t.severity >= sv);
+            }
+            if let Some(cat) = filter_cat {
+                threats.retain(|t| t.category == cat);
+            }
+
             classify_and_emit(
-                &mut ctx, "threat", "list", json!({ "path": path_str }),
-                "success", None, Some("Listed threats"), "operator", None,
+                &mut ctx, "threat", "list", json!({ "path": path_str, "count": threats.len() }),
+                "success", None, Some("Listed threat catalog"), "operator", None,
             );
-            println!("aiosh threat list scaffold");
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "count": threats.len(), "threats": threats }));
+            } else {
+                println!("{:<18} {:<24} {:<10} {:<14} {}", "ID", "CATEGORY", "SEVERITY", "STATUS", "TITLE");
+                println!("{:-<18} {:-<24} {:-<10} {:-<14} {:-<30}", "", "", "", "", "");
+                for t in &threats {
+                    println!("{:<18} {:<24} {:<10} {:<14} {}", t.id, t.category.as_str(), t.severity.as_str(), t.status.as_str(), t.title);
+                }
+            }
             0
         }
         Some("show") => {
-            let id = rest.first().map(|s| s.as_str()).unwrap_or_default();
+            let id = parse_flag(rest, "--id")
+                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .unwrap_or_default();
             if id.is_empty() {
-                eprintln!("Usage: aiosh threat show <ID>");
+                let msg = "Missing required threat ID. Usage: aiosh threat show <ID>".to_string();
+                classify_and_emit(
+                    &mut ctx, "threat", "show", json!({ "error": &msg }),
+                    "failure", None, Some("Missing ID argument"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_ID", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
                 return 2;
             }
-            classify_and_emit(
-                &mut ctx, "threat", "show", json!({ "id": id, "path": path_str }),
-                "success", None, Some("Shown threat"), "operator", None,
-            );
-            println!("aiosh threat show scaffold: {}", id);
-            0
+
+            let service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        classify_and_emit(
+                            &mut ctx, "threat", "show", json!({ "error": &msg }),
+                            "failure", None, Some("Load failure"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            match service.get_threat(&id) {
+                Some(entry) => {
+                    classify_and_emit(
+                        &mut ctx, "threat", "show", json!({ "id": id, "path": path_str }),
+                        "success", None, Some("Displayed threat"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "threat": entry }));
+                    } else {
+                        println!("ID:          {}", entry.id);
+                        println!("Title:       {}", entry.title);
+                        println!("Category:    {}", entry.category.as_str());
+                        println!("Severity:    {}", entry.severity.as_str());
+                        println!("Status:      {}", entry.status.as_str());
+                        println!("Component:   {}", entry.component);
+                        println!("Description: {}", entry.description);
+                        println!("CWE IDs:     {}", entry.cwe_ids.join(", "));
+                        println!("Mitigations:");
+                        if entry.mitigations.is_empty() {
+                            println!("  (none recorded)");
+                        } else {
+                            for m in &entry.mitigations {
+                                println!("  - {}", m);
+                            }
+                        }
+                    }
+                    0
+                }
+                None => {
+                    let msg = format!("Threat '{}' not found in catalog", id);
+                    classify_and_emit(
+                        &mut ctx, "threat", "show", json!({ "id": id, "error": &msg }),
+                        "failure", None, Some("Threat not found"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "THREAT_NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
         }
         Some("register") => {
-            println!("aiosh threat register scaffold");
+            let id = parse_flag(rest, "--id");
+            let title = parse_flag(rest, "--title");
+            let desc = parse_flag(rest, "--desc");
+            let cat_str = parse_flag(rest, "--cat");
+            let sev_str = parse_flag(rest, "--sev");
+            let comp = parse_flag(rest, "--component").or_else(|| parse_flag(rest, "--comp"));
+
+            if id.is_none() || title.is_none() || desc.is_none() || cat_str.is_none() || sev_str.is_none() || comp.is_none() {
+                let msg = "Missing required flag: --id, --title, --desc, --cat, --sev, --component are required".to_string();
+                classify_and_emit(
+                    &mut ctx, "threat", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Missing required flags"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_FLAGS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let id = id.unwrap();
+            let title = title.unwrap();
+            let desc = desc.unwrap();
+            let cat_str = cat_str.unwrap();
+            let sev_str = sev_str.unwrap();
+            let comp = comp.unwrap();
+
+            let cat = match aiosh_core::ThreatCategory::parse_category(&cat_str) {
+                Some(c) => c,
+                None => {
+                    let msg = format!("Invalid category '{}'. Valid options: spoofing, tampering, repudiation, information_disclosure, denial_of_service, elevation_of_privilege, supply_chain_risk", cat_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_CATEGORY", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let sev = match aiosh_core::ThreatSeverity::parse_severity(&sev_str) {
+                Some(s) => s,
+                None => {
+                    let msg = format!("Invalid severity '{}'. Valid options: low, medium, high, critical", sev_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_SEVERITY", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let cwes: Vec<String> = parse_flag(rest, "--cwes")
+                .map(|s| s.split(',').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect())
+                .unwrap_or_default();
+            let mits: Vec<String> = parse_flag(rest, "--mitigations").or_else(|| parse_flag(rest, "--mits"))
+                .map(|s| s.split(',').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect())
+                .unwrap_or_default();
+
+            let entry = match aiosh_core::ThreatEntry::new(&id, &title, &desc, cat, sev, &comp, cwes, mits) {
+                Ok(e) => e,
+                Err(e) => {
+                    let msg = format!("Domain validation failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "threat", "register", json!({ "error": &msg }),
+                        "failure", None, Some("Validation failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            if let Err(e) = service.register_threat(entry) {
+                let msg = format!("Failed to register threat: {}", e);
+                classify_and_emit(
+                    &mut ctx, "threat", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Registration failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "REGISTER_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to persist threat model: {}", e);
+                classify_and_emit(
+                    &mut ctx, "threat", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Persistence failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
+            classify_and_emit(
+                &mut ctx, "threat", "register", json!({ "id": id, "path": path_str }),
+                "success", None, Some("Registered threat"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Threat '{}' registered successfully", id) }));
+            } else {
+                println!("Threat '{}' registered successfully.", id);
+            }
             0
         }
         Some("status") => {
-            println!("aiosh threat status scaffold");
+            let id = parse_flag(rest, "--id")
+                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .unwrap_or_default();
+            let status_str = parse_flag(rest, "--status")
+                .or_else(|| {
+                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+                    if non_flags.len() >= 2 {
+                        Some(non_flags[1].clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if id.is_empty() || status_str.is_empty() {
+                let msg = "Usage: aiosh threat status <ID> <STATUS>".to_string();
+                classify_and_emit(
+                    &mut ctx, "threat", "status", json!({ "error": &msg }),
+                    "failure", None, Some("Missing arguments"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_ARGS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let status = match aiosh_core::ThreatStatus::parse_status(&status_str) {
+                Some(s) => s,
+                None => {
+                    let msg = format!("Invalid status '{}'. Valid options: identified, under_review, mitigated, accepted, resolved", status_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_STATUS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            if let Err(e) = service.update_status(&id, status) {
+                let msg = format!("Failed to update status: {}", e);
+                classify_and_emit(
+                    &mut ctx, "threat", "status", json!({ "id": id, "error": &msg }),
+                    "failure", None, Some("Status update failed"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "STATUS_UPDATE_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to persist threat model: {}", e);
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
+            classify_and_emit(
+                &mut ctx, "threat", "status", json!({ "id": id, "status": status.as_str() }),
+                "success", None, Some("Updated threat status"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Threat '{}' transitioned to status '{}'", id, status.as_str()) }));
+            } else {
+                println!("Threat '{}' transitioned to status '{}'.", id, status.as_str());
+            }
             0
         }
         Some("mitigate") => {
-            println!("aiosh threat mitigate scaffold");
+            let id = parse_flag(rest, "--id")
+                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .unwrap_or_default();
+            let mitigation_text = parse_flag(rest, "--text")
+                .or_else(|| parse_flag(rest, "--mitigation"))
+                .or_else(|| {
+                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+                    if non_flags.len() >= 2 {
+                        Some(non_flags[1..].iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" "))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if id.is_empty() || mitigation_text.is_empty() {
+                let msg = "Usage: aiosh threat mitigate <ID> <MITIGATION_TEXT>".to_string();
+                classify_and_emit(
+                    &mut ctx, "threat", "mitigate", json!({ "error": &msg }),
+                    "failure", None, Some("Missing arguments"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_ARGS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let mut service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            if let Err(e) = service.attach_mitigation(&id, &mitigation_text) {
+                let msg = format!("Failed to attach mitigation: {}", e);
+                classify_and_emit(
+                    &mut ctx, "threat", "mitigate", json!({ "id": id, "error": &msg }),
+                    "failure", None, Some("Attach mitigation failed"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "MITIGATE_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            // Attempt transition to Mitigated if currently Identified or UnderReview
+            if let Some(entry) = service.get_threat(&id) {
+                if entry.status == aiosh_core::ThreatStatus::Identified || entry.status == aiosh_core::ThreatStatus::UnderReview {
+                    let _ = service.update_status(&id, aiosh_core::ThreatStatus::Mitigated);
+                }
+            }
+
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to persist threat model: {}", e);
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
+            classify_and_emit(
+                &mut ctx, "threat", "mitigate", json!({ "id": id, "mitigation": &mitigation_text }),
+                "success", None, Some("Mitigation attached"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Mitigation recorded for threat '{}'", id) }));
+            } else {
+                println!("Mitigation recorded for threat '{}'. Status updated to mitigated.", id);
+            }
             0
         }
         Some("assess") => {
-            println!("aiosh threat assess scaffold");
+            let service = if path.exists() {
+                match aiosh_core::ThreatModelService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load threat model: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ThreatModelService::with_canonical_threats()
+            };
+
+            let assessment = service.assess_risk();
+            classify_and_emit(
+                &mut ctx, "threat", "assess", json!({ "assessment": &assessment }),
+                "success", None, Some("Calculated risk assessment"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "assessment": assessment }));
+            } else {
+                println!("--- Threat Model Risk Assessment ---");
+                println!("Total Threats:              {}", assessment.total_threats);
+                println!("Identified (Unreviewed):    {}", assessment.identified_count);
+                println!("Under Review:               {}", assessment.under_review_count);
+                println!("Mitigated:                  {}", assessment.mitigated_count);
+                println!("Accepted:                   {}", assessment.accepted_count);
+                println!("Resolved:                   {}", assessment.resolved_count);
+                println!("Critical Unmitigated:       {}", assessment.critical_unmitigated_count);
+                println!("Overall Risk Score:         {}", assessment.overall_risk_score);
+                println!("Evaluated At:               {}", assessment.evaluated_at);
+            }
             0
         }
         Some("init") => {
-            println!("aiosh threat init scaffold");
+            if path.exists() && !has_flag(rest, "--force") {
+                let msg = format!("Threat model file already exists at '{}'. Pass --force to overwrite.", path.display());
+                classify_and_emit(
+                    &mut ctx, "threat", "init", json!({ "error": &msg }),
+                    "failure", None, Some("File already exists"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "ALREADY_EXISTS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            let service = aiosh_core::ThreatModelService::with_canonical_threats();
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to initialize threat model: {}", e);
+                classify_and_emit(
+                    &mut ctx, "threat", "init", json!({ "error": &msg }),
+                    "failure", None, Some("Save failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
+            classify_and_emit(
+                &mut ctx, "threat", "init", json!({ "path": path_str }),
+                "success", None, Some("Initialized canonical threat catalog"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Threat catalog initialized at '{}'", path.display()) }));
+            } else {
+                println!("Threat catalog initialized with canonical STRIDE baseline at: {}", path.display());
+            }
             0
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh threat — Threat Model Maintenance & Risk Control\n\nUsage: aiosh threat <list|show|register|status|mitigate|assess|init> [OPTIONS]");
+            println!("aiosh threat — Threat Model Maintenance & Risk Control\n\nUsage: aiosh threat <list|show|register|status|mitigate|assess|init> [OPTIONS]\n\nSubcommands:\n  list      [--status S] [--severity V] [--category C] [--json] [--path P]\n  show      <ID> [--json] [--path P]\n  register  --id <ID> --title <T> --desc <D> --cat <C> --sev <S> --comp <K> [--cwes C] [--mits M] [--path P]\n  status    <ID> <STATUS> [--path P]\n  mitigate  <ID> <TEXT> [--path P]\n  assess    [--json] [--path P]\n  init      [--force] [--path P]");
             0
         }
         Some(unknown) => {

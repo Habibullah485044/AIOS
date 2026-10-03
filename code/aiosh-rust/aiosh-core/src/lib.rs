@@ -170,6 +170,7 @@ pub mod task_service;
 pub mod threat_model_data_model;
 pub mod threat_model_service;
 pub mod threat_model_config;
+pub mod threat_model_policy;
 pub mod toolchain_config;
 pub mod toolchain_service;
 pub mod triage;
@@ -507,6 +508,13 @@ pub use threat_model_config::{
     MAX_MAX_STORE_FILE_BYTES as MAX_MAX_THREAT_STORE_FILE_BYTES,
     MAX_CONFIG_FILE_BYTES as MAX_THREAT_CONFIG_FILE_BYTES,
     THREATCONF_ERR_BOUNDS, THREATCONF_ERR_IO, THREATCONF_ERR_PARSE, THREATCONF_ERR_VALIDATION,
+};
+pub use threat_model_policy::{
+    ThreatPolicyMode, ThreatPolicyVerdict, ThreatModelSecurityPolicy,
+    THREATPOL_ERR_VALIDATION, THREATPOL_ERR_DENIED, THREATPOL_ERR_CWE_REQUIRED,
+    THREATPOL_ERR_CRITICAL_UNMITIGATED, THREATPOL_ERR_CATEGORY_PROHIBITED,
+    THREATPOL_ERR_CAPACITY_EXCEEDED, THREATPOL_ERR_IO, THREATPOL_ERR_PARSE,
+    MAX_THREAT_SECURITY_POLICY_BYTES,
 };
 
 

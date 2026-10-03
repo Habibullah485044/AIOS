@@ -2718,3 +2718,4 @@
 {"seq":2718,"ts":"2026-10-03T10:32:51Z","event":"completed","task_id":2718,"note":"threat model service hardening completed","evidence":[]}
 {"seq":2719,"ts":"2026-10-03T10:33:32Z","event":"completed","task_id":2719,"note":"threat model service documentation completed","evidence":[]}
 {"seq":2720,"ts":"2026-10-03T10:34:20Z","event":"completed","task_id":2720,"note":"threat model service verification and evidence completed","evidence":[]}
+{"seq":2721,"ts":"2026-10-03T10:36:20Z","event":"completed","task_id":2721,"note":"threat model CLI surface research completed","evidence":[]}

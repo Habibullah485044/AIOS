@@ -85,7 +85,11 @@ impl SecretDocRepository {
 
     pub fn get_topic(&self, id: &str) -> Option<&SecretDocTopic> {
         let trimmed = id.trim();
-        if trimmed.is_empty() || trimmed.len() > 64 || trimmed.chars().any(|c| c.is_control()) || trimmed.contains("..") {
+        if trimmed.is_empty()
+            || trimmed.len() > 64
+            || trimmed.chars().any(|c| c.is_control() || c == '<' || c == '>' || c == '/' || c == '\\')
+            || trimmed.contains("..")
+        {
             return None;
         }
         self.topics.iter().find(|t| t.id == trimmed)
@@ -96,8 +100,8 @@ impl SecretDocRepository {
         if q.is_empty() {
             return Err(format!("{}: Search query must not be empty", SECDOC_ERR_QUERY_BOUNDS));
         }
-        if q.chars().any(|c| c.is_control()) {
-            return Err(format!("{}: Search query contains forbidden control characters", SECDOC_ERR_QUERY_BOUNDS));
+        if q.chars().any(|c| c.is_control() || c == '<' || c == '>') {
+            return Err(format!("{}: Search query contains forbidden control or markup characters", SECDOC_ERR_QUERY_BOUNDS));
         }
         if q.len() > MAX_SECRET_DOC_QUERY_LEN {
             return Err(format!(

@@ -91,3 +91,20 @@ fn test_secret_doc_render_markdown() {
     let err_missing = repo.render_markdown("missing-topic").unwrap_err();
     assert!(err_missing.contains(SECDOC_ERR_NOT_FOUND));
 }
+
+#[test]
+fn test_secret_doc_hardening() {
+    let repo = SecretDocRepository::new();
+
+    // 1. Path characters and markup in get_topic
+    assert!(repo.get_topic("<script>").is_none());
+    assert!(repo.get_topic("secrets/overview").is_none());
+    assert!(repo.get_topic("secrets\\overview").is_none());
+
+    // 2. Markup injection in search queries rejected
+    let err_tag = repo.search("<script>alert(1)</script>").unwrap_err();
+    assert!(err_tag.contains(SECDOC_ERR_QUERY_BOUNDS));
+
+    let err_gt = repo.search("test > dev").unwrap_err();
+    assert!(err_gt.contains(SECDOC_ERR_QUERY_BOUNDS));
+}

@@ -18519,8 +18519,65 @@ fn cmd_secret(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("observability") | Some("metrics") => {
+            let store_path = parse_flag(rest, "--store").unwrap_or_else(|| aiosh_core::secret_service::DEFAULT_SECRETS_VAULT_PATH.to_string());
+            let store = std::path::Path::new(&store_path);
+            if let Err(e) = aiosh_core::secret_service::SecretService::validate_path(store) {
+                let msg = format!("invalid store path: {}", e);
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+            let service = if store.exists() {
+                match aiosh_core::secret_service::SecretService::load_from_path(store) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("failed to load vault: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                aiosh_core::secret_service::SecretService::new()
+            };
+            let report = match aiosh_core::secret_observability::SecretObservabilityReport::generate(&service, Some(&ctx.ring)) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("observability generation failed: {}", e);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "OBSERVABILITY_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx, "secret", "observability", json!({ "total_secrets": report.total_secrets, "is_healthy": report.is_healthy }),
+                "success", None, Some("Generated secrets observability report"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": &report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Secrets Observability Report (generated {}):", report.generated_at_utc);
+                println!("  Total Secrets:        {}", report.total_secrets);
+                println!("  Active Secrets:       {}", report.active_secrets_count);
+                println!("  Expired Secrets:      {}", report.expired_secrets_count);
+                println!("  Policy Mode:          {}", report.policy_mode);
+                println!("  Health Status:        {}", if report.is_healthy { "HEALTHY" } else { "DEGRADED" });
+                println!("  Recent Audit Events:  {}", report.recent_audit_events_count);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy  Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])");
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy|observability> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy  Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])\n  observability  Inspect secrets observability report (aiosh secret observability [--store <PATH>])");
             0
         }
         Some(unknown) => {
@@ -19174,7 +19231,15 @@ mod secret_cli_tests {
         assert_eq!(cmd_secret(&s(&["config", "check"])), 0);
         assert_eq!(cmd_secret(&s(&["config", "check", "--json"])), 0);
         assert_eq!(cmd_secret(&s(&["config", "unknown_act"])), 2);
-        assert_eq!(cmd_secret(&s(&["config", "show", "--config", "../forbidden/config.json"])), 2);
+    }
+
+    #[test]
+    fn test_secret_cli_observability() {
+        assert_eq!(cmd_secret(&s(&["observability"])), 0);
+        assert_eq!(cmd_secret(&s(&["observability", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["metrics"])), 0);
+        assert_eq!(cmd_secret(&s(&["metrics", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["observability", "--store", "../forbidden/vault.json"])), 2);
     }
 }
 

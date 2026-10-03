@@ -20231,6 +20231,58 @@ mod threat_cli_tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_threat_cli_integration_e2e() {
+        let tmp_dir = std::env::temp_dir().join("test_threat_cli_integration_e2e");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("threat_catalog.json").to_string_lossy().to_string();
+
+        // Step 1: Initialize baseline catalog
+        assert_eq!(cmd_threat(&s(&["init", "--path", &store])), 0);
+
+        // Step 2: List threats with filters
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--status", "mitigated"])), 0);
+        assert_eq!(cmd_threat(&s(&["list", "--path", &store, "--category", "elevation_of_privilege"])), 0);
+
+        // Step 3: Assess baseline risk
+        assert_eq!(cmd_threat(&s(&["assess", "--path", &store, "--json"])), 0);
+
+        // Step 4: Register new unmitigated threat
+        assert_eq!(cmd_threat(&s(&[
+            "register",
+            "--id", "THREAT-E2E-001",
+            "--title", "E2E Kernel Boundary Test",
+            "--desc", "End-to-end integration testing threat scenario",
+            "--cat", "elevation_of_privilege",
+            "--sev", "critical",
+            "--comp", "kernel_module",
+            "--cwes", "CWE-250",
+            "--path", &store,
+        ])), 0);
+
+        // Step 5: Verify new threat appears in show
+        assert_eq!(cmd_threat(&s(&["show", "THREAT-E2E-001", "--path", &store, "--json"])), 0);
+
+        // Step 6: Transition status to under review
+        assert_eq!(cmd_threat(&s(&["status", "THREAT-E2E-001", "under_review", "--path", &store])), 0);
+
+        // Step 7: Mitigate threat
+        assert_eq!(cmd_threat(&s(&[
+            "mitigate",
+            "THREAT-E2E-001",
+            "Enforce strict user namespace isolation and seccomp filtering.",
+            "--path", &store,
+        ])), 0);
+
+        // Step 8: Re-assess risk after mitigation
+        assert_eq!(cmd_threat(&s(&["assess", "--path", &store])), 0);
+
+        // Step 9: Re-verify show shows mitigated status and attached mitigation
+        assert_eq!(cmd_threat(&s(&["show", "THREAT-E2E-001", "--path", &store])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
 
 

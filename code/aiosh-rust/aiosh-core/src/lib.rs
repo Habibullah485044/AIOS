@@ -128,6 +128,7 @@ pub mod secret_config;
 pub mod secret_policy;
 pub mod secret_observability;
 pub mod secret_doc;
+pub mod secret_recovery;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;

@@ -650,7 +650,100 @@ fn acquire_lock_timeout(lock_path: &Path, timeout: std::time::Duration) -> Resul
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+mod win_lock {
+    use std::fs::File;
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    pub const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x00000001;
+    pub const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x00000002;
+    pub const ERROR_LOCK_VIOLATION: i32 = 33;
+
+    #[repr(C)]
+    pub struct Overlapped {
+        pub internal: usize,
+        pub internal_high: usize,
+        pub offset: u32,
+        pub offset_high: u32,
+        pub h_event: *mut std::ffi::c_void,
+    }
+
+    extern "system" {
+        pub fn LockFileEx(
+            hFile: *mut std::ffi::c_void,
+            dwFlags: u32,
+            dwReserved: u32,
+            nNumberOfBytesToLockLow: u32,
+            nNumberOfBytesToLockHigh: u32,
+            lpOverlapped: *mut Overlapped,
+        ) -> i32;
+
+        pub fn UnlockFileEx(
+            hFile: *mut std::ffi::c_void,
+            dwReserved: u32,
+            nNumberOfBytesToUnlockLow: u32,
+            nNumberOfBytesToUnlockHigh: u32,
+            lpOverlapped: *mut Overlapped,
+        ) -> i32;
+    }
+
+    pub fn acquire_lock_timeout(
+        lock_path: &Path,
+        timeout: Duration,
+    ) -> Result<super::FileLock, String> {
+        let f = super::open_options_644()
+            .create(true)
+            .write(true)
+            .open(lock_path)
+            .map_err(|e| format!("open lock: {}", e))?;
+        let handle = f.as_raw_handle() as *mut std::ffi::c_void;
+        let deadline = Instant::now() + timeout;
+        loop {
+            let mut overlapped: Overlapped = unsafe { std::mem::zeroed() };
+            let rc = unsafe {
+                LockFileEx(
+                    handle,
+                    LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                    0,
+                    1,
+                    0,
+                    &mut overlapped,
+                )
+            };
+            if rc != 0 {
+                return Ok(super::FileLock(f));
+            }
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() != Some(ERROR_LOCK_VIOLATION) {
+                return Err(format!("LockFileEx failed: {}", err));
+            }
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "ledger lock busy after {}ms (another writer holds .TASK_STATE.lock?)",
+                    timeout.as_millis()
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(super::LOCK_POLL_MS));
+        }
+    }
+
+    pub fn unlock_file(file: &File) {
+        let handle = file.as_raw_handle() as *mut std::ffi::c_void;
+        let mut overlapped: Overlapped = unsafe { std::mem::zeroed() };
+        unsafe {
+            UnlockFileEx(handle, 0, 1, 0, &mut overlapped);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn acquire_lock_timeout(lock_path: &Path, timeout: std::time::Duration) -> Result<FileLock, String> {
+    win_lock::acquire_lock_timeout(lock_path, timeout)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn acquire_lock_timeout(lock_path: &Path, _timeout: std::time::Duration) -> Result<FileLock, String> {
     let f = open_options_644()
         .create(true)
@@ -670,6 +763,10 @@ impl Drop for FileLock {
         #[cfg(unix)]
         unsafe {
             libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&self.0), libc::LOCK_UN);
+        }
+        #[cfg(windows)]
+        {
+            win_lock::unlock_file(&self.0);
         }
     }
 }
@@ -1095,6 +1192,39 @@ mod tests {
         assert!(err.contains("ledger lock busy"), "{}", err);
         assert!(start.elapsed() >= std::time::Duration::from_millis(140));
         // Once released, acquisition succeeds again.
+        drop(holder);
+        let _g = acquire_lock_timeout(&p.lock, std::time::Duration::from_millis(150)).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn lock_contention_times_out_with_explicit_error() {
+        use std::os::windows::io::AsRawHandle;
+        let (_t, p) = test_env();
+        let holder = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&p.lock)
+            .unwrap();
+        let mut overlapped: win_lock::Overlapped = unsafe { std::mem::zeroed() };
+        let rc = unsafe {
+            win_lock::LockFileEx(
+                holder.as_raw_handle() as *mut std::ffi::c_void,
+                win_lock::LOCKFILE_EXCLUSIVE_LOCK | win_lock::LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                1,
+                0,
+                &mut overlapped,
+            )
+        };
+        assert_ne!(rc, 0);
+        let start = std::time::Instant::now();
+        let err = match acquire_lock_timeout(&p.lock, std::time::Duration::from_millis(150)) {
+            Err(e) => e,
+            Ok(_) => panic!("lock acquisition should have timed out"),
+        };
+        assert!(err.contains("ledger lock busy"), "{}", err);
+        assert!(start.elapsed() >= std::time::Duration::from_millis(140));
         drop(holder);
         let _g = acquire_lock_timeout(&p.lock, std::time::Duration::from_millis(150)).unwrap();
     }

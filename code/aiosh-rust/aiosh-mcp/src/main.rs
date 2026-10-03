@@ -69,6 +69,30 @@ fn load_safe_secret_service(store_path: &std::path::Path) -> aiosh_core::secret_
         .unwrap_or_else(|_| aiosh_core::secret_service::SecretService::new())
 }
 
+fn get_threat_model_store_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("AIOS_THREAT_MODEL_PATH") {
+        if !path.contains("..") {
+            return std::path::PathBuf::from(path);
+        }
+    }
+    if let Ok(dir) = std::env::var("AIOS_STATE_DIR") {
+        if !dir.contains("..") {
+            return std::path::PathBuf::from(dir).join("threat_model.json");
+        }
+    }
+    std::path::PathBuf::from("target").join("threat_model.json")
+}
+
+fn load_safe_threat_model_service(store_path: &std::path::Path) -> aiosh_core::threat_model_service::ThreatModelService {
+    if let Ok(meta) = std::fs::symlink_metadata(store_path) {
+        if meta.len() > aiosh_core::threat_model_service::MAX_THREAT_MODEL_STORE_SIZE {
+            return aiosh_core::threat_model_service::ThreatModelService::new();
+        }
+    }
+    aiosh_core::threat_model_service::ThreatModelService::load_from_path(store_path)
+        .unwrap_or_else(|_| aiosh_core::threat_model_service::ThreatModelService::new())
+}
+
 struct Server {
     ring: AuditRing,
     pep: PepStore,
@@ -6550,8 +6574,42 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.list" => {
+                let status_opt = arguments.get("status").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let severity_opt = arguments.get("severity").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let category_opt = arguments.get("category").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.list scaffold" }))
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let srv = load_safe_threat_model_service(&path);
+                    let status_filter = status_opt.as_deref().and_then(aiosh_core::threat_model_data_model::ThreatStatus::parse_status);
+                    let severity_filter = severity_opt.as_deref().and_then(aiosh_core::threat_model_data_model::ThreatSeverity::parse_severity);
+                    let category_filter = category_opt.as_deref().and_then(aiosh_core::threat_model_data_model::ThreatCategory::parse_category);
+
+                    let threats: Vec<_> = srv.list_threats().iter().filter(|t| {
+                        if let Some(s) = status_filter {
+                            if t.status != s { return false; }
+                        }
+                        if let Some(sev) = severity_filter {
+                            if t.severity != sev { return false; }
+                        }
+                        if let Some(cat) = category_filter {
+                            if t.category != cat { return false; }
+                        }
+                        true
+                    }).cloned().collect();
+
+                    Ok(json!({
+                        "ok": true,
+                        "count": threats.len(),
+                        "threats": threats
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6562,8 +6620,25 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.get" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.get scaffold" }))
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let srv = load_safe_threat_model_service(&path);
+                    let entry = srv.get_threat(id)
+                        .ok_or_else(|| format!("{}: Threat '{}' not found", aiosh_core::threat_model_service::THREATSVC_ERR_NOT_FOUND, id))?;
+                    Ok(json!({
+                        "ok": true,
+                        "threat": entry
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6574,8 +6649,56 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.register" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let title_opt = arguments.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let desc_opt = arguments.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let cat_opt = arguments.get("category").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let sev_opt = arguments.get("severity").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let comp_opt = arguments.get("component").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let cwes_opt = arguments.get("cwes").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                });
+                let mitigations_opt = arguments.get("mitigations").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                });
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.register scaffold" }))
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let title = title_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'title'".to_string())?;
+                    let desc = desc_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'description'".to_string())?;
+                    let cat_str = cat_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'category'".to_string())?;
+                    let sev_str = sev_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'severity'".to_string())?;
+                    let comp = comp_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'component'".to_string())?;
+
+                    let category = aiosh_core::threat_model_data_model::ThreatCategory::parse_category(cat_str)
+                        .ok_or_else(|| format!("ERR_THREAT_INVALID_INPUT: unknown category '{}'", cat_str))?;
+                    let severity = aiosh_core::threat_model_data_model::ThreatSeverity::parse_severity(sev_str)
+                        .ok_or_else(|| format!("ERR_THREAT_INVALID_INPUT: unknown severity '{}'", sev_str))?;
+
+                    let cwes = cwes_opt.clone().unwrap_or_default();
+                    let mitigations = mitigations_opt.clone().unwrap_or_default();
+
+                    let entry = aiosh_core::threat_model_data_model::ThreatEntry::new(
+                        id, title, desc, category, severity, comp, cwes, mitigations
+                    )?;
+
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let mut srv = load_safe_threat_model_service(&path);
+                    srv.register_threat(entry.clone())?;
+                    srv.save_to_path(&path)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "threat": entry
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6586,8 +6709,32 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.status" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let status_opt = arguments.get("status").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.status scaffold" }))
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let stat_str = status_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'status'".to_string())?;
+                    let status = aiosh_core::threat_model_data_model::ThreatStatus::parse_status(stat_str)
+                        .ok_or_else(|| format!("ERR_THREAT_INVALID_INPUT: unknown status '{}'", stat_str))?;
+
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let mut srv = load_safe_threat_model_service(&path);
+                    srv.update_status(id, status)?;
+                    srv.save_to_path(&path)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "status": status.as_str()
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6598,8 +6745,32 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.mitigate" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mit_opt = arguments.get("mitigation").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.mitigate scaffold" }))
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let mitigation = mit_opt.as_deref().ok_or_else(|| "ERR_THREAT_INVALID_INPUT: missing required parameter 'mitigation'".to_string())?;
+
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let mut srv = load_safe_threat_model_service(&path);
+                    srv.attach_mitigation(id, mitigation)?;
+                    let _ = srv.update_status(id, aiosh_core::threat_model_data_model::ThreatStatus::Mitigated);
+                    srv.save_to_path(&path)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "mitigation": mitigation,
+                        "status": "mitigated"
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6610,8 +6781,23 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.assess" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.assess scaffold" }))
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    let srv = load_safe_threat_model_service(&path);
+                    let assessment = srv.assess_risk();
+
+                    Ok(json!({
+                        "ok": true,
+                        "assessment": assessment
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
@@ -6622,8 +6808,28 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 )
             }
             "aios.threat.init" => {
+                let force = arguments.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    Ok(json!({ "ok": true, "message": "aios.threat.init scaffold" }))
+                    let path = match store_path_opt {
+                        Some(ref p) => {
+                            let pb = std::path::PathBuf::from(p);
+                            aiosh_core::threat_model_service::ThreatModelService::validate_path(&pb)?;
+                            pb
+                        }
+                        None => get_threat_model_store_path(),
+                    };
+                    if path.exists() && !force {
+                        return Err(format!("ERR_THREAT_ALREADY_EXISTS: Threat model file already exists at {}. Use force=true to overwrite.", path.display()));
+                    }
+                    let srv = aiosh_core::threat_model_service::ThreatModelService::with_canonical_threats();
+                    srv.save_to_path(&path)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "initialized": true,
+                        "count": srv.list_threats().len()
+                    }))
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,

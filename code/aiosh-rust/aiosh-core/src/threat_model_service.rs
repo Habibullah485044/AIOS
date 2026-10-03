@@ -60,12 +60,28 @@ impl ThreatModelService {
 
     pub fn validate_path(path: &Path) -> Result<PathBuf, String> {
         let p_str = path.to_string_lossy();
+        if p_str.trim().is_empty() {
+            return Err(format!("{}: Path cannot be empty", THREATSVC_ERR_PATH_TRAVERSAL));
+        }
         if p_str.contains("..")
             || p_str.starts_with("\\\\")
             || p_str.starts_with("//")
             || p_str.chars().any(|c| c.is_control())
         {
             return Err(format!("{}: Path contains forbidden sequences: {}", THREATSVC_ERR_PATH_TRAVERSAL, p_str));
+        }
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            return Err(format!("{}: File must have .json extension: {}", THREATSVC_ERR_PATH_TRAVERSAL, p_str));
+        }
+        if path.components().count() > 16 {
+            return Err(format!("{}: Path depth exceeds maximum allowed of 16", THREATSVC_ERR_PATH_TRAVERSAL));
+        }
+        if path.exists() {
+            if let Ok(meta) = fs::symlink_metadata(path) {
+                if meta.file_type().is_symlink() {
+                    return Err(format!("{}: Symlinks are forbidden for threat model storage: {}", THREATSVC_ERR_PATH_TRAVERSAL, p_str));
+                }
+            }
         }
         Ok(path.to_path_buf())
     }
@@ -97,15 +113,32 @@ impl ThreatModelService {
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
         let valid_path = Self::validate_path(path)?;
-        let tmp_path = valid_path.with_extension("tmp.threat");
+        let parent = valid_path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("{}: Failed creating parent directory: {}", THREATSVC_ERR_IO, e))?;
+        }
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let pid = std::process::id();
+        let fname = valid_path.file_name().and_then(|n| n.to_str()).unwrap_or("threats");
+        let tmp_path = parent.join(format!(".{}.tmp.{}.{}", fname, pid, nanos));
 
         let json_str = serde_json::to_string_pretty(&self.snapshot)
             .map_err(|e| format!("{}: Serialization error: {}", THREATSVC_ERR_IO, e))?;
 
-        fs::write(&tmp_path, json_str)
-            .map_err(|e| format!("{}: Failed writing tmp file: {}", THREATSVC_ERR_IO, e))?;
-        fs::rename(&tmp_path, &valid_path)
-            .map_err(|e| format!("{}: Failed atomic rename: {}", THREATSVC_ERR_IO, e))?;
+        if let Err(e) = fs::write(&tmp_path, json_str) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed writing tmp file: {}", THREATSVC_ERR_IO, e));
+        }
+
+        if let Err(e) = fs::rename(&tmp_path, &valid_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed atomic rename: {}", THREATSVC_ERR_IO, e));
+        }
 
         Ok(())
     }

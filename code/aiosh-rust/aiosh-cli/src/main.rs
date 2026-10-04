@@ -21012,6 +21012,48 @@ mod compliance_cli_tests {
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
+
+    #[test]
+    fn test_compliance_cli_integration_smoke() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_comp_cli_integ_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("compliance_map.json").to_string_lossy().to_string();
+
+        // 1. Initialize store
+        assert_eq!(cmd_compliance(&s(&["init", "--path", &store])), 0);
+
+        // 2. Register end-to-end mapping
+        assert_eq!(cmd_compliance(&s(&[
+            "register",
+            "--id", "MAP-E2E-001",
+            "--control", "AC-3",
+            "--framework", "nist",
+            "--target-type", "pep_gate",
+            "--target-ref", "pep_enforce_gate",
+            "--mitigation", "Integration test mitigation verification.",
+            "--path", &store,
+        ])), 0);
+
+        // 3. Show registered entry
+        assert_eq!(cmd_compliance(&s(&["show", "MAP-E2E-001", "--path", &store, "--json"])), 0);
+
+        // 4. Update status
+        assert_eq!(cmd_compliance(&s(&[
+            "status",
+            "MAP-E2E-001",
+            "compliant",
+            "--reason", "Integration verification passed",
+            "--path", &store,
+        ])), 0);
+
+        // 5. Evaluate framework posture
+        assert_eq!(cmd_compliance(&s(&["assess", "--framework", "nist", "--path", &store, "--json"])), 0);
+
+        // 6. Check PEP coverage
+        assert_eq!(cmd_compliance(&s(&["check-pep", "pep_enforce_gate", "--path", &store])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
 }
 
 

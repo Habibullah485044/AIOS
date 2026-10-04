@@ -1,120 +1,74 @@
-# Specification: Threat Model Maintenance Store Recovery & Integrity Validation (SPEC-THREAT-MODEL-RECOVERY)
+# Specification & Operator Guide: Threat Model Maintenance Store Recovery & Integrity Validation (SPEC-THREAT-MODEL-RECOVERY)
 
-- **Status**: APPROVED
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-04
 - **Scope**: Catalog integrity verification, corruption quarantine, automated backup snapshotting, and non-destructive self-healing recovery for Threat Model Maintenance.
 
-## 1. Data Contracts
+## 1. Overview
+The Threat Model Recovery subsystem safeguards the threat catalog (`threats.json`) against crashes, partial writes, corrupted serialization, and storage failures. It provides non-destructive inspection, atomic repairs, timestamped quarantine preserving bad data, and snapshot restoration.
 
-### 1.1 Issue Severity & Types
+## 2. Operator Usage & Code Examples
+
+### 2.1 Rust API Usage
+
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThreatCatalogStatus {
-    Healthy,
-    Degraded,
-    Corrupted,
-    Missing,
-}
+use std::path::Path;
+use aiosh_core::threat_model_recovery::{ThreatRecoveryService, ThreatCatalogStatus};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThreatIssueSeverity {
-    Warning,
-    Error,
-    Critical,
-}
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let catalog_path = Path::new("docs/threat_model.json");
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ThreatIssueType {
-    MissingCatalogFile,
-    InvalidJsonSyntax,
-    SchemaMismatch,
-    CorruptedEntry,
-    DuplicateThreatId,
-    OversizedPayload,
-    SymlinkForbidden,
-    InvalidPathTraversal,
-    InvalidTimestamp,
+    // 1. Non-destructively inspect catalog integrity
+    let report = ThreatRecoveryService::verify_integrity(catalog_path);
+    println!("Store status: {:?}, Total threats: {}", report.status, report.total_threats);
+
+    if report.status != ThreatCatalogStatus::Healthy {
+        // 2. Perform automated repair
+        let recovery = ThreatRecoveryService::repair_catalog(catalog_path)?;
+        println!("Recovered {} entries. Quarantined file: {:?}", 
+            recovery.threats_recovered, recovery.quarantined_path);
+    }
+
+    // 3. Create backup snapshot
+    let backup_path = ThreatRecoveryService::create_backup(catalog_path)?;
+    println!("Backup written to: {}", backup_path.display());
+
+    Ok(())
 }
 ```
 
-### 1.2 Diagnostic & Recovery Models
+### 2.2 Integration via `ThreatModelService`
+
 ```rust
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ThreatIntegrityIssue {
-    pub severity: ThreatIssueSeverity,
-    pub issue_type: ThreatIssueType,
-    pub threat_id: Option<String>,
-    pub details: String,
-}
+use std::path::Path;
+use aiosh_core::threat_model_service::ThreatModelService;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ThreatIntegrityReport {
-    pub store_path: String,
-    pub status: ThreatCatalogStatus,
-    pub total_threats: usize,
-    pub valid_threats: usize,
-    pub corrupted_threats: usize,
-    pub issues: Vec<ThreatIntegrityIssue>,
-    pub has_backup: bool,
-    pub backup_path: Option<String>,
-    pub timestamp: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ThreatRecoveryAction {
-    pub action_type: String,
-    pub target_id: Option<String>,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ThreatRecoveryReport {
-    pub store_path: String,
-    pub success: bool,
-    pub actions: Vec<ThreatRecoveryAction>,
-    pub threats_recovered: usize,
-    pub threats_dropped: usize,
-    pub quarantined_path: Option<String>,
-    pub timestamp: String,
+let path = Path::new("docs/threat_model.json");
+let integrity = ThreatModelService::verify_integrity(path);
+if !integrity.issues.is_empty() {
+    let result = ThreatModelService::repair_store(path).expect("repair succeeded");
+    println!("Repaired catalog: threats recovered = {}", result.threats_recovered);
 }
 ```
 
-## 2. Service Interface: `ThreatRecoveryService`
+## 3. Invariants & Security Guarantees
+- `THREATREC1` (**Non-Destructive Verification**): `verify_integrity` performs read-only checks without side effects.
+- `THREATREC2` (**Deterministic Backup**): `create_backup` produces `<path>.bak` snapshots.
+- `THREATREC3` (**Quarantine Preservation**): Corrupted catalogs are quarantined with unique timestamped filenames (`.corrupt.{pid}.{nanos}`) before salvage/repair.
+- `THREATREC4` (**Path Traversal Rejection**): Path traversals (`..`), UNC paths, control characters, and symlinks are strictly rejected (`THREATREC_ERR_PATH_TRAVERSAL`).
+- `THREATREC5` (**Safe Baseline Fallback**): Completely irreparable or missing catalogs safely reseed canonical STRIDE threat entries.
 
-```rust
-pub struct ThreatRecoveryService;
+## 4. Constraints & Known Limitations
+- Maximum store file size is hard-capped at 1 MiB (`MAX_THREAT_MODEL_STORE_SIZE`).
+- Path depth cannot exceed 16 components.
+- Automatic recovery salvages all entries matching valid schema constraints; malformed entries are quarantined and dropped from active catalog.
 
-impl ThreatRecoveryService {
-    /// Validates path against directory traversal, control characters, and symlinks.
-    pub fn validate_path(path: &Path) -> Result<PathBuf, String>;
-
-    /// Derives standard backup path `<path>.bak`.
-    pub fn backup_path_for(path: &Path) -> PathBuf;
-
-    /// Derives quarantine path `<path>.corrupt.<nanos>`.
-    pub fn quarantine_path_for(path: &Path) -> PathBuf;
-
-    /// Creates backup snapshot of threat catalog.
-    pub fn create_backup(path: &Path) -> Result<PathBuf, String>;
-
-    /// Non-destructively verifies catalog integrity.
-    pub fn verify_integrity(path: &Path) -> ThreatIntegrityReport;
-
-    /// Repairs corrupted catalog, salvaging valid entries, quarantining corrupt source.
-    pub fn repair_catalog(path: &Path) -> Result<ThreatRecoveryReport, String>;
-
-    /// Restores catalog from `.bak` backup file.
-    pub fn restore_from_backup(path: &Path) -> Result<ThreatRecoveryReport, String>;
-}
-```
-
-## 3. Invariants & Security Mandates
-
-- **THREATREC1 (Non-Destructive Verification)**: `verify_integrity` does not alter source files.
-- **THREATREC2 (Deterministic Backup)**: `create_backup` writes atomically to `.bak` preserving original permissions.
-- **THREATREC3 (Quarantine Preservation)**: Damaged catalogs are moved to `.corrupt.<nanos>` before salvage/repair.
-- **THREATREC4 (Path Traversal / Device Rejection)**: `..`, control characters, UNC paths, and symlinks are strictly rejected.
-- **THREATREC5 (Safe Baseline Fallback)**: If file is completely empty or missing, optionally seeds canonical STRIDE catalog.
+## 5. Evidence Artifacts
+- Research: [T-02791 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02791-recovery-research.md)
+- Specification: [T-02792 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02792-recovery-validation-specification.md)
+- Scaffold: [T-02793 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02793-recovery-validation-scaffold.md)
+- Implementation: [T-02794 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02794-recovery-validation-implementation.md)
+- Unit Tests: [T-02795 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02795-recovery-validation-unit-test.md)
+- Integration: [T-02796 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02796-recovery-validation-integration.md)
+- Security Review: [T-02797 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02797-recovery-validation-security-review.md)
+- Hardening: [T-02798 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02798-recovery-validation-hardening.md)

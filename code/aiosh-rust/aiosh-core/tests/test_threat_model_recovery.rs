@@ -183,3 +183,37 @@ fn test_recovery_partial_corrupted_entries_salvage() {
     assert_eq!(loaded.snapshot.threats.len(), 1);
     assert_eq!(loaded.snapshot.threats[0].id, "T-VALID-01");
 }
+
+#[test]
+fn test_recovery_oversized_payload_rejection() {
+    let dir = tempdir().unwrap();
+    let oversized_path = dir.path().join("oversized.json");
+
+    // Write file exceeding 1 MiB
+    let big_buffer = vec![b' '; (MAX_THREAT_MODEL_STORE_SIZE + 1024) as usize];
+    fs::write(&oversized_path, big_buffer).unwrap();
+
+    let report = ThreatRecoveryService::verify_integrity(&oversized_path);
+    assert_eq!(report.status, ThreatCatalogStatus::Corrupted);
+    assert!(report.issues.iter().any(|i| i.issue_type == ThreatIssueType::OversizedPayload));
+}
+
+#[test]
+fn test_recovery_no_temp_leak_on_repair() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join("threats.json");
+
+    let svc = ThreatModelService::with_canonical_threats();
+    svc.save_to_path(&store_path).unwrap();
+
+    let repair = ThreatRecoveryService::repair_catalog(&store_path).expect("repair");
+    assert!(repair.success);
+
+    // Assert no leftover temporary files in directory
+    for entry in fs::read_dir(dir.path()).unwrap() {
+        let entry = entry.unwrap();
+        let fname = entry.file_name().to_string_lossy().to_string();
+        assert!(!fname.contains(".tmp."), "Found leaked temporary file: {}", fname);
+    }
+}
+

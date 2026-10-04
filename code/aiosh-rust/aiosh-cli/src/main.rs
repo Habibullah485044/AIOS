@@ -19464,14 +19464,58 @@ fn cmd_compliance(args: &[String]) -> i32 {
 
     match sub {
         Some("list") => {
+            let service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        classify_and_emit(
+                            &mut ctx, "compliance", "list", json!({ "error": &msg }),
+                            "failure", None, Some("Load failure"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            let filter_fw = parse_flag(rest, "--framework").and_then(|f| aiosh_core::ComplianceFramework::parse_framework(&f));
+            let filter_status = parse_flag(rest, "--status").and_then(|s| aiosh_core::ComplianceStatus::parse_status(&s));
+
+            let mut mappings: Vec<&aiosh_core::ComplianceMappingEntry> = service.snapshot.mappings.iter().collect();
+            if let Some(fw) = filter_fw {
+                mappings.retain(|m| m.framework == fw);
+            }
+            if let Some(st) = filter_status {
+                mappings.retain(|m| m.status == st);
+            }
+
             classify_and_emit(
-                &mut ctx, "compliance", "list", json!({ "path": path_str }),
+                &mut ctx, "compliance", "list", json!({ "path": path_str, "count": mappings.len() }),
                 "success", None, Some("Listed compliance mappings"), "operator", None,
             );
+
             if is_json {
-                println!("{}", json!({ "code": 0, "status": "scaffold" }));
+                println!("{}", json!({ "code": 0, "count": mappings.len(), "mappings": mappings }));
             } else {
-                println!("aiosh compliance list scaffold");
+                println!("{:<18} {:<12} {:<10} {:<18} {:<20} {}", "ID", "CONTROL", "FRAMEWORK", "TARGET_TYPE", "STATUS", "MITIGATION");
+                println!("{:-<18} {:-<12} {:-<10} {:-<18} {:-<20} {:-<30}", "", "", "", "", "", "");
+                for m in &mappings {
+                    println!("{:<18} {:<12} {:<10} {:<18} {:<20} {}",
+                        sanitize_terminal_output(&m.id),
+                        sanitize_terminal_output(&m.control_id),
+                        sanitize_terminal_output(m.framework.as_str()),
+                        sanitize_terminal_output(m.target_type.as_str()),
+                        sanitize_terminal_output(m.status.as_str()),
+                        sanitize_terminal_output(&m.mitigation_summary),
+                    );
+                }
             }
             0
         }
@@ -19492,50 +19536,471 @@ fn cmd_compliance(args: &[String]) -> i32 {
                 }
                 return 2;
             }
+
+            let service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        classify_and_emit(
+                            &mut ctx, "compliance", "show", json!({ "error": &msg }),
+                            "failure", Some(&id), Some("Load failure"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            match service.get_mapping(&id) {
+                Some(entry) => {
+                    classify_and_emit(
+                        &mut ctx, "compliance", "show", json!({ "id": id, "path": path_str }),
+                        "success", Some(&id), Some("Displayed compliance mapping"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "mapping": entry }));
+                    } else {
+                        println!("ID:          {}", sanitize_terminal_output(&entry.id));
+                        println!("Control ID:  {}", sanitize_terminal_output(&entry.control_id));
+                        println!("Framework:   {}", sanitize_terminal_output(entry.framework.as_str()));
+                        println!("Target Type: {}", sanitize_terminal_output(entry.target_type.as_str()));
+                        println!("Target Ref:  {}", sanitize_terminal_output(&entry.target_ref));
+                        println!("Status:      {}", sanitize_terminal_output(entry.status.as_str()));
+                        println!("Mitigation:  {}", sanitize_terminal_output(&entry.mitigation_summary));
+                        println!("Threat IDs:  {}", sanitize_terminal_output(&entry.threat_ids.join(", ")));
+                        println!("Tags:        {}", sanitize_terminal_output(&entry.tags.join(", ")));
+                        println!("Created At:  {}", sanitize_terminal_output(&entry.created_at));
+                        println!("Updated At:  {}", sanitize_terminal_output(&entry.updated_at));
+                    }
+                    0
+                }
+                None => {
+                    let msg = format!("Compliance mapping '{}' not found in store", id);
+                    classify_and_emit(
+                        &mut ctx, "compliance", "show", json!({ "id": id, "error": &msg }),
+                        "failure", Some(&id), Some("Mapping not found"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "MAPPING_NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("register") => {
+            let id = parse_flag(rest, "--id");
+            let control = parse_flag(rest, "--control").or_else(|| parse_flag(rest, "--ctrl"));
+            let fw_str = parse_flag(rest, "--framework").or_else(|| parse_flag(rest, "--fw"));
+            let tt_str = parse_flag(rest, "--target-type");
+            let tref = parse_flag(rest, "--target-ref");
+            let mit = parse_flag(rest, "--mitigation").or_else(|| parse_flag(rest, "--mit"));
+
+            if id.is_none() || control.is_none() || fw_str.is_none() || tt_str.is_none() || tref.is_none() || mit.is_none() {
+                let msg = "Missing required flag: --id, --control, --framework, --target-type, --target-ref, --mitigation are required".to_string();
+                classify_and_emit(
+                    &mut ctx, "compliance", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Missing required flags"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_FLAGS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let id = id.unwrap();
+            let control = control.unwrap();
+            let fw_str = fw_str.unwrap();
+            let tt_str = tt_str.unwrap();
+            let tref = tref.unwrap();
+            let mit = mit.unwrap();
+
+            let fw = match aiosh_core::ComplianceFramework::parse_framework(&fw_str) {
+                Some(f) => f,
+                None => {
+                    let msg = format!("Invalid framework '{}'. Valid options: nist, soc2, iso, cis, hipaa, pci", fw_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_FRAMEWORK", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let target_type = match aiosh_core::SubstrateTargetType::parse_target_type(&tt_str) {
+                Some(tt) => tt,
+                None => {
+                    let msg = format!("Invalid target-type '{}'. Valid options: pep_gate, capability_token, audit_ring, threat_mitigation, constitution_rule", tt_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_TARGET_TYPE", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let status = parse_flag(rest, "--status")
+                .and_then(|s| aiosh_core::ComplianceStatus::parse_status(&s))
+                .unwrap_or(aiosh_core::ComplianceStatus::NonCompliant);
+
+            let threat_ids: Vec<String> = parse_flag(rest, "--threats")
+                .map(|s| s.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+                .unwrap_or_default();
+            let tags: Vec<String> = parse_flag(rest, "--tags")
+                .map(|s| s.split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+                .unwrap_or_default();
+
+            let entry = match aiosh_core::ComplianceMappingEntry::new(
+                &id, &control, fw, target_type, &tref, threat_ids, status, &mit, tags,
+            ) {
+                Ok(e) => e,
+                Err(e) => {
+                    let msg = format!("Domain validation failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "compliance", "register", json!({ "error": &msg }),
+                        "failure", None, Some("Validation failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            if let Err(e) = service.register_mapping(entry) {
+                let msg = format!("Failed to register mapping: {}", e);
+                classify_and_emit(
+                    &mut ctx, "compliance", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Registration failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "REGISTER_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to persist compliance store: {}", e);
+                classify_and_emit(
+                    &mut ctx, "compliance", "register", json!({ "error": &msg }),
+                    "failure", None, Some("Persistence failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
             classify_and_emit(
-                &mut ctx, "compliance", "show", json!({ "id": id }),
-                "success", Some(&id), Some("Show mapping"), "operator", None,
+                &mut ctx, "compliance", "register", json!({ "id": id, "path": path_str }),
+                "success", Some(&id), Some("Registered compliance mapping"), "operator", None,
             );
             if is_json {
-                println!("{}", json!({ "code": 0, "id": id, "status": "scaffold" }));
+                println!("{}", json!({ "code": 0, "message": format!("Mapping '{}' registered successfully", id) }));
             } else {
-                println!("aiosh compliance show scaffold: {}", sanitize_terminal_output(&id));
+                println!("Compliance mapping '{}' registered successfully.", sanitize_terminal_output(&id));
             }
             0
         }
-        Some("register") => {
-            classify_and_emit(
-                &mut ctx, "compliance", "register", json!({ "path": path_str }),
-                "success", None, Some("Register mapping"), "operator", None,
-            );
-            0
-        }
         Some("status") => {
+            let id = parse_flag(rest, "--id")
+                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .unwrap_or_default();
+            let status_str = parse_flag(rest, "--status")
+                .or_else(|| {
+                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+                    if non_flags.len() >= 2 {
+                        Some(non_flags[1].clone())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if id.is_empty() || status_str.is_empty() {
+                let msg = "Usage: aiosh compliance status <ID> <STATUS> [--reason <REASON>]".to_string();
+                classify_and_emit(
+                    &mut ctx, "compliance", "status", json!({ "error": &msg }),
+                    "failure", None, Some("Missing arguments"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_ARGS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let status = match aiosh_core::ComplianceStatus::parse_status(&status_str) {
+                Some(s) => s,
+                None => {
+                    let msg = format!("Invalid status '{}'. Valid options: compliant, partially_compliant, non_compliant, not_applicable", status_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "INVALID_STATUS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let reason = parse_flag(rest, "--reason")
+                .or_else(|| {
+                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+                    if non_flags.len() >= 3 {
+                        Some(non_flags[2..].iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" "))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "CLI status update".to_string());
+
+            let mut service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            if let Err(e) = service.update_status(&id, status, &reason) {
+                let msg = format!("Failed to update status: {}", e);
+                classify_and_emit(
+                    &mut ctx, "compliance", "status", json!({ "id": id, "error": &msg }),
+                    "failure", Some(&id), Some("Status update failed"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "STATUS_UPDATE_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to persist compliance store: {}", e);
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
             classify_and_emit(
-                &mut ctx, "compliance", "status", json!({ "path": path_str }),
-                "success", None, Some("Status mapping"), "operator", None,
+                &mut ctx, "compliance", "status", json!({ "id": id, "status": status.as_str(), "reason": &reason }),
+                "success", Some(&id), Some("Updated compliance status"), "operator", None,
             );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Mapping '{}' transitioned to status '{}'", id, status.as_str()) }));
+            } else {
+                println!("Mapping '{}' transitioned to status '{}'.", sanitize_terminal_output(&id), sanitize_terminal_output(status.as_str()));
+            }
             0
         }
         Some("assess") => {
+            let service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            let fw_filter = match parse_flag(rest, "--framework") {
+                Some(f) => match aiosh_core::ComplianceFramework::parse_framework(&f) {
+                    Some(fw) => Some(fw),
+                    None => {
+                        let msg = format!("Invalid framework '{}'", f);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "error": { "code": "INVALID_FRAMEWORK", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                },
+                None => None,
+            };
+
+            let report = service.assess_framework(fw_filter);
             classify_and_emit(
-                &mut ctx, "compliance", "assess", json!({ "path": path_str }),
-                "success", None, Some("Assess framework"), "operator", None,
+                &mut ctx, "compliance", "assess", json!({ "assessment": &report }),
+                "success", None, Some("Calculated compliance assessment"), "operator", None,
             );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "assessment": report }));
+            } else {
+                println!("--- Compliance Framework Assessment ---");
+                println!("Total Mappings:        {}", report.total_mappings);
+                println!("Compliant:             {}", report.compliant_count);
+                println!("Partially Compliant:   {}", report.partially_compliant_count);
+                println!("Non Compliant:         {}", report.non_compliant_count);
+                println!("Not Applicable:        {}", report.not_applicable_count);
+                println!("Compliance Percentage: {:.1}%", report.compliance_percentage);
+                println!("Gap Control IDs:       {}", sanitize_terminal_output(&report.gap_control_ids.join(", ")));
+                println!("Evaluated At:          {}", report.evaluated_at);
+            }
             0
         }
         Some("check-pep") => {
-            classify_and_emit(
-                &mut ctx, "compliance", "check-pep", json!({ "path": path_str }),
-                "success", None, Some("Check PEP coverage"), "operator", None,
-            );
-            0
+            let gates: Vec<String> = rest.iter()
+                .filter(|s| !s.starts_with("--"))
+                .cloned()
+                .collect();
+
+            if gates.is_empty() {
+                let msg = "Usage: aiosh compliance check-pep <GATE...> [--json] [--path P]".to_string();
+                classify_and_emit(
+                    &mut ctx, "compliance", "check-pep", json!({ "error": &msg }),
+                    "failure", None, Some("Missing gate arguments"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "error": { "code": "MISSING_GATES", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            let service = if path.exists() {
+                match aiosh_core::ComplianceService::load_from_path(path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let msg = format!("Failed to load compliance store: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 3, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 3;
+                    }
+                }
+            } else {
+                aiosh_core::ComplianceService::with_canonical_baseline()
+            };
+
+            let gate_refs: Vec<&str> = gates.iter().map(|s| s.as_str()).collect();
+            let uncovered = service.uncovered_pep_gates(&gate_refs);
+
+            if uncovered.is_empty() {
+                classify_and_emit(
+                    &mut ctx, "compliance", "check-pep", json!({ "gates": gates, "status": "fully_covered" }),
+                    "success", None, Some("All PEP gates covered by compliance mappings"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "status": "covered", "gates": gates }));
+                } else {
+                    println!("All specified PEP gates ({}) have verified compliance coverage.", gates.join(", "));
+                }
+                0
+            } else {
+                let msg = format!("Uncovered PEP gates detected: {}", uncovered.join(", "));
+                classify_and_emit(
+                    &mut ctx, "compliance", "check-pep", json!({ "gates": gates, "uncovered": &uncovered }),
+                    "failure", None, Some("PEP gates missing compliance coverage"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "status": "uncovered", "uncovered": uncovered }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                1
+            }
         }
         Some("init") => {
+            if path.exists() && !has_flag(rest, "--force") {
+                let msg = format!("Compliance store file already exists at '{}'. Pass --force to overwrite.", path.display());
+                classify_and_emit(
+                    &mut ctx, "compliance", "init", json!({ "error": &msg }),
+                    "failure", None, Some("File already exists"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "error": { "code": "ALREADY_EXISTS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            let service = aiosh_core::ComplianceService::with_canonical_baseline();
+            if let Err(e) = service.save_to_path(path) {
+                let msg = format!("Failed to initialize compliance store: {}", e);
+                classify_and_emit(
+                    &mut ctx, "compliance", "init", json!({ "error": &msg }),
+                    "failure", None, Some("Save failure"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 3, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 3;
+            }
+
             classify_and_emit(
                 &mut ctx, "compliance", "init", json!({ "path": path_str }),
-                "success", None, Some("Init compliance store"), "operator", None,
+                "success", None, Some("Initialized canonical compliance store"), "operator", None,
             );
+            if is_json {
+                println!("{}", json!({ "code": 0, "message": format!("Compliance store initialized at '{}'", path.display()) }));
+            } else {
+                println!("Compliance store initialized with canonical baseline at: {}", path.display());
+            }
             0
         }
         Some("--help") | Some("-h") | None => {

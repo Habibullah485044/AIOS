@@ -73,3 +73,54 @@ SUBCOMMANDS:
 - `COMPLYCLI3` (**Terminal Sanitization**): Dynamic strings sanitized against ANSI control characters.
 - `COMPLYCLI4` (**Zero Secret Disclosure**): Credentials and private key material scrubbed from outputs.
 - `COMPLYCLI5` (**Atomic Persistence**): State mutations write atomically using temp files.
+
+## 3. Usage Examples
+
+### 3.1 Initialize Baseline Store
+```bash
+aiosh compliance init --path /path/to/compliance_map.json
+```
+
+### 3.2 List Mappings
+```bash
+aiosh compliance list --framework nist --status compliant --json
+```
+
+### 3.3 Register New Mapping
+```bash
+aiosh compliance register \
+  --id MAP-NIST-AC3-EXEC \
+  --control AC-3 \
+  --framework nist \
+  --target-type pep_gate \
+  --target-ref pep_gate_exec \
+  --mitigation "Enforces policy before process execution" \
+  --status compliant \
+  --tags access_control,pep
+```
+
+### 3.4 Assess Compliance Posture
+```bash
+aiosh compliance assess --framework nist --json
+```
+
+### 3.5 Check PEP Gate Coverage
+```bash
+aiosh compliance check-pep pep_gate_exec pep_gate_network --json
+```
+
+## 4. Constraints & Known Limitations
+1. **Local File Substrate**: Persistence is backed by JSON stores up to 1 MiB (`MAX_COMPLIANCE_STORE_SIZE`); large-scale distributed deployments should synchronize via git or central configuration repositories.
+2. **Framework Vocabulary**: Canonical frameworks are restricted to `nist`, `soc2`, `iso`, `cis`, `hipaa`, and `pci`. Custom frameworks require identifier prefixes.
+3. **Audit Ring Dependency**: Commands record events via `classify_and_emit` to local SQLite WAL ring. In air-gapped environments without write access to local appdata, audit logs fall back to standard error.
+
+## 5. Evidence & Traceability Links
+- `T-02821`: [docs/tasks/evidence/T-02821-cli-surface-research.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02821-cli-surface-research.md)
+- `T-02822`: [docs/tasks/evidence/T-02822-cli-surface-specification.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02822-cli-surface-specification.md)
+- `T-02823`: [docs/tasks/evidence/T-02823-cli-surface-scaffold.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02823-cli-surface-scaffold.md)
+- `T-02824`: [docs/tasks/evidence/T-02824-cli-surface-implementation.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02824-cli-surface-implementation.md)
+- `T-02825`: [docs/tasks/evidence/T-02825-cli-surface-unit-test.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02825-cli-surface-unit-test.md)
+- `T-02826`: [docs/tasks/evidence/T-02826-cli-surface-integration.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02826-cli-surface-integration.md)
+- `T-02827`: [docs/tasks/evidence/T-02827-cli-surface-security-review.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02827-cli-surface-security-review.md)
+- `T-02828`: [docs/tasks/evidence/T-02828-cli-surface-hardening.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02828-cli-surface-hardening.md)
+

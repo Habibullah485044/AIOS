@@ -44,6 +44,7 @@ pub mod capability_recovery;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;
+pub mod compliance_data_model;
 pub mod dispatch;
 pub mod distro;
 pub mod distro_config;
@@ -537,6 +538,19 @@ pub use threat_model_recovery::{
     ThreatRecoveryReport, ThreatRecoveryService,
     THREATREC_ERR_IO, THREATREC_ERR_PARSE, THREATREC_ERR_PATH_TRAVERSAL,
     THREATREC_ERR_FILE_SIZE, THREATREC_ERR_VALIDATION,
+};
+pub use compliance_data_model::{
+    ComplianceFramework, ComplianceStatus, SubstrateTargetType,
+    ComplianceControl, ComplianceMappingEntry, ComplianceCatalogSnapshot,
+    validate_identifier as validate_compliance_identifier,
+    validate_title as validate_compliance_title,
+    validate_text_length as validate_compliance_text_length,
+    MAX_COMPLIANCE_ID_LEN, MAX_COMPLIANCE_TITLE_LEN, MAX_COMPLIANCE_DESC_LEN,
+    MAX_COMPLIANCE_NOTES_LEN, MAX_THREAT_IDS_COUNT, MAX_TAGS_COUNT,
+    MAX_COMPLIANCE_ENTRIES_CAPACITY, COMPLIANCE_ERR_INVALID_ID,
+    COMPLIANCE_ERR_INVALID_TITLE, COMPLIANCE_ERR_BOUNDS_EXCEEDED,
+    COMPLIANCE_ERR_CONTROL_CHARS, COMPLIANCE_ERR_DUPLICATE_ID,
+    COMPLIANCE_ERR_INVALID_STATUS_TRANSITION, COMPLIANCE_ERR_MISSING_SUBSTRATE_REF,
 };
 
 

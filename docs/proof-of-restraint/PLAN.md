@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | **Feature ID** | `proof-of-restraint` |
-| **Status** | Active Planning (Living Document) |
+| **Status** | Accepted & Locked via ADR-0037 |
 | **Date Initiated** | 2026-10-04 |
 | **Pillar** | Pillar C (AI Kernel Subsystem) & Pillar 2 (Security Kernel & PEP Fabric) |
 | **Ledger Epic** | `Proof of Restraint` |
 | **Ledger Block** | `docs/proof-of-restraint/ledger_block.json` |
 | **Execution Log** | `docs/proof-of-restraint/LOG.md` |
-| **Target ADR** | `mostimportanAIfolder/ADR-0037-proof-of-restraint.md` (to be locked in Kickoff) |
+| **Target ADR** | `mostimportanAIfolder/ADR-0037-proof-of-restraint.md` (Accepted & Binding) |
 
 ---
 
@@ -197,3 +197,4 @@ To ensure that multiple agents (Claude, Gemini, Codex, or human operators) maint
 | Date | Task ID | Author | Section | Nature of Change & Technical Justification |
 |---|---|---|---|---|
 | 2026-10-04 | Pre-T-02831 | Architecture Agent | All | Initial comprehensive baseline plan & living specification created. |
+| 2026-10-04 | T-02831 | Architecture Agent | All | Locked ADR-0037 as accepted and binding; verified code baseline. |

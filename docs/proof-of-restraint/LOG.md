@@ -27,4 +27,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `tools/test_ledger_insert_block.py` (created)
 - **Status / Next Steps**:
   - Ready for formal insertion of the Proof of Restraint feature block into `MASTER_TASK_LEDGER.jsonl`.
+
+### 2026-10-04 — T-02831: Kickoff ADR + Living Plan Locked
+- **Task ID**: `T-02831`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / Kickoff
+- **Agent**: Antigravity System
+- **Summary**:
+  - Locked `mostimportanAIfolder/ADR-0037-proof-of-restraint.md` as accepted and binding.
+  - Formally linked ADR-0037 in `docs/proof-of-restraint/PLAN.md`.
+  - Audited security posture: verified that without external anchoring, a simple SHA-256 WAL hash chain can be rewritten from genesis; certified Layer 1 (one-shot token gate) and Layer 2 (external checkpoints & Bloom exclusion) as required counter-measures.
+  - Verified ledger invariants and all smoke suites green.
+- **Files Touched**:
+  - `mostimportanAIfolder/ADR-0037-proof-of-restraint.md` (created)
+  - `docs/proof-of-restraint/PLAN.md` (updated status and change log)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Kickoff complete. Advancing to T-02832 (`capability mint/redeem records: Research`).
 ---

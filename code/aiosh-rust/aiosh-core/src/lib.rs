@@ -173,6 +173,7 @@ pub mod threat_model_config;
 pub mod threat_model_policy;
 pub mod threat_model_observability;
 pub mod threat_model_doc;
+pub mod threat_model_recovery;
 pub mod toolchain_config;
 pub mod toolchain_service;
 pub mod triage;
@@ -529,6 +530,13 @@ pub use threat_model_doc::{
     ThreatDocCategory, ThreatDocSection, ThreatDocTopic, ThreatDocSearchResult, ThreatDocRepository,
     MAX_THREAT_DOC_QUERY_LEN, MAX_THREAT_DOC_SEARCH_RESULTS, MAX_THREAT_DOC_SNIPPET_LEN,
     THREATDOC_ERR_NOT_FOUND, THREATDOC_ERR_QUERY_BOUNDS,
+};
+pub use threat_model_recovery::{
+    ThreatCatalogStatus, ThreatIssueSeverity, ThreatIssueType,
+    ThreatIntegrityIssue, ThreatIntegrityReport, ThreatRecoveryAction,
+    ThreatRecoveryReport, ThreatRecoveryService,
+    THREATREC_ERR_IO, THREATREC_ERR_PARSE, THREATREC_ERR_PATH_TRAVERSAL,
+    THREATREC_ERR_FILE_SIZE, THREATREC_ERR_VALIDATION,
 };
 
 

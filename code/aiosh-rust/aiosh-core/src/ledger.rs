@@ -382,6 +382,53 @@ pub fn find_task_in_ledger(ledger_path: &Path, task_id: u64) -> Result<Option<Va
     Ok(None)
 }
 
+/// Atomically rewrite task line in MASTER_TASK_LEDGER.jsonl with new status.
+pub fn update_ledger_task_status(ledger_path: &Path, task_id: u64, new_status: &str) -> Result<bool, String> {
+    if !ledger_path.exists() {
+        return Ok(false);
+    }
+    let content = read_capped(ledger_path, config()?.max_ledger_bytes)?;
+    let mut modified = false;
+    let mut out = String::with_capacity(content.len());
+    let needle = format!("\"id\": {}", task_id);
+    let needle_compact = format!("\"id\":{}", task_id);
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !modified && (trimmed.contains(&needle) || trimmed.contains(&needle_compact)) {
+            if let Ok(mut val) = serde_json::from_str::<Value>(trimmed) {
+                if val.get("id").and_then(|id| id.as_u64()) == Some(task_id) {
+                    if let Some(obj) = val.as_object_mut() {
+                        obj.insert("status".to_string(), json!(new_status));
+                        let serialized = serde_json::to_string(&val)
+                            .map_err(|e| format!("serialize task {}: {}", task_id, e))?;
+                        out.push_str(&serialized);
+                        out.push('\n');
+                        modified = true;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    if modified {
+        let parent = ledger_path.parent().unwrap_or_else(|| Path::new("."));
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp = parent.join(format!(".ledger.tmp.{}.{}", pid, nanos));
+        std::fs::write(&tmp, out.as_bytes()).map_err(|e| format!("write {}: {}", tmp.display(), e))?;
+        std::fs::rename(&tmp, ledger_path).map_err(|e| format!("rename {}: {}", tmp.display(), e))?;
+    }
+
+    Ok(modified)
+}
+
 /// Validate ledger invariants (spec §2.1): sequential ids, linear deps,
 /// next_task linkage.
 pub fn assert_ledger_invariants(ledger_path: &Path) -> Result<Value, String> {
@@ -482,6 +529,7 @@ pub fn complete_task(
     state.last_event_seq += 1;
     let saved = serde_json::to_value(&state).map_err(|e| e.to_string())?;
     save_state_atomic(&saved, &p.state)?;
+    let _ = update_ledger_task_status(&p.ledger, task_id, "done");
     let ev_file = ensure_evidence_stub(p, task_id, &task)?;
     Ok(json!({
         "ok": true,
@@ -518,6 +566,7 @@ pub fn block_task(p: &LedgerPaths, task_id: u64, reason: &str) -> Result<Value, 
     state.last_event_seq += 1;
     let saved = serde_json::to_value(&state).map_err(|e| e.to_string())?;
     save_state_atomic(&saved, &p.state)?;
+    let _ = update_ledger_task_status(&p.ledger, task_id, "blocked");
     Ok(json!({ "ok": true, "blocked": task_id, "next_task": state.next_task }))
 }
 
@@ -542,6 +591,7 @@ pub fn unblock_task(p: &LedgerPaths, task_id: u64, reason: &str) -> Result<Value
     state.last_event_seq += 1;
     let saved = serde_json::to_value(&state).map_err(|e| e.to_string())?;
     save_state_atomic(&saved, &p.state)?;
+    let _ = update_ledger_task_status(&p.ledger, task_id, "pending");
     Ok(json!({ "ok": true, "unblocked": task_id, "next_task": task_id }))
 }
 
@@ -577,6 +627,7 @@ pub fn skip_task(p: &LedgerPaths, task_id: u64, reason: &str) -> Result<Value, S
     state.last_event_seq += 1;
     let saved = serde_json::to_value(&state).map_err(|e| e.to_string())?;
     save_state_atomic(&saved, &p.state)?;
+    let _ = update_ledger_task_status(&p.ledger, task_id, "skipped");
     Ok(json!({
         "ok": true,
         "skipped": task_id,

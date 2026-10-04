@@ -19520,8 +19520,20 @@ fn cmd_compliance(args: &[String]) -> i32 {
             0
         }
         Some("show") => {
+            let mut non_flags: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--path" || rest[i] == "--id" {
+                    i += 2;
+                } else if rest[i].starts_with("--") {
+                    i += 1;
+                } else {
+                    non_flags.push(rest[i].clone());
+                    i += 1;
+                }
+            }
             let id = parse_flag(rest, "--id")
-                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .or_else(|| non_flags.first().cloned())
                 .unwrap_or_default();
             if id.is_empty() {
                 let msg = "Missing required mapping ID. Usage: aiosh compliance show <ID>".to_string();
@@ -19738,12 +19750,23 @@ fn cmd_compliance(args: &[String]) -> i32 {
             0
         }
         Some("status") => {
+            let mut non_flags: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--path" || rest[i] == "--reason" || rest[i] == "--status" || rest[i] == "--id" {
+                    i += 2;
+                } else if rest[i].starts_with("--") {
+                    i += 1;
+                } else {
+                    non_flags.push(rest[i].clone());
+                    i += 1;
+                }
+            }
             let id = parse_flag(rest, "--id")
-                .or_else(|| rest.first().filter(|s| !s.starts_with("--")).cloned())
+                .or_else(|| non_flags.first().cloned())
                 .unwrap_or_default();
             let status_str = parse_flag(rest, "--status")
                 .or_else(|| {
-                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
                     if non_flags.len() >= 2 {
                         Some(non_flags[1].clone())
                     } else {
@@ -19781,9 +19804,8 @@ fn cmd_compliance(args: &[String]) -> i32 {
 
             let reason = parse_flag(rest, "--reason")
                 .or_else(|| {
-                    let non_flags: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
                     if non_flags.len() >= 3 {
-                        Some(non_flags[2..].iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" "))
+                        Some(non_flags[2..].join(" "))
                     } else {
                         None
                     }
@@ -19898,10 +19920,18 @@ fn cmd_compliance(args: &[String]) -> i32 {
             0
         }
         Some("check-pep") => {
-            let gates: Vec<String> = rest.iter()
-                .filter(|s| !s.starts_with("--"))
-                .cloned()
-                .collect();
+            let mut gates: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--path" {
+                    i += 2;
+                } else if rest[i].starts_with("--") {
+                    i += 1;
+                } else {
+                    gates.push(rest[i].clone());
+                    i += 1;
+                }
+            }
 
             if gates.is_empty() {
                 let msg = "Usage: aiosh compliance check-pep <GATE...> [--json] [--path P]".to_string();
@@ -20877,6 +20907,113 @@ mod threat_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+#[cfg(test)]
+mod compliance_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_compliance_cli_help_and_unknown() {
+        assert_eq!(cmd_compliance(&[]), 0);
+        assert_eq!(cmd_compliance(&s(&["--help"])), 0);
+        assert_eq!(cmd_compliance(&s(&["-h"])), 0);
+        assert_eq!(cmd_compliance(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_compliance(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_compliance_cli_path_validation() {
+        assert_eq!(cmd_compliance(&s(&["list", "--path", "../map.json"])), 2);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", "map.txt"])), 2);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", "bad\nmap.json"])), 2);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", "\\\\evil\\share\\m.json"])), 2);
+    }
+
+    #[test]
+    fn test_compliance_cli_lifecycle_and_operations() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_comp_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("compliance_map.json").to_string_lossy().to_string();
+
+        // 1. Initialize catalog
+        assert_eq!(cmd_compliance(&s(&["init", "--path", &store])), 0);
+        // Duplicate init without --force fails -> 1
+        assert_eq!(cmd_compliance(&s(&["init", "--path", &store])), 1);
+        // Init with --force succeeds -> 0
+        assert_eq!(cmd_compliance(&s(&["init", "--path", &store, "--force"])), 0);
+
+        // 2. List mappings
+        assert_eq!(cmd_compliance(&s(&["list", "--path", &store])), 0);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", &store, "--framework", "nist"])), 0);
+        assert_eq!(cmd_compliance(&s(&["list", "--path", &store, "--status", "compliant"])), 0);
+
+        // 3. Show mapping
+        assert_eq!(cmd_compliance(&s(&["show", "MAP-NIST-AC3-PEP", "--path", &store])), 0);
+        assert_eq!(cmd_compliance(&s(&["show", "MAP-NIST-AC3-PEP", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_compliance(&s(&["show", "MAP-NONEXISTENT", "--path", &store])), 1);
+        assert_eq!(cmd_compliance(&s(&["show"])), 2);
+
+        // 4. Register mapping
+        assert_eq!(cmd_compliance(&s(&[
+            "register",
+            "--id", "MAP-TEST-CLI-01",
+            "--control", "AC-3",
+            "--framework", "nist",
+            "--target-type", "pep_gate",
+            "--target-ref", "pep_gate_exec",
+            "--mitigation", "CLI registered mitigation verification",
+            "--path", &store,
+        ])), 0);
+
+        // Register missing flags -> 2
+        assert_eq!(cmd_compliance(&s(&["register", "--id", "MAP-BAD"])), 2);
+        // Register invalid framework -> 1
+        assert_eq!(cmd_compliance(&s(&[
+            "register",
+            "--id", "MAP-BAD-FW",
+            "--control", "AC-3",
+            "--framework", "invalid_fw",
+            "--target-type", "pep_gate",
+            "--target-ref", "pep_gate_exec",
+            "--mitigation", "Test",
+            "--path", &store,
+        ])), 1);
+        // Register invalid target type -> 1
+        assert_eq!(cmd_compliance(&s(&[
+            "register",
+            "--id", "MAP-BAD-TT",
+            "--control", "AC-3",
+            "--framework", "nist",
+            "--target-type", "invalid_target_type",
+            "--target-ref", "pep_gate_exec",
+            "--mitigation", "Test",
+            "--path", &store,
+        ])), 1);
+
+        // 5. Status update
+        assert_eq!(cmd_compliance(&s(&["status", "MAP-TEST-CLI-01", "compliant", "--reason", "Audit passed", "--path", &store])), 0);
+        assert_eq!(cmd_compliance(&s(&["status", "MAP-TEST-CLI-01", "invalid_status", "--path", &store])), 1);
+        assert_eq!(cmd_compliance(&s(&["status", "MAP-TEST-CLI-01"])), 2);
+
+        // 6. Assess framework
+        assert_eq!(cmd_compliance(&s(&["assess", "--path", &store])), 0);
+        assert_eq!(cmd_compliance(&s(&["assess", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_compliance(&s(&["assess", "--framework", "nist", "--path", &store])), 0);
+
+        // 7. Check PEP coverage
+        assert_eq!(cmd_compliance(&s(&["check-pep", "pep_gate_exec", "--path", &store])), 0);
+        assert_eq!(cmd_compliance(&s(&["check-pep", "unmapped_pep_gate", "--path", &store])), 1);
+        assert_eq!(cmd_compliance(&s(&["check-pep"])), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 
 
 

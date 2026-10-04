@@ -176,6 +176,8 @@ def rebuild_state(events_path: str = EVENTS_PATH,
     completed, blocked, skipped, next_pointer, last_ts = _replay_events(events)
     if total_tasks is None:
         total_tasks = _count_ledger_lines(ledger_path)
+    if os.path.exists(ledger_path):
+        sync_ledger_statuses(completed, blocked, skipped, ledger_path=ledger_path)
     next_task = None if next_pointer > total_tasks else next_pointer
     state = {
         "schema_version": SCHEMA_VERSION,
@@ -467,6 +469,82 @@ def _ensure_evidence_stub(task_id: int, task: dict[str, Any]) -> str:
     return path
 
 
+def update_ledger_task_status(task_id: int, new_status: str,
+                              ledger_path: str = LEDGER_PATH) -> bool:
+    """Atomically rewrite task line in MASTER_TASK_LEDGER.jsonl with new status."""
+    if not os.path.exists(ledger_path):
+        return False
+    tmp = f"{ledger_path}.tmp.{os.getpid()}"
+    found = False
+    needle = f'"id": {task_id},'
+    needle_compact = f'"id":{task_id},'
+    with open(ledger_path, "r", encoding="utf-8") as fin, \
+         open(tmp, "w", encoding="utf-8") as fout:
+        for line in fin:
+            if not found and (needle in line or needle_compact in line):
+                try:
+                    rec = json.loads(line)
+                    if rec.get("id") == task_id:
+                        rec["status"] = new_status
+                        line = json.dumps(rec, ensure_ascii=False) + "\n"
+                        found = True
+                except json.JSONDecodeError:
+                    pass
+            fout.write(line)
+    if found:
+        os.replace(tmp, ledger_path)
+    else:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return found
+
+
+def sync_ledger_statuses(completed_ids: list[int] | set[int],
+                         blocked_ids: list[int] | set[int] | None = None,
+                         skipped_ids: list[int] | set[int] | None = None,
+                         ledger_path: str = LEDGER_PATH) -> int:
+    """Synchronize all statuses in MASTER_TASK_LEDGER.jsonl with event log replay."""
+    if not os.path.exists(ledger_path):
+        return 0
+    completed_set = set(completed_ids)
+    blocked_set = set(blocked_ids or [])
+    skipped_set = set(skipped_ids or [])
+    tmp = f"{ledger_path}.tmp.{os.getpid()}"
+    updated = 0
+    with open(ledger_path, "r", encoding="utf-8") as fin, \
+         open(tmp, "w", encoding="utf-8") as fout:
+        for line in fin:
+            line_str = line.strip()
+            if not line_str:
+                fout.write(line)
+                continue
+            try:
+                rec = json.loads(line_str)
+                tid = rec.get("id")
+                curr = rec.get("status")
+                target = curr
+                if tid in completed_set:
+                    target = "done"
+                elif tid in blocked_set:
+                    target = "blocked"
+                elif tid in skipped_set:
+                    target = "skipped"
+                else:
+                    target = "pending"
+                if curr != target:
+                    rec["status"] = target
+                    line = json.dumps(rec, ensure_ascii=False) + "\n"
+                    updated += 1
+            except json.JSONDecodeError:
+                pass
+            fout.write(line)
+    os.replace(tmp, ledger_path)
+    return updated
+
+
 def complete_task(task_id: int, note: str = "",
                   evidence: list[str] | None = None) -> dict[str, Any]:
     """Spec §4: complete the current next_task and advance the pointer."""
@@ -495,6 +573,7 @@ def complete_task(task_id: int, note: str = "",
         state.setdefault("skipped", [])
         state["rule"] = _RULE
         save_state_atomic(state, STATE_PATH)
+        update_ledger_task_status(task_id, "done", LEDGER_PATH)
         ev_file = _ensure_evidence_stub(task_id, task)
         return {"ok": True, "completed": task_id,
                 "title": task.get("title"),
@@ -520,6 +599,7 @@ def block_task(task_id: int, reason: str) -> dict[str, Any]:
             state["blocked"].append(task_id)
         state["last_event_seq"] = state.get("last_event_seq", 0) + 1
         save_state_atomic(state, STATE_PATH)
+        update_ledger_task_status(task_id, "blocked", LEDGER_PATH)
         return {"ok": True, "blocked": task_id, "next_task": state["next_task"]}
 
 
@@ -538,6 +618,7 @@ def unblock_task(task_id: int, reason: str) -> dict[str, Any]:
         state["next_task"] = task_id
         state["last_event_seq"] = state.get("last_event_seq", 0) + 1
         save_state_atomic(state, STATE_PATH)
+        update_ledger_task_status(task_id, "pending", LEDGER_PATH)
         return {"ok": True, "unblocked": task_id, "next_task": task_id}
 
 
@@ -560,6 +641,7 @@ def skip_task(task_id: int, reason: str) -> dict[str, Any]:
         state["next_task"] = task_id + 1 if task_id < state["total_tasks"] else None
         state["last_event_seq"] = state.get("last_event_seq", 0) + 1
         save_state_atomic(state, STATE_PATH)
+        update_ledger_task_status(task_id, "skipped", LEDGER_PATH)
         return {"ok": True, "skipped": task_id,
                 "next_task": state["next_task"], "reason": reason}
 

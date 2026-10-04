@@ -331,6 +331,60 @@ impl ComplianceCatalogSnapshot {
         snap.mappings = baseline;
         snap
     }
+
+    pub fn add_mapping(&mut self, entry: ComplianceMappingEntry) -> Result<(), String> {
+        if self.mappings.len() >= MAX_COMPLIANCE_ENTRIES_CAPACITY {
+            return Err(format!("{}: Catalog capacity exceeded", COMPLIANCE_ERR_BOUNDS_EXCEEDED));
+        }
+        if self.mappings.iter().any(|m| m.id == entry.id) {
+            return Err(format!("{}: Duplicate mapping ID {}", COMPLIANCE_ERR_DUPLICATE_ID, entry.id));
+        }
+        self.mappings.push(entry);
+        self.generated_at = utcnow_iso();
+        Ok(())
+    }
+
+    pub fn get_mapping(&self, id: &str) -> Option<&ComplianceMappingEntry> {
+        self.mappings.iter().find(|m| m.id == id)
+    }
+
+    pub fn get_mapping_mut(&mut self, id: &str) -> Option<&mut ComplianceMappingEntry> {
+        self.mappings.iter_mut().find(|m| m.id == id)
+    }
+
+    pub fn remove_mapping(&mut self, id: &str) -> Option<ComplianceMappingEntry> {
+        if let Some(pos) = self.mappings.iter().position(|m| m.id == id) {
+            let removed = self.mappings.remove(pos);
+            self.generated_at = utcnow_iso();
+            Some(removed)
+        } else {
+            None
+        }
+    }
+
+    pub fn find_by_framework(&self, framework: ComplianceFramework) -> Vec<&ComplianceMappingEntry> {
+        self.mappings.iter().filter(|m| m.framework == framework).collect()
+    }
+
+    pub fn find_by_control(&self, control_id: &str) -> Vec<&ComplianceMappingEntry> {
+        self.mappings.iter().filter(|m| m.control_id == control_id).collect()
+    }
+
+    pub fn find_by_target(&self, target_ref: &str) -> Vec<&ComplianceMappingEntry> {
+        self.mappings.iter().filter(|m| m.target_ref == target_ref).collect()
+    }
+
+    pub fn find_by_status(&self, status: ComplianceStatus) -> Vec<&ComplianceMappingEntry> {
+        self.mappings.iter().filter(|m| m.status == status).collect()
+    }
+
+    pub fn compliance_ratio(&self) -> f64 {
+        if self.mappings.is_empty() {
+            return 1.0;
+        }
+        let compliant_count = self.mappings.iter().filter(|m| m.status == ComplianceStatus::Compliant).count();
+        compliant_count as f64 / self.mappings.len() as f64
+    }
 }
 
 pub fn validate_identifier(id: &str, field_name: &str) -> Result<(), String> {

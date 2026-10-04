@@ -59,4 +59,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Research complete. Advancing to T-02833 (`capability mint/redeem records: Specification`).
+
+### 2026-10-04 — T-02833: Capability Mint/Redeem Records — Specification
+- **Task ID**: `T-02833`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Specified contracts for `PepGrant` type extensions (`single_use`, `redeemed_at`, `RedeemResult`).
+  - Specified database schema migration for `pep_grants` in SQLite WAL audit DB.
+  - Specified atomic pre-execution redemption semantics for `PepGrantManager.redeem()` and emission of `pep.capability.mint` / `pep.capability.redeem` audit rows.
+  - Formulated failure envelopes and negative error codes.
+  - Captured complete specification in `docs/tasks/evidence/T-02833-spec.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02833-spec.md` (created)
+  - `docs/tasks/evidence/T-02833-capability-mint-redeem-records-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Specification complete. Advancing to T-02834 (`capability mint/redeem records: Scaffold`).
 ---

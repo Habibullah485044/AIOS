@@ -208,4 +208,27 @@ impl ComplianceService {
                 && (m.status == ComplianceStatus::Compliant || m.status == ComplianceStatus::PartiallyCompliant)
         })
     }
+
+    pub fn remove_mapping(&mut self, id: &str) -> Option<ComplianceMappingEntry> {
+        self.snapshot.remove_mapping(id)
+    }
+
+    pub fn find_by_framework(&self, framework: ComplianceFramework) -> Vec<&ComplianceMappingEntry> {
+        self.snapshot.find_by_framework(framework)
+    }
+
+    pub fn find_by_control(&self, control_id: &str) -> Vec<&ComplianceMappingEntry> {
+        self.snapshot.find_by_control(control_id)
+    }
+
+    pub fn find_by_status(&self, status: ComplianceStatus) -> Vec<&ComplianceMappingEntry> {
+        self.snapshot.find_by_status(status)
+    }
+
+    pub fn uncovered_pep_gates(&self, required_gates: &[&str]) -> Vec<String> {
+        required_gates.iter()
+            .filter(|g| !self.verify_pep_coverage(g))
+            .map(|g| g.to_string())
+            .collect()
+    }
 }

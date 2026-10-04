@@ -121,3 +121,44 @@ fn test_compliance_service_pep_coverage() {
     ]);
     assert_eq!(uncovered, vec!["missing_network_gate".to_string(), "missing_fs_gate".to_string()]);
 }
+
+#[test]
+fn test_compliance_service_oversized_store_rejection() {
+    let dir = tempdir().unwrap();
+    let oversized_path = dir.path().join("oversized.json");
+
+    let big_buffer = vec![b' '; (MAX_COMPLIANCE_STORE_SIZE + 1024) as usize];
+    std::fs::write(&oversized_path, big_buffer).unwrap();
+
+    let res = ComplianceService::load_from_path(&oversized_path);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains(COMPLIANCESVC_ERR_FILE_SIZE));
+}
+
+#[test]
+fn test_compliance_service_corrupt_json_rejection() {
+    let dir = tempdir().unwrap();
+    let corrupt_path = dir.path().join("corrupt.json");
+
+    std::fs::write(&corrupt_path, "{ broken invalid json !").unwrap();
+
+    let res = ComplianceService::load_from_path(&corrupt_path);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains(COMPLIANCESVC_ERR_PARSE));
+}
+
+#[test]
+fn test_compliance_service_no_temp_leak() {
+    let dir = tempdir().unwrap();
+    let store_path = dir.path().join("compliance_map.json");
+
+    let svc = ComplianceService::with_canonical_baseline();
+    svc.save_to_path(&store_path).unwrap();
+
+    for entry in std::fs::read_dir(dir.path()).unwrap() {
+        let entry = entry.unwrap();
+        let fname = entry.file_name().to_string_lossy().to_string();
+        assert!(!fname.contains(".tmp."), "Found leaked temporary file: {}", fname);
+    }
+}
+

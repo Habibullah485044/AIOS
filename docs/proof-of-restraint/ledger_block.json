@@ -1,0 +1,70 @@
+{
+  "feature_id": "proof-of-restraint",
+  "epic": "Proof of Restraint",
+  "phase": "Phase 2 — Security Kernel & PEP Fabric",
+  "plan": "docs/proof-of-restraint/PLAN.md",
+  "log": "docs/proof-of-restraint/LOG.md",
+  "kickoff": {
+    "title": "Proof of Restraint — kickoff: ADR + living plan",
+    "goal": "Lock the Proof-of-Restraint design as a binding ADR and confirm the living PLAN/LOG are the single source of truth for this feature.",
+    "instructions": [
+      "Read docs/proof-of-restraint/PLAN.md end to end, plus code/aiosh-cli/src/audit.ts, code/aiosh-cli/src/pep.ts and code/aiosh-rust/aiosh-core/src/pep_grant*.rs.",
+      "Write mostimportanAIfolder/ADR-0037-proof-of-restraint.md capturing the threat model (operator can rewrite an un-anchored chain), the three layers, and the invariants I-1..I-5 from PLAN.md.",
+      "Correct anything in PLAN.md that the code reading proved wrong; record each correction in the PLAN.md Change log with the reason.",
+      "Run bash ci/run_all_smokes.sh and confirm the baseline is green before any implementation task in this block.",
+      "Append a kickoff entry to docs/proof-of-restraint/LOG.md."
+    ],
+    "acceptance": [
+      "ADR-0037 exists and is linked from PLAN.md.",
+      "PLAN.md reflects the verified current code, with a dated Change log entry.",
+      "Baseline smokes green; LOG.md has a kickoff entry."
+    ]
+  },
+  "components": [
+    "capability mint/redeem records",
+    "redeem-before-act gate",
+    "chain anchoring & completeness checkpoints",
+    "restraint proof generator",
+    "standalone proof verifier",
+    "continuous restraint conformance"
+  ],
+  "focus": {
+    "capability mint/redeem records": "Feature focus: every grant issue writes a `pep.capability.mint` audit row and every use writes exactly one `pep.capability.redeem` row referencing the same token (PLAN.md §Layer 1, invariant I-1). Keep TS, Python and Rust canonical-JSON parity.",
+    "redeem-before-act gate": "Feature focus: a consequential tool must be unreachable unless a redeem row is committed first (PLAN.md invariant I-2). Enumerate every dispatch path (CLI, MCP, agent loop, Rust core) and prove none bypasses the gate.",
+    "chain anchoring & completeness checkpoints": "Feature focus: periodically sign the chain head (seq, hash, ts) with a key the audit DB never holds and store it outside audit.db (PLAN.md §Layer 2, invariant I-3). A rewritten chain must fail verification against the anchors.",
+    "restraint proof generator": "Feature focus: `aiosh prove restraint --cap <cap> --since <window>` plus the matching MCP tool emit a self-contained proof file (PLAN.md §Proof format). Reuse audit segment bloom filters for archived ranges.",
+    "standalone proof verifier": "Feature focus: a verifier that trusts ONLY the proof file plus the public anchor key, with no access to audit.db (PLAN.md invariant I-4). Must reject truncated, re-chained and wrong-window proofs.",
+    "continuous restraint conformance": "Feature focus: a conformance smoke wired into ci/run_all_smokes.sh that fails when any new consequential path skips redemption or anchors go stale (PLAN.md invariant I-5). This is what keeps the feature alive after this block closes."
+  },
+  "pre": [
+    "Read docs/proof-of-restraint/PLAN.md (sections for '{component}') before starting; it overrides generic wording below when they conflict."
+  ],
+  "post": [
+    "Append a dated entry to docs/proof-of-restraint/LOG.md (task id T-{task_id:05d}, what changed, files touched, tests run).",
+    "If anything forced a design change, edit docs/proof-of-restraint/PLAN.md and record what changed and why in its Change log."
+  ],
+  "closing": {
+    "title": "Proof of Restraint — milestone close & live demo",
+    "goal": "Prove the feature end to end and hand it over to the standing rules that keep it maintained.",
+    "instructions": [
+      "Run the demo from PLAN.md §Demo: mint a capability, leave it unused, generate a restraint proof, verify it with the standalone verifier; then tamper (delete a row, re-chain) and show verification fails.",
+      "Capture the full transcript in docs/tasks/evidence/T-{task_id:05d}-demo.md.",
+      "Update docs/tasks/GOALS.md 'What is already done' and task_plan.md with the shipped capability.",
+      "Mark PLAN.md status as 'Shipped — maintained by standing rules' and add a final LOG.md entry."
+    ],
+    "acceptance": [
+      "Demo passes and the tamper case fails verification, both captured as evidence.",
+      "GOALS.md, task_plan.md, PLAN.md and LOG.md updated."
+    ]
+  },
+  "standing_rules": [
+    {
+      "applies_to_title_suffix": ": Security Review",
+      "instruction": "[PoR] Proof-of-Restraint standing rule: if this component adds or changes any state-changing path, confirm it cannot execute without redeeming a capability token (docs/proof-of-restraint/PLAN.md invariant I-2) and record the check in the security evidence."
+    },
+    {
+      "applies_to_title_suffix": ": Verification & Evidence",
+      "instruction": "[PoR] Run the Proof-of-Restraint conformance smoke and anchor verification; if this component touched grants, audit, PEP or dispatch, append an entry to docs/proof-of-restraint/LOG.md."
+    }
+  ]
+}

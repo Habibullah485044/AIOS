@@ -219,8 +219,6 @@ CUSTOM = [
      ["Benchmark table exists with a recommended max live-row threshold."], "pending"),
 ]
 
-tasks = []
-
 def make_custom(tid, title, goal, ins, acc, status):
     return {
         "id": tid, "title": title, "phase": PHASES[0][0], "status": status,
@@ -228,86 +226,140 @@ def make_custom(tid, title, goal, ins, acc, status):
         "artifacts": [f"docs/tasks/evidence/T-{tid:05d}.md"],
     }
 
-for (tid, title, goal, ins, acc, status) in CUSTOM:
-    tasks.append(make_custom(tid, title, goal, ins, acc, status))
 
-next_id = 11
-for pi, (phase, epics) in enumerate(PHASES):
-    need = 990 if pi == 0 else 1000
-    made = 0
-    for epic in epics:
-        for comp in COMPONENTS:
-            for (tname, goal_t, ins_t, acc_t) in TASK_TYPES:
+def build_component_tasks(phase, epic, components, start_id,
+                          pre=(), post=(), focus=None):
+    """Expand epic x components x TASK_TYPES into ledger task dicts.
+
+    Shared by the original generator and tools/ledger_insert_block.py so
+    inserted feature blocks follow the exact same REP 10-step shape.
+    `pre`/`post` are extra instruction lines (templated like TASK_TYPES)
+    placed before/after each task's standard instructions; `focus` maps
+    component -> one extra instruction line. depends_on/next_task are
+    NOT set here (the caller relinks the whole ledger).
+    """
+    out = []
+    tid = start_id
+    for comp in components:
+        for (tname, goal_t, ins_t, acc_t) in TASK_TYPES:
+            ctx = {"component": comp, "epic": epic, "phase": phase, "task_id": tid}
+            ins = [s.format(**ctx) for s in pre]
+            ins += [s.format(**ctx) for s in ins_t]
+            if focus and comp in focus:
+                ins.append(focus[comp].format(**ctx))
+            ins += [s.format(**ctx) for s in post]
+            out.append({
+                "id": tid,
+                "title": f"{phase} / {epic} / {comp}: {tname}",
+                "phase": phase, "status": "pending",
+                "goal": goal_t.format(**ctx),
+                "instructions": ins,
+                "acceptance": [s.format(**ctx) for s in acc_t],
+                "artifacts": [f"docs/tasks/evidence/T-{tid:05d}-{slug(comp)}-{slug(tname,20)}.md"],
+            })
+            tid += 1
+    return out
+
+
+def main(argv=None):
+    import sys
+    argv = sys.argv[1:] if argv is None else argv
+    ledger_path = os.path.join(OUT, "MASTER_TASK_LEDGER.jsonl")
+    # Guard: the ledger is now amended in place (tools/ledger_insert_block.py)
+    # and carries real completion statuses. Regenerating would silently
+    # reset all of that, so require an explicit --force.
+    if os.path.exists(ledger_path) and "--force" not in argv:
+        print("refusing to overwrite existing ledger (has live progress and "
+              "inserted feature blocks). Use tools/ledger_insert_block.py to "
+              "amend it, or pass --force to regenerate from scratch.")
+        return 2
+
+    tasks = []
+    for (tid, title, goal, ins, acc, status) in CUSTOM:
+        tasks.append(make_custom(tid, title, goal, ins, acc, status))
+
+    next_id = 11
+    for pi, (phase, epics) in enumerate(PHASES):
+        need = 990 if pi == 0 else 1000
+        made = 0
+        for epic in epics:
+            for comp in COMPONENTS:
+                for (tname, goal_t, ins_t, acc_t) in TASK_TYPES:
+                    if made >= need:
+                        break
+                    ctx = {"component": comp, "epic": epic, "phase": phase, "task_id": next_id}
+                    t = {
+                        "id": next_id,
+                        "title": f"{phase} / {epic} / {comp}: {tname}",
+                        "phase": phase, "status": "pending",
+                        "goal": goal_t.format(**ctx),
+                        "instructions": [s.format(**ctx) for s in ins_t],
+                        "acceptance": [s.format(**ctx) for s in acc_t],
+                        "artifacts": [f"docs/tasks/evidence/T-{next_id:05d}-{slug(comp)}-{slug(tname,20)}.md"],
+                    }
+                    tasks.append(t)
+                    next_id += 1
+                    made += 1
                 if made >= need:
                     break
-                ctx = {"component": comp, "epic": epic, "phase": phase, "task_id": next_id}
-                t = {
-                    "id": next_id,
-                    "title": f"{phase} / {epic} / {comp}: {tname}",
-                    "phase": phase, "status": "pending",
-                    "goal": goal_t.format(**ctx),
-                    "instructions": [s.format(**ctx) for s in ins_t],
-                    "acceptance": [s.format(**ctx) for s in acc_t],
-                    "artifacts": [f"docs/tasks/evidence/T-{next_id:05d}-{slug(comp)}-{slug(tname,20)}.md"],
-                }
-                tasks.append(t)
-                next_id += 1
-                made += 1
             if made >= need:
                 break
-        if made >= need:
-            break
 
-assert len(tasks) == 10000, f"expected 10000, got {len(tasks)}"
+    assert len(tasks) == 10000, f"expected 10000, got {len(tasks)}"
 
-for i, t in enumerate(tasks):
-    t["depends_on"] = [tasks[i-1]["id"]] if i > 0 else []
-    t["next_task"] = tasks[i+1]["id"] if i + 1 < len(tasks) else None
+    for i, t in enumerate(tasks):
+        t["depends_on"] = [tasks[i-1]["id"]] if i > 0 else []
+        t["next_task"] = tasks[i+1]["id"] if i + 1 < len(tasks) else None
 
-with open(os.path.join(OUT, "MASTER_TASK_LEDGER.jsonl"), "w", encoding="utf-8") as f:
+    with open(ledger_path, "w", encoding="utf-8") as f:
+        for t in tasks:
+            f.write(json.dumps(t, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+    phase_ranges = {}
     for t in tasks:
-        f.write(json.dumps(t, ensure_ascii=False, separators=(",", ":")) + "\n")
+        phase_ranges.setdefault(t["phase"], [t["id"], t["id"]])[1] = t["id"]
 
-phase_ranges = {}
-for t in tasks:
-    phase_ranges.setdefault(t["phase"], [t["id"], t["id"]])[1] = t["id"]
+    md = []
+    md.append("# MASTER TASK LEDGER — 10,000 sequential tasks\n")
+    md.append("**Law:** execute strictly in numeric order. Task N+1 starts only when task N is complete.")
+    md.append("Never jump to a later task. If blocked, record the blocker and stop.\n")
+    md.append("Full machine-readable ledger: `MASTER_TASK_LEDGER.jsonl` (one task per line).")
+    md.append("Live pointer: `TASK_STATE.json` (`next_task` = the only task allowed to start).\n")
+    md.append("## Phase map\n")
+    md.append("| Phase | Task range |")
+    md.append("|---|---|")
+    for ph, (lo, hi) in phase_ranges.items():
+        md.append(f"| {ph} | T-{lo:05d} .. T-{hi:05d} |")
+    md.append("\n## First 25 tasks (detail)\n")
+    for t in tasks[:25]:
+        md.append(f"### T-{t['id']:05d} — {t['title']}  `[{t['status']}]`")
+        md.append(f"**Goal:** {t['goal']}")
+        md.append("**Instructions:**")
+        for s in t["instructions"]:
+            md.append(f"- {s}")
+        md.append("**Acceptance:**")
+        for s in t["acceptance"]:
+            md.append(f"- {s}")
+        md.append("")
+    with open(os.path.join(OUT, "MASTER_TASK_LEDGER.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(md))
 
-md = []
-md.append("# MASTER TASK LEDGER — 10,000 sequential tasks\n")
-md.append("**Law:** execute strictly in numeric order. Task N+1 starts only when task N is complete.")
-md.append("Never jump to a later task. If blocked, record the blocker and stop.\n")
-md.append("Full machine-readable ledger: `MASTER_TASK_LEDGER.jsonl` (one task per line).")
-md.append("Live pointer: `TASK_STATE.json` (`next_task` = the only task allowed to start).\n")
-md.append("## Phase map\n")
-md.append("| Phase | Task range |")
-md.append("|---|---|")
-for ph, (lo, hi) in phase_ranges.items():
-    md.append(f"| {ph} | T-{lo:05d} .. T-{hi:05d} |")
-md.append("\n## First 25 tasks (detail)\n")
-for t in tasks[:25]:
-    md.append(f"### T-{t['id']:05d} — {t['title']}  `[{t['status']}]`")
-    md.append(f"**Goal:** {t['goal']}")
-    md.append("**Instructions:**")
-    for s in t["instructions"]:
-        md.append(f"- {s}")
-    md.append("**Acceptance:**")
-    for s in t["acceptance"]:
-        md.append(f"- {s}")
-    md.append("")
-with open(os.path.join(OUT, "MASTER_TASK_LEDGER.md"), "w", encoding="utf-8") as f:
-    f.write("\n".join(md))
+    state = {
+        "ledger": "docs/tasks/MASTER_TASK_LEDGER.jsonl",
+        "total_tasks": len(tasks),
+        "next_task": 4,
+        "completed": [1, 2, 3],
+        "rule": "Execute ONLY next_task. On completion run tools/complete_task.py <id> to advance by exactly 1. Never skip.",
+    }
+    with open(os.path.join(OUT, "TASK_STATE.json"), "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
 
-state = {
-    "ledger": "docs/tasks/MASTER_TASK_LEDGER.jsonl",
-    "total_tasks": len(tasks),
-    "next_task": 4,
-    "completed": [1, 2, 3],
-    "rule": "Execute ONLY next_task. On completion run tools/complete_task.py <id> to advance by exactly 1. Never skip.",
-}
-with open(os.path.join(OUT, "TASK_STATE.json"), "w", encoding="utf-8") as f:
-    json.dump(state, f, indent=2)
+    print(f"generated {len(tasks)} tasks; next_task={state['next_task']}")
+    print("phase ranges:")
+    for ph, (lo, hi) in phase_ranges.items():
+        print(f"  T-{lo:05d}..T-{hi:05d}  {ph}")
+    return 0
 
-print(f"generated {len(tasks)} tasks; next_task={state['next_task']}")
-print("phase ranges:")
-for ph, (lo, hi) in phase_ranges.items():
-    print(f"  T-{lo:05d}..T-{hi:05d}  {ph}")
+
+if __name__ == "__main__":
+    raise SystemExit(main())

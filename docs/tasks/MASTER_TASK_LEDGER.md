@@ -1,4 +1,4 @@
-# MASTER TASK LEDGER — 10,000 sequential tasks
+# MASTER TASK LEDGER — 10,062 sequential tasks
 
 **Law:** execute strictly in numeric order. Task N+1 starts only when task N is complete.
 Never jump to a later task. If blocked, record the blocker and stop.
@@ -12,14 +12,14 @@ Live pointer: `TASK_STATE.json` (`next_task` = the only task allowed to start).
 |---|---|
 | Phase 0 — Governance, Repo, CI, Task Execution | T-00001 .. T-01000 |
 | Phase 1 — Linux Base System & Bootable Target | T-01001 .. T-02000 |
-| Phase 2 — Security Kernel & PEP Fabric | T-02001 .. T-03000 |
-| Phase 3 — AI Control Plane (Pillar C Spine) | T-03001 .. T-04000 |
-| Phase 4 — Pillar A: Ethical Hacking Toolchain | T-04001 .. T-05000 |
-| Phase 5 — Pillar B: Windows-Style Desktop | T-05001 .. T-06000 |
-| Phase 6 — AI Kernel-Level Control Integration | T-06001 .. T-07000 |
-| Phase 7 — Storage, Networking, Devices | T-07001 .. T-08000 |
-| Phase 8 — Reliability, Observability, Performance | T-08001 .. T-09000 |
-| Phase 9 — Release, Certification, User Docs | T-09001 .. T-10000 |
+| Phase 2 — Security Kernel & PEP Fabric | T-02001 .. T-03062 |
+| Phase 3 — AI Control Plane (Pillar C Spine) | T-03063 .. T-04062 |
+| Phase 4 — Pillar A: Ethical Hacking Toolchain | T-04063 .. T-05062 |
+| Phase 5 — Pillar B: Windows-Style Desktop | T-05063 .. T-06062 |
+| Phase 6 — AI Kernel-Level Control Integration | T-06063 .. T-07062 |
+| Phase 7 — Storage, Networking, Devices | T-07063 .. T-08062 |
+| Phase 8 — Reliability, Observability, Performance | T-08063 .. T-09062 |
+| Phase 9 — Release, Certification, User Docs | T-09063 .. T-10062 |
 
 ## First 25 tasks (detail)
 

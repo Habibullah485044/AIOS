@@ -43,4 +43,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Kickoff complete. Advancing to T-02832 (`capability mint/redeem records: Research`).
+
+### 2026-10-04 — T-02832: Capability Mint/Redeem Records — Research
+- **Task ID**: `T-02832`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Researched existing `PepGrantManager` in `code/aiosh-cli/src/pep.ts` and `AuditRing` in `code/aiosh-cli/src/audit.ts`.
+  - Established fact vs assumption: `audit_ring` already has `grant_token` column, but `pep_grants` table lacks `single_use` and `redeemed_at` tracking; grants are currently multi-use during their active TTL.
+  - Confirmed architectural requirement: every grant issue must write `pep.capability.mint` and every use must atomically write `pep.capability.redeem` to establish Layer 1 Proof of Restraint.
+  - Recorded findings and decisions for specification in `docs/tasks/evidence/T-02832-research.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02832-research.md` (created)
+  - `docs/tasks/evidence/T-02832-capability-mint-redeem-records-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Research complete. Advancing to T-02833 (`capability mint/redeem records: Specification`).
 ---

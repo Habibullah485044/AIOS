@@ -133,8 +133,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-cli/tests/test_por_integration.py` (created)
   - `docs/tasks/evidence/T-02837-capability-mint-redeem-records-integration.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-04 — T-02838: Capability Mint/Redeem Records — Security Review
+- **Task ID**: `T-02838`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Performed comprehensive security audit of capability mint and redeem implementation.
+  - Verified Invariants I-1 and I-2 under `[PoR]` standing rule: confirmed no state-changing path executes without token consumption.
+  - Audited race condition defenses: validated atomic SQL conditional update (`WHERE redeemed_at IS NULL`) preventing double-spend and TOCTOU.
+  - Verified SQL parameterized query hygiene, fail-closed handling on expiry/revocation, and SHA-256 chain tamper-evidence.
+  - Documented findings in `docs/tasks/evidence/T-02838-capability-mint-redeem-records-security-review.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02838-capability-mint-redeem-records-security-review.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Integration complete. Advancing to T-02838 (`capability mint/redeem records: Security Review`).
+  - Security review complete. Advancing to T-02839 (`capability mint/redeem records: Hardening`).
 ---
+
 
 

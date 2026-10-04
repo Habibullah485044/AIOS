@@ -296,6 +296,14 @@ impl ThreatModelService {
         crate::threat_model_observability::ThreatModelObservabilityReport::generate(self, ring)
     }
 
+    pub fn verify_integrity(path: &Path) -> crate::threat_model_recovery::ThreatIntegrityReport {
+        crate::threat_model_recovery::ThreatRecoveryService::verify_integrity(path)
+    }
+
+    pub fn repair_store(path: &Path) -> Result<crate::threat_model_recovery::ThreatRecoveryReport, String> {
+        crate::threat_model_recovery::ThreatRecoveryService::repair_catalog(path)
+    }
+
     fn populate_canonical_threats(&mut self) {
         let threats = vec![
             (

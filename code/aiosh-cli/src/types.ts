@@ -61,6 +61,17 @@ export interface PepGrant {
   scope: GrantScope;          // what tools the grant allows
   constitution_rev: string;   // active Constitution at issue time
   issued_to: string;          // agent:<name> / user@host
+  /** Proof of Restraint: single-use capability (defaults to true). */
+  single_use?: boolean;
+  /** Proof of Restraint: ISO-8601 timestamp when the grant was redeemed. */
+  redeemed_at?: string;
+}
+
+export interface RedeemResult {
+  ok: boolean;
+  reason?: string;
+  grant?: PepGrant;
+  audit_hash?: string;
 }
 
 export interface GrantScope {

@@ -76,4 +76,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Specification complete. Advancing to T-02834 (`capability mint/redeem records: Scaffold`).
+
+### 2026-10-04 — T-02834: Capability Mint/Redeem Records — Scaffold
+- **Task ID**: `T-02834`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Added `single_use` and `redeemed_at` to `PepGrant` and `CreateOpts`, and created `RedeemResult` in `code/aiosh-cli/src/types.ts`.
+  - Added typed method stub `PepGrantManager.redeem()` in `code/aiosh-cli/src/pep.ts` (throwing `NotImplementedError`).
+  - Ran `npm run build` (zero TypeScript errors) and verified `test_capability_cli_smoke.py` PASS.
+- **Files Touched**:
+  - `code/aiosh-cli/src/types.ts` (modified)
+  - `code/aiosh-cli/src/pep.ts` (modified)
+  - `docs/tasks/evidence/T-02834-capability-mint-redeem-records-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Scaffold complete. Advancing to T-02835 (`capability mint/redeem records: Implementation`).
 ---

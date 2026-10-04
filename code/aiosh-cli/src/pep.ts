@@ -17,7 +17,7 @@
 import Database from "better-sqlite3";
 import { createHash, randomBytes } from "node:crypto";
 import { canonicalJson } from "./audit.js";
-import type { PepGrant, GrantScope } from "./types.js";
+import type { PepGrant, GrantScope, RedeemResult } from "./types.js";
 
 export interface CreateOpts {
   scope: GrantScope;
@@ -25,6 +25,8 @@ export interface CreateOpts {
   issued_to: string;
   /** sha256[:12] of active Constitution at issue time. */
   constitution_rev: string;
+  /** Proof of Restraint: single-use capability (defaults to true). */
+  single_use?: boolean;
 }
 
 /** Match a tool name against a scope-tools glob, e.g. "pentest.nmap"
@@ -205,5 +207,17 @@ export class PepStore {
       return { ok: false, reason: `target '${target}' blocked by grant scope.paths` };
     }
     return { ok: true };
+  }
+
+  /** Proof of Restraint: redeem a single-use capability token before execution.
+   *  Scaffolded for T-02834; fails loudly until T-02835 implementation. */
+  redeem(
+    _grant_id: string,
+    _actor: string,
+    _tool: string,
+    _command: string,
+    _ring?: unknown
+  ): RedeemResult {
+    throw new Error("NotImplementedError: PepGrantManager.redeem (T-02834 scaffold)");
   }
 }

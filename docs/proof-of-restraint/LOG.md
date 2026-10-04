@@ -120,7 +120,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-cli/tests/test_restraint_mint_redeem.py` (modified)
   - `docs/tasks/evidence/T-02836-capability-mint-redeem-records-unit-test.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-04 — T-02837: Capability Mint/Redeem Records — Integration
+- **Task ID**: `T-02837`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented and executed cross-substrate integration test in `code/aiosh-cli/tests/test_por_integration.py`.
+  - Verified shared SQLite WAL synchronization between TypeScript grant management and Python MCP audit client.
+  - Confirmed 100% hash chain compatibility across cross-language boundaries with identical canonical JSON serialization.
+  - Validated full lifecycle: mint event -> unspent verification -> single-use redemption event -> replay rejection -> complete chain audit.
+- **Files Touched**:
+  - `code/aiosh-cli/tests/test_por_integration.py` (created)
+  - `docs/tasks/evidence/T-02837-capability-mint-redeem-records-integration.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Unit test complete and certified. Advancing to T-02837 (`capability mint/redeem records: Integration`).
+  - Integration complete. Advancing to T-02838 (`capability mint/redeem records: Security Review`).
 ---
+
 

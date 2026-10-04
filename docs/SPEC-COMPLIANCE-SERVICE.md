@@ -1,63 +1,93 @@
-# Specification: Compliance Mapping Core Service (SPEC-COMPLIANCE-SERVICE)
+# Specification & Operator Guide: Compliance Mapping Core Service (SPEC-COMPLIANCE-SERVICE)
 
-- **Status**: APPROVED
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-04
 - **Scope**: Runtime service engine, persistence, assessment reporting, and PEP integration for Compliance Mapping.
 
-## 1. Constants & Error Codes
+## 1. Overview
+The Compliance Mapping Core Service (`ComplianceService`) maintains the live repository of mapped compliance controls against AIOS security primitives (PEP gates, capabilities, audit rings, and threat mitigations). It enables automated auditing against regulatory standards (NIST SP 800-53, SOC 2, ISO 27001, CIS) and verifies PEP gate compliance coverage.
+
+## 2. API Usage & Code Examples
+
+### 2.1 Managing Mappings & Persistence
 
 ```rust
-pub const DEFAULT_COMPLIANCE_MAP_PATH: &str = "docs/compliance_map.json";
-pub const MAX_COMPLIANCE_STORE_SIZE: u64 = 1024 * 1024; // 1 MiB
+use std::path::Path;
+use aiosh_core::compliance_data_model::*;
+use aiosh_core::compliance_service::*;
 
-pub const COMPLIANCESVC_ERR_NOT_FOUND: &str = "COMPLIANCESVC_ERR_NOT_FOUND";
-pub const COMPLIANCESVC_ERR_CAPACITY_EXCEEDED: &str = "COMPLIANCESVC_ERR_CAPACITY_EXCEEDED";
-pub const COMPLIANCESVC_ERR_FILE_SIZE: &str = "COMPLIANCESVC_ERR_FILE_SIZE";
-pub const COMPLIANCESVC_ERR_PATH_TRAVERSAL: &str = "COMPLIANCESVC_ERR_PATH_TRAVERSAL";
-pub const COMPLIANCESVC_ERR_IO: &str = "COMPLIANCESVC_ERR_IO";
-pub const COMPLIANCESVC_ERR_PARSE: &str = "COMPLIANCESVC_ERR_PARSE";
-```
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store_path = Path::new("docs/compliance_map.json");
 
-## 2. Assessment Model: `ComplianceAssessmentReport`
+    // 1. Initialize service with canonical standard baseline
+    let mut service = ComplianceService::with_canonical_baseline();
 
-```rust
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ComplianceAssessmentReport {
-    pub total_mappings: usize,
-    pub compliant_count: usize,
-    pub partially_compliant_count: usize,
-    pub non_compliant_count: usize,
-    pub not_applicable_count: usize,
-    pub compliance_percentage: f64,
-    pub gap_control_ids: Vec<String>,
-    pub evaluated_at: String,
+    // 2. Register an additional control mapping
+    let new_mapping = ComplianceMappingEntry::new(
+        "MAP-ISO-A8-ACCESS",
+        "A.8.2",
+        ComplianceFramework::Iso27001,
+        SubstrateTargetType::PepGate,
+        "privileged_execution_gate",
+        vec!["T-EOP-001".to_string()],
+        ComplianceStatus::Compliant,
+        "Privileged access governed by mandatory capability token verification.",
+        vec!["access_control".to_string()],
+    )?;
+    service.register_mapping(new_mapping)?;
+
+    // 3. Persist atomically
+    service.save_to_path(store_path)?;
+
+    // 4. Reload from disk
+    let reloaded = ComplianceService::load_from_path(store_path)?;
+    println!("Loaded {} compliance mappings.", reloaded.snapshot.mappings.len());
+
+    Ok(())
 }
 ```
 
-## 3. Service Interface: `ComplianceService`
+### 2.2 Framework Assessment & PEP Gate Coverage
 
 ```rust
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ComplianceService {
-    pub snapshot: ComplianceCatalogSnapshot,
-}
+use aiosh_core::compliance_data_model::ComplianceFramework;
+use aiosh_core::compliance_service::ComplianceService;
 
-impl ComplianceService {
-    pub fn new() -> Self;
-    pub fn with_canonical_baseline() -> Self;
-    pub fn validate_path(path: &Path) -> Result<PathBuf, String>;
-    pub fn load_from_path(path: &Path) -> Result<Self, String>;
-    pub fn save_to_path(&self, path: &Path) -> Result<(), String>;
-    pub fn register_mapping(&mut self, entry: ComplianceMappingEntry) -> Result<(), String>;
-    pub fn update_status(&mut self, id: &str, status: ComplianceStatus, reason: &str) -> Result<(), String>;
-    pub fn assess_framework(&self, framework: Option<ComplianceFramework>) -> ComplianceAssessmentReport;
-    pub fn verify_pep_coverage(&self, gate_id: &str) -> bool;
-}
+let service = ComplianceService::with_canonical_baseline();
+
+// Generate NIST SP 800-53 posture report
+let nist_report = service.assess_framework(Some(ComplianceFramework::NistSp80053Rev5));
+println!("NIST Compliance: {:.1}% ({} compliant, {} gaps)",
+    nist_report.compliance_percentage,
+    nist_report.compliant_count,
+    nist_report.gap_control_ids.len());
+
+// Check if critical PEP gates are mapped and compliant
+let is_covered = service.verify_pep_coverage("pep_enforce_gate");
+assert!(is_covered);
+
+let missing = service.uncovered_pep_gates(&["pep_enforce_gate", "custom_network_gate"]);
+println!("Uncovered gates: {:?}", missing);
 ```
 
-## 4. Invariants & Security Mandates
-- **COMPLYSVC1 (Side-Effect-Free Assessment)**: Queries and evaluations are strictly non-mutating.
-- **COMPLYSVC2 (Crash-Consistent Persistence)**: Writes execute via atomic rename using PID/nanosecond-tagged temporary files.
-- **COMPLYSVC3 (Path Sanitization)**: Path traversals, UNC roots, control characters, and symlinks are strictly rejected.
-- **COMPLYSVC4 (Resource Bounds)**: Stores capped at 1 MiB (`MAX_COMPLIANCE_STORE_SIZE`).
-- **COMPLYSVC5 (Deterministic Auditing)**: Quantitative scoring of compliance coverage and gap identification.
+## 3. Invariants & Security Guarantees
+- `COMPLYSVC1`: Non-destructive queries and assessment generation.
+- `COMPLYSVC2`: Crash-consistent atomic writes using PID/nanosecond-tagged temporary files (`.tmp.{pid}.{nanos}`) with guaranteed cleanup.
+- `COMPLYSVC3`: Path traversal (CWE-22) and symlink (CWE-59) rejection.
+- `COMPLYSVC4`: Hard 1 MiB store file size cap (`MAX_COMPLIANCE_STORE_SIZE`).
+- `COMPLYSVC5`: Quantitative compliance assessment reporting.
+
+## 4. Constraints & Known Limitations
+- Storage file size cannot exceed 1 MiB.
+- Storage file paths must have `.json` extension.
+- File system depth cannot exceed 16 path components.
+
+## 5. Evidence Artifacts
+- Research: [T-02811 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02811-core-service-research.md)
+- Specification: [T-02812 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02812-core-service-specification.md)
+- Scaffold: [T-02813 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02813-core-service-scaffold.md)
+- Implementation: [T-02814 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02814-core-service-implementation.md)
+- Unit Tests: [T-02815 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02815-core-service-unit-test.md)
+- Integration: [T-02816 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02816-core-service-integration.md)
+- Security Review: [T-02817 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02817-core-service-security-review.md)
+- Hardening: [T-02818 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02818-core-service-hardening.md)

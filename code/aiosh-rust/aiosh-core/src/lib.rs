@@ -45,6 +45,7 @@ pub mod ci;
 pub mod ci_config;
 pub mod classifier;
 pub mod compliance_data_model;
+pub mod compliance_service;
 pub mod dispatch;
 pub mod distro;
 pub mod distro_config;
@@ -551,6 +552,13 @@ pub use compliance_data_model::{
     COMPLIANCE_ERR_INVALID_TITLE, COMPLIANCE_ERR_BOUNDS_EXCEEDED,
     COMPLIANCE_ERR_CONTROL_CHARS, COMPLIANCE_ERR_DUPLICATE_ID,
     COMPLIANCE_ERR_INVALID_STATUS_TRANSITION, COMPLIANCE_ERR_MISSING_SUBSTRATE_REF,
+};
+pub use compliance_service::{
+    ComplianceAssessmentReport, ComplianceService,
+    DEFAULT_COMPLIANCE_MAP_PATH, MAX_COMPLIANCE_STORE_SIZE,
+    COMPLIANCESVC_ERR_NOT_FOUND, COMPLIANCESVC_ERR_CAPACITY_EXCEEDED,
+    COMPLIANCESVC_ERR_FILE_SIZE, COMPLIANCESVC_ERR_PATH_TRAVERSAL,
+    COMPLIANCESVC_ERR_IO, COMPLIANCESVC_ERR_PARSE,
 };
 
 

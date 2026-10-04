@@ -164,3 +164,63 @@ fn test_compliance_snapshot_serde_roundtrip() {
     let restored: ComplianceCatalogSnapshot = serde_json::from_str(&json_str).expect("deserialize");
     assert_eq!(snapshot, restored);
 }
+
+#[test]
+fn test_compliance_hardening_boundaries() {
+    // 1. Oversized ID boundary (> 64 chars)
+    let long_id = "A".repeat(MAX_COMPLIANCE_ID_LEN + 1);
+    let res = ComplianceControl::new(
+        &long_id,
+        ComplianceFramework::NistSp80053Rev5,
+        "Title",
+        "Desc",
+        "Cat",
+    );
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains(COMPLIANCE_ERR_BOUNDS_EXCEEDED));
+
+    // 2. Oversized title (> 128 chars)
+    let long_title = "T".repeat(MAX_COMPLIANCE_TITLE_LEN + 1);
+    let res_title = ComplianceControl::new(
+        "AC-1",
+        ComplianceFramework::NistSp80053Rev5,
+        &long_title,
+        "Desc",
+        "Cat",
+    );
+    assert!(res_title.is_err());
+    assert!(res_title.unwrap_err().contains(COMPLIANCE_ERR_BOUNDS_EXCEEDED));
+
+    // 3. Exceeded threat IDs count (> 16)
+    let many_threats: Vec<String> = (0..=MAX_THREAT_IDS_COUNT).map(|i| format!("T-{:03}", i)).collect();
+    let res_threats = ComplianceMappingEntry::new(
+        "MAP-TOO-MANY-THREATS",
+        "CTRL-1",
+        ComplianceFramework::Soc2Type2,
+        SubstrateTargetType::PepGate,
+        "gate",
+        many_threats,
+        ComplianceStatus::NonCompliant,
+        "Notes",
+        vec![],
+    );
+    assert!(res_threats.is_err());
+    assert!(res_threats.unwrap_err().contains(COMPLIANCE_ERR_BOUNDS_EXCEEDED));
+
+    // 4. Exceeded tags count (> 16)
+    let many_tags: Vec<String> = (0..=MAX_TAGS_COUNT).map(|i| format!("tag_{:03}", i)).collect();
+    let res_tags = ComplianceMappingEntry::new(
+        "MAP-TOO-MANY-TAGS",
+        "CTRL-1",
+        ComplianceFramework::Soc2Type2,
+        SubstrateTargetType::PepGate,
+        "gate",
+        vec![],
+        ComplianceStatus::NonCompliant,
+        "Notes",
+        many_tags,
+    );
+    assert!(res_tags.is_err());
+    assert!(res_tags.unwrap_err().contains(COMPLIANCE_ERR_BOUNDS_EXCEEDED));
+}
+

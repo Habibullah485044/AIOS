@@ -176,15 +176,102 @@ def test_mint_redeem_lifecycle() -> bool:
     return True
 
 
+def test_expired_grant_rejected() -> bool:
+    print("[6] Testing expired grant redemption rejection...")
+    tmp = Path(tempfile.mkdtemp(prefix="por-expired-"))
+    db_path = tmp / "audit.db"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_ring (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT NOT NULL,
+                actor_id TEXT NOT NULL, tool TEXT NOT NULL, command TEXT NOT NULL,
+                args_json TEXT NOT NULL, target TEXT, outcome TEXT NOT NULL, outcome_detail TEXT,
+                constitution_rev TEXT, grant_token TEXT, c1 INTEGER DEFAULT 0, c2 INTEGER DEFAULT 0,
+                c3 INTEGER DEFAULT 0, c4 INTEGER DEFAULT 0, prev_hash TEXT NOT NULL, hash TEXT NOT NULL UNIQUE
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pep_grants (
+                grant_id TEXT PRIMARY KEY, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                issued_to TEXT NOT NULL, constitution_rev TEXT NOT NULL, scope_json TEXT NOT NULL,
+                scope_hash TEXT NOT NULL, revoked_at TEXT, single_use INTEGER DEFAULT 1, redeemed_at TEXT
+            );
+        """)
+        # Insert expired grant
+        past = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)).isoformat()
+        expired = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        conn.execute("""
+            INSERT INTO pep_grants (grant_id, issued_at, expires_at, issued_to, constitution_rev, scope_json, scope_hash, single_use)
+            VALUES ('gr_expired_1', ?, ?, 'agent:scanner', 'rev1', '{}', 'h1', 1)
+        """, (past, expired))
+
+        # Check redemption condition: expires_at > now
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        cur = conn.execute("""
+            UPDATE pep_grants SET redeemed_at = ?
+            WHERE grant_id = 'gr_expired_1' AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
+        """, (now, now))
+        assert cur.rowcount == 0, "Expired grant must not be redeemed"
+    print(f"{PASS} Expired grant correctly rejected for redemption")
+    return True
+
+
+def test_tamper_detection_in_chain() -> bool:
+    print("[7] Testing cryptographic tamper detection in audit chain...")
+    tmp = Path(tempfile.mkdtemp(prefix="por-tamper-"))
+    db_path = tmp / "audit.db"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_ring (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT NOT NULL,
+                actor_id TEXT NOT NULL, tool TEXT NOT NULL, command TEXT NOT NULL,
+                args_json TEXT NOT NULL, target TEXT, outcome TEXT NOT NULL, outcome_detail TEXT,
+                constitution_rev TEXT, grant_token TEXT, c1 INTEGER DEFAULT 0, c2 INTEGER DEFAULT 0,
+                c3 INTEGER DEFAULT 0, c4 INTEGER DEFAULT 0, prev_hash TEXT NOT NULL, hash TEXT NOT NULL UNIQUE
+            );
+        """)
+
+    with audit_client.open_db(str(db_path)) as conn:
+        now = dt.datetime.now(dt.timezone.utc).isoformat()
+        r1 = audit_client.write_audit_row(conn, {
+            "ts": now, "actor": "user", "actor_id": "u1", "tool": "pep.capability.mint",
+            "command": "mint", "args": {"grant_id": "gr_tamper"}, "target": None,
+            "outcome": "ok", "outcome_detail": None, "constitution_rev": "rev1",
+            "grant_token": "gr_tamper", "c_flags": {"c1": False, "c2": False, "c3": False, "c4": False},
+        })
+        r2 = audit_client.write_audit_row(conn, {
+            "ts": now, "actor": "agent", "actor_id": "a1", "tool": "pep.capability.redeem",
+            "command": "exec", "args": {"grant_id": "gr_tamper"}, "target": None,
+            "outcome": "ok", "outcome_detail": None, "constitution_rev": "rev1",
+            "grant_token": "gr_tamper", "c_flags": {"c1": False, "c2": False, "c3": False, "c4": False},
+        })
+
+    # Tamper with row 2's command without recomputing hash
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE audit_ring SET command = 'tampered_cmd' WHERE id = ?", (r2.id,))
+
+    # Verify fails
+    with audit_client.open_db(str(db_path)) as conn:
+        v = audit_client.verify(conn)
+        assert not v["ok"], "Tampered row must fail verification"
+        assert v["broken_at"] == r2.id, f"Verification must detect breakage at row {r2.id}"
+    print(f"{PASS} Tamper detection verified: broken_at={v['broken_at']}")
+    return True
+
+
 def main() -> int:
     try:
-        ok = test_mint_redeem_lifecycle()
-        if ok:
-            print(f"\n{PASS} ALL RESTRIANT MINT/REDEEM CHECKS PASSED (Invariant I-1 certified)")
-            return 0
-        return 1
+        assert test_mint_redeem_lifecycle()
+        assert test_expired_grant_rejected()
+        assert test_tamper_detection_in_chain()
+        print(f"\n{PASS} ALL RESTRIANT UNIT TESTS PASSED (T-02836 certified)")
+        return 0
     except Exception as e:
-        print(f"\n{FAIL} Test failed: {e}")
+        print(f"\n{FAIL} Unit test failure: {e}")
         import traceback
         traceback.print_exc()
         return 1

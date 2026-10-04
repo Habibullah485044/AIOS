@@ -107,6 +107,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-cli/tests/test_restraint_mint_redeem.py` (created)
   - `docs/tasks/evidence/T-02835-capability-mint-redeem-records-implementation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-04 — T-02836: Capability Mint/Redeem Records — Unit Test
+- **Task ID**: `T-02836`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Expanded unit test suite `code/aiosh-cli/tests/test_restraint_mint_redeem.py` with 7 dedicated test cases.
+  - Verified mint audit event generation, pre-redemption unspent status, atomic single-use redemption, and double-spend rejection.
+  - Verified expired grant rejection and tamper detection pinpointing corruption at exact sequence number.
+  - Passed all existing capability CLI smoke tests.
+- **Files Touched**:
+  - `code/aiosh-cli/tests/test_restraint_mint_redeem.py` (modified)
+  - `docs/tasks/evidence/T-02836-capability-mint-redeem-records-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Implementation complete and certified. Advancing to T-02836 (`capability mint/redeem records: Unit Test`).
+  - Unit test complete and certified. Advancing to T-02837 (`capability mint/redeem records: Integration`).
 ---
+

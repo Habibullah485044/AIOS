@@ -92,4 +92,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Scaffold complete. Advancing to T-02835 (`capability mint/redeem records: Implementation`).
+### 2026-10-04 — T-02835: Capability Mint/Redeem Records — Implementation
+- **Task ID**: `T-02835`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented `single_use` and `redeemed_at` tracking in SQLite WAL table `pep_grants` in `code/aiosh-cli/src/pep.ts`.
+  - Added emission of `pep.capability.mint` audit event during grant creation in `PepGrantManager.create()`.
+  - Implemented atomic `redeem()` method with SQL writeback of `redeemed_at` and emission of `pep.capability.redeem` audit row with outcome="ok".
+  - Enforced single-use gate: second redemption attempts return `allowed: false` with error `"single-use grant already redeemed at ..."`.
+  - Added unit test `code/aiosh-cli/tests/test_restraint_mint_redeem.py` verifying full mint, check, redeem, double-redemption refusal, and audit ring hash-chain integrity.
+- **Files Touched**:
+  - `code/aiosh-cli/src/pep.ts` (modified)
+  - `code/aiosh-cli/tests/test_restraint_mint_redeem.py` (created)
+  - `docs/tasks/evidence/T-02835-capability-mint-redeem-records-implementation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Implementation complete and certified. Advancing to T-02836 (`capability mint/redeem records: Unit Test`).
 ---

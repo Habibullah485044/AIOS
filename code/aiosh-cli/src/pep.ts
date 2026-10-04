@@ -16,7 +16,7 @@
 
 import Database from "better-sqlite3";
 import { createHash, randomBytes } from "node:crypto";
-import { canonicalJson } from "./audit.js";
+import { canonicalJson, AuditRing } from "./audit.js";
 import type { PepGrant, GrantScope, RedeemResult } from "./types.js";
 
 export interface CreateOpts {
@@ -100,9 +100,19 @@ export class PepStore {
         ON pep_grants(issued_to)
         WHERE revoked_at IS NULL;
     `);
+    this.maybeAddColumn_("pep_grants", "single_use", "INTEGER NOT NULL DEFAULT 1");
+    this.maybeAddColumn_("pep_grants", "redeemed_at", "TEXT");
   }
 
-  create(opts: CreateOpts): PepGrant {
+  private maybeAddColumn_(table: string, col: string, decl: string): void {
+    const cols = this.db_.pragma(`table_info(${table})`) as Array<{
+      name: string;
+    }>;
+    if (cols.some((c) => c.name === col)) return;
+    this.db_.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+  }
+
+  create(opts: CreateOpts, ring?: AuditRing): PepGrant {
     const ttl = opts.ttl_seconds ?? 3600;
     const now = new Date();
     const expires = new Date(now.getTime() + ttl * 1000);
@@ -110,13 +120,14 @@ export class PepStore {
     const scope_json = JSON.stringify(opts.scope);
     const scope_hash = createHash("sha256")
       .update(canonicalJson(opts.scope)).digest("hex");
+    const single_use = opts.single_use !== false;
     this.db_.prepare(`
       INSERT INTO pep_grants
         (grant_id, issued_at, expires_at, issued_to,
-         constitution_rev, scope_json, scope_hash)
+         constitution_rev, scope_json, scope_hash, single_use)
       VALUES
         (@grant_id, @issued_at, @expires_at, @issued_to,
-         @constitution_rev, @scope_json, @scope_hash)
+         @constitution_rev, @scope_json, @scope_hash, @single_use)
     `).run({
       grant_id,
       issued_at: now.toISOString(),
@@ -125,7 +136,29 @@ export class PepStore {
       constitution_rev: opts.constitution_rev,
       scope_json,
       scope_hash,
+      single_use: single_use ? 1 : 0,
     });
+    if (ring) {
+      ring.write({
+        actor: "user",
+        actor_id: opts.issued_to,
+        tool: "pep.capability.mint",
+        command: "grant.mint",
+        args: {
+          grant_id,
+          single_use,
+          scope: opts.scope,
+          expires_at: expires.toISOString(),
+        },
+        target: undefined,
+        outcome: "ok",
+        outcome_detail: undefined,
+        constitution_rev: opts.constitution_rev,
+        grant_token: grant_id,
+        c_flags: { c1: false, c2: false, c3: false, c4: false },
+        ts: now.toISOString(),
+      });
+    }
     return {
       grant_id,
       issued_at: now.toISOString(),
@@ -133,6 +166,7 @@ export class PepStore {
       issued_to: opts.issued_to,
       constitution_rev: opts.constitution_rev,
       scope: opts.scope,
+      single_use,
     };
   }
 
@@ -157,6 +191,8 @@ export class PepStore {
       issued_to: String(row["issued_to"]),
       constitution_rev: String(row["constitution_rev"]),
       scope: JSON.parse(String(row["scope_json"])) as GrantScope,
+      single_use: row["single_use"] != null ? Number(row["single_use"]) === 1 : true,
+      redeemed_at: row["redeemed_at"] != null ? String(row["redeemed_at"]) : undefined,
     };
   }
 
@@ -172,6 +208,8 @@ export class PepStore {
       issued_to: String(r["issued_to"]),
       constitution_rev: String(r["constitution_rev"]),
       scope: JSON.parse(String(r["scope_json"])) as GrantScope,
+      single_use: r["single_use"] != null ? Number(r["single_use"]) === 1 : true,
+      redeemed_at: r["redeemed_at"] != null ? String(r["redeemed_at"]) : undefined,
     }));
   }
 
@@ -197,6 +235,12 @@ export class PepStore {
     if (Date.parse(g.expires_at) < Date.now()) {
       return { ok: false, reason: `grant ${grant_id} expired` };
     }
+    if (g.single_use && g.redeemed_at) {
+      return {
+        ok: false,
+        reason: `grant ${grant_id} already redeemed at ${g.redeemed_at}`,
+      };
+    }
     if (!toolGlobMatch(tool, g.scope.tools)) {
       return {
         ok: false,
@@ -209,15 +253,51 @@ export class PepStore {
     return { ok: true };
   }
 
-  /** Proof of Restraint: redeem a single-use capability token before execution.
-   *  Scaffolded for T-02834; fails loudly until T-02835 implementation. */
+  /** Proof of Restraint: redeem a single-use capability token before execution. */
   redeem(
-    _grant_id: string,
-    _actor: string,
-    _tool: string,
-    _command: string,
-    _ring?: unknown
+    grant_id: string,
+    actor: string,
+    tool: string,
+    command: string,
+    ring?: AuditRing
   ): RedeemResult {
-    throw new Error("NotImplementedError: PepGrantManager.redeem (T-02834 scaffold)");
+    const g = this.get(grant_id);
+    if (!g) {
+      return { ok: false, reason: `unknown or revoked grant: ${grant_id}` };
+    }
+    if (Date.parse(g.expires_at) < Date.now()) {
+      return { ok: false, reason: `grant ${grant_id} expired` };
+    }
+    if (g.single_use && g.redeemed_at) {
+      return { ok: false, reason: `grant ${grant_id} already redeemed at ${g.redeemed_at}` };
+    }
+    const now = new Date().toISOString();
+    const res = this.db_.prepare(`
+      UPDATE pep_grants SET redeemed_at = ?
+      WHERE grant_id = ? AND redeemed_at IS NULL
+    `).run(now, grant_id);
+    if (g.single_use && res.changes === 0) {
+      return { ok: false, reason: `grant ${grant_id} already redeemed concurrently` };
+    }
+    let audit_hash: string | undefined;
+    if (ring) {
+      const row = ring.write({
+        actor: "agent",
+        actor_id: actor,
+        tool: "pep.capability.redeem",
+        command,
+        args: { grant_id, tool, command },
+        target: undefined,
+        outcome: "ok",
+        outcome_detail: undefined,
+        constitution_rev: g.constitution_rev,
+        grant_token: grant_id,
+        c_flags: { c1: false, c2: false, c3: false, c4: false },
+        ts: now,
+      });
+      audit_hash = row.hash;
+    }
+    const updated = this.get(grant_id);
+    return { ok: true, grant: updated, audit_hash };
   }
 }

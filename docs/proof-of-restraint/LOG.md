@@ -867,3 +867,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02884 (`continuous restraint conformance: Scaffold`).
 
+### 2026-10-07 — T-02884: Continuous Restraint Conformance — Scaffold
+- **Task ID**: `T-02884`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / continuous restraint conformance (Component 6)
+- **Summary**:
+  - Scaffolded `code/aiosh-mcp/tests/test_por_conformance.py`: 14 scenario nodes spanning C1..C6 with sandbox fixtures `conform_env` / `anchor_keys`, bodies failing loudly until T-02885.
+  - Scaffolded `tools/test_por_conformance_suites.py`: fail-closed criteria battery C1..C6 with per-criterion PASS/FAIL report and `NON-CONFORMANT` exit envelope.
+  - Verified scaffold integrity: 14 tests collected cleanly; battery module imports with criteria map C1..C6.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_conformance.py` (created)
+  - `tools/test_por_conformance_suites.py` (created)
+  - `docs/tasks/evidence/T-02884-scaffold.md` (created)
+  - `docs/tasks/evidence/T-02884-continuous-restraint-conformance-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02885 (`continuous restraint conformance: Implementation`).
+

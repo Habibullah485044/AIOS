@@ -260,9 +260,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-mcp/tests/test_por_gate_integration.py` (created)
   - `docs/tasks/evidence/T-02847-redeem-before-act-gate-integration.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02848: Redeem-Before-Act Gate — Security Review
+- **Task ID**: `T-02848`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Performed deep security review of the redeem-before-act gate across all dispatch paths.
+  - Verified standing rule `[PoR]` / Invariant I-2: certified zero bypass paths exist across FastMCP tools and pentest wrappers.
+  - Audited race condition defenses in atomic conditional SQLite updates and validated fail-closed rollback handling on audit failure.
+  - Documented findings in `docs/tasks/evidence/T-02848-security.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02848-security.md` (created)
+  - `docs/tasks/evidence/T-02848-redeem-before-act-gate-security-review.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Integration complete. Advancing to T-02848 (`redeem-before-act gate: Security Review`).
+  - Security review complete. Advancing to T-02849 (`redeem-before-act gate: Hardening`).
 ---
+
 
 
 

@@ -803,3 +803,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02880 (`standalone proof verifier: Documentation`).
 
+### 2026-10-07 — T-02880: Standalone Proof Verifier — Documentation
+- **Task ID**: `T-02880`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Summary**:
+  - Authored `docs/SPEC-RESTRAINT-PROOF-VERIFIER.md`: zero-trust architectural role, 7-gate verification pipeline (CHECK_SCHEMA .. CHECK_LIVE_CHAIN), `VerificationResult` schema, and formal acceptance condition.
+  - Documented the T-02879 hardening bounds table (20 MiB payload cap, collection caps, Bloom parameter bounds, strict hex decode, ISO-8601 UTC instant comparison).
+  - Documented the complete interface surface: Python `verify_restraint_proof`, standalone `python -m aiosh_mcp.verifier`, TypeScript `verifyRestraintProof`, MCP tool `aios.restraint.verify`, and CLI `aiosh prove verify` with `AIOSH_ANCHOR_PUBKEY` fallback.
+  - Authored the 16-code error catalog with operator remediation guidance and the fail-closed trust model (Invariants I-4).
+  - Verified documentation accuracy against both Python and TypeScript implementations and live test expectations.
+- **Files Touched**:
+  - `docs/SPEC-RESTRAINT-PROOF-VERIFIER.md` (created)
+  - `docs/tasks/evidence/T-02880-doc.md` (created)
+  - `docs/tasks/evidence/T-02880-standalone-proof-verifier-documentation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02881 (`standalone proof verifier: Verification & Evidence`).
+

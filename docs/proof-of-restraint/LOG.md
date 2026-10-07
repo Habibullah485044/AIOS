@@ -555,9 +555,6 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02864-scaffold.md` (created)
   - `docs/tasks/evidence/T-02864-restraint-proof-generator-scaffold.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
-- **Status / Next Steps**:
-  - Advancing to T-02865 (`restraint proof generator: Implementation`).
-
 ### 2026-10-07 — T-02865: Restraint Proof Generator — Implementation
 - **Task ID**: `T-02865`
 - **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
@@ -578,3 +575,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02866 (`restraint proof generator: Unit Test`).
+
+### 2026-10-07 — T-02866: Restraint Proof Generator — Unit Test
+- **Task ID**: `T-02866`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented unit test suite `code/aiosh-mcp/tests/test_por_restraint_generator.py` (8 test cases).
+  - Validated valid proof generation, canonical JSON output, and `PROVABLY_RESTRAINED` verdict.
+  - Verified negative security paths: `WINDOW_INVALID`, `GRANT_NOT_FOUND`, `GRANT_REDEEMED` in `pep_grants`, `GRANT_REDEEMED` in `audit_ring`, `GRANT_REDEEMED` via Bloom match, and `NO_COVERING_ANCHORS`.
+  - Conducted security audit of test harness and verified cryptographic zero-false-negative guarantees for archived segment Bloom tests.
+  - All 8 tests passed in 1.36s (22/22 total PoR suite tests passing).
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_restraint_generator.py` (created)
+  - `docs/tasks/evidence/T-02866-unit-test.md` (created)
+  - `docs/tasks/evidence/T-02866-restraint-proof-generator-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02867 (`restraint proof generator: Integration`).
+
+

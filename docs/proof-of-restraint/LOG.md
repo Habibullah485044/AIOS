@@ -505,3 +505,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Component 3 complete! Advancing to Component 4: T-02862 (`restraint proof generator: Research`).
+
+### 2026-10-07 — T-02862: Restraint Proof Generator — Research
+- **Task ID**: `T-02862`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Researched cryptographic and architectural requirements for Component 4 (Restraint Proof Generator).
+  - Formulated negative attestation model: proving non-redemption of a capability grant $G$ over window $[T_{start}, T_{end}]$ by combining external anchors, archived segment Bloom filter exclusions, and unbroken live hash chains.
+  - Established that segment Bloom filters guarantee zero false negatives ($P=0$) for unexercised grants across cold storage.
+  - Outlined self-contained proof package format (`restraint_proof.json`) enabling zero-trust offline verification (Invariant I-4).
+  - Documented research in `docs/tasks/evidence/T-02862-research.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02862-research.md` (created)
+  - `docs/tasks/evidence/T-02862-restraint-proof-generator-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02863 (`restraint proof generator: Specification`).

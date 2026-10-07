@@ -922,3 +922,8 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Fixed `tools/ci_run.py` `_effective_command` to resolve bare `bash` via `$AIOSH_BASH` or a PATH-only lookup, bypassing the Windows System32 WSL shadow that killed every bash suite on this host.
 - Verified: registry schema validates; `tools/test_por_conformance_suites.py` -> `CONFORMANT: C1..C6 PASS` (exit 0); two full orchestrator runs wrote schema-valid summary artifacts. Both runs stopped at pre-existing `rust_smoke` defects (flaky cargo tests; stale wire-contract assertion 13 vs 205 tools) before reaching suite 30 - follow-up work.
 - Evidence: docs/tasks/evidence/T-02887-*.md
+
+## T-02888 - continuous restraint conformance: Security Review (2026-10-08)
+- Reviewed CRCS (test_por_conformance.py, test_por_conformance_suites.py, ci_suites.py, ci_run.py bash fix) against 7 threat vectors TV-CRC-01..07.
+- Verdict: no runtime policy bypass; PEP gating + audit emission verified by C1/C2. Findings for hardening (T-02889): PATH-interpreter validation, skip-transparent fail-closed runner, concurrency-safe AIOSH_HOME sandbox, temp-tree hygiene.
+- Evidence: docs/tasks/evidence/T-02888-*.md

@@ -185,9 +185,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02841-verify.md` (created)
   - `docs/tasks/evidence/T-02841-capability-mint-redeem-records-verification-evidenc.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02842: Redeem-Before-Act Gate — Research
+- **Task ID**: `T-02842`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Researched all tool dispatch pathways across Python MCP server (`_dispatch.py`, `server.py`), TypeScript agent loop (`agent.ts`), CLI tools (`cli.ts`), and Rust kernel.
+  - Identified critical invariant gap: `_dispatch.py` checked scope and expiry via `grant_check()` but failed to execute atomic single-use redemption, allowing arbitrary re-use of grants for consequential tools.
+  - Established concrete architectural blueprint: implement `grant_redeem()` in `audit_client.py` and bind it into `_dispatch.dispatch()` to enforce Invariant I-2 before tool execution starts.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02842-research.md` (created)
+  - `docs/tasks/evidence/T-02842-redeem-before-act-gate-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Component 1 complete! Advancing to Component 2: T-02842 (`redeem-before-act gate: Research`).
+  - Research complete. Advancing to T-02843 (`redeem-before-act gate: Specification`).
 ---
+
 
 
 

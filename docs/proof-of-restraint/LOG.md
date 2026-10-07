@@ -900,3 +900,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02886 (`continuous restraint conformance: Unit Test`).
 
+### 2026-10-07 — T-02886: Continuous Restraint Conformance — Unit Test
+- **Task ID**: `T-02886`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / continuous restraint conformance (Component 6)
+- **Summary**:
+  - Authored `test_por_conformance_meta.py` (M1..M6): battery criteria completeness, node-id resolution, no-orphan enforcement, fail-closed runner behavior, sandbox isolation + env restore, and T-02883 contract fixture identifiers.
+  - Refactored `conform_env` into a `_make_env()` factory + fixture wrapper for unit-testable sandbox lifecycle.
+  - Results: 20/20 (6 meta + 14 conformance) PASS.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_conformance_meta.py` (created)
+  - `code/aiosh-mcp/tests/test_por_conformance.py` (fixture refactor)
+  - `docs/tasks/evidence/T-02886-unit-test.md` (created)
+  - `docs/tasks/evidence/T-02886-continuous-restraint-conformance-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02887 (`continuous restraint conformance: Integration`).
+

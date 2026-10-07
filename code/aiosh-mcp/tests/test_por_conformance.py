@@ -113,9 +113,8 @@ def _open(env):
         conn.close()
 
 
-@pytest.fixture
-def conform_env():
-    """Isolated AIOSH_HOME + temp audit.db; zero network. Yields paths/keys/helpers."""
+def _make_env():
+    """Build an isolated conformance sandbox. Returns (env, cleanup)."""
     tmp = Path(tempfile.mkdtemp(prefix="por-conform-"))
     aiosh_home = tmp / ".aios"
     anchors_dir = aiosh_home / "anchors"
@@ -193,13 +192,23 @@ def conform_env():
 
     env["prove"] = prove
     env["verify"] = verify
-    yield env
 
-    if old_home is not None:
-        os.environ["AIOSH_HOME"] = old_home
-    else:
-        os.environ.pop("AIOSH_HOME", None)
-    shutil.rmtree(tmp, ignore_errors=True)
+    def cleanup():
+        if old_home is not None:
+            os.environ["AIOSH_HOME"] = old_home
+        else:
+            os.environ.pop("AIOSH_HOME", None)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return env, cleanup
+
+
+@pytest.fixture
+def conform_env():
+    """Isolated AIOSH_HOME + temp audit.db; zero network. Yields paths/keys/helpers."""
+    env, cleanup = _make_env()
+    yield env
+    cleanup()
 
 
 @pytest.fixture

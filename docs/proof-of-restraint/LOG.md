@@ -314,19 +314,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Component 2 complete! Advancing to Component 3: T-02852 (`chain anchoring & completeness checkpoints: Research`).
----
 
-
-
-
-
-
-
-
-
-
-
-
-
+### 2026-10-07 — T-02852: Chain Anchoring & Completeness Checkpoints — Research
+- **Task ID**: `T-02852`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Researched external chain anchoring and completeness checkpoints for Layer 2 Proof of Restraint and Invariant I-3.
+  - Analyzed threat model: an adversary with SQLite write access can recompute a valid alternative hash chain from genesis if all state resides solely inside `audit.db`.
+  - Identified cryptographic grounding in RFC 9162 (Signed Tree Heads) and RFC 8032 (Ed25519 digital signatures).
+  - Codified key separation: signing key must reside strictly outside `audit.db` (in filesystem keyfile or environment), verified using standalone public keys.
+  - Outlined external append-only anchor log format (`$AIOSH_HOME/anchors.jsonl`) and canonical JSON payload structure.
+  - Documented findings in `docs/tasks/evidence/T-02852-research.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02852-research.md` (created)
+  - `docs/tasks/evidence/T-02852-chain-anchoring-completeness-checkpoints-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02853 (`chain anchoring & completeness checkpoints: Specification`).
 
 

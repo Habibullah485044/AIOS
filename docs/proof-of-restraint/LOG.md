@@ -653,8 +653,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02870-doc.md` (created)
   - `docs/tasks/evidence/T-02870-restraint-proof-generator-documentation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02871: Restraint Proof Generator — Verification & Evidence
+- **Task ID**: `T-02871`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Ran comprehensive regression and verification test suite across Component 4 (14 tests executed, 13 passed, 1 skipped).
+  - Validated TypeScript distribution build with zero compiler warnings/errors (`npm run build`).
+  - Certified Component 4 (Restraint Proof Generator) as feature-complete, hardened, and locked.
+  - Documented verification evidence in `docs/tasks/evidence/T-02871-verify.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02871-verify.md` (created)
+  - `docs/tasks/evidence/T-02871-restraint-proof-generator-verification-and-evidence.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02871 (`restraint proof generator: Verification & Evidence`).
+  - Component 4 closeout complete. Advancing to Component 5 kickoff: T-02872 (`standalone proof verifier: Research`).
+
 
 
 

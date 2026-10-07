@@ -489,3 +489,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02861 (`chain anchoring & completeness checkpoints: Verification & Evidence`).
+
+### 2026-10-07 — T-02861: Chain Anchoring & Completeness Checkpoints — Verification & Evidence
+- **Task ID**: `T-02861`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Successfully verified Component 3 ("chain anchoring & completeness checkpoints") and Invariant I-3.
+  - Validated all 11 unit and integration tests across PoR components with 100% pass rate in 2.40s.
+  - Validated clean TypeScript compilation with zero type errors.
+  - Closed Component 3 with comprehensive evidence in `docs/tasks/evidence/T-02861-verify.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02861-verify.md` (created)
+  - `docs/tasks/evidence/T-02861-chain-anchoring-completeness-checkpoints-verification-evidenc.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Component 3 complete! Advancing to Component 4: T-02862 (`restraint proof generator: Research`).

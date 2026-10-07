@@ -472,3 +472,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02860 (`chain anchoring & completeness checkpoints: Documentation`).
+
+### 2026-10-07 — T-02860: Chain Anchoring & Completeness Checkpoints — Documentation
+- **Task ID**: `T-02860`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored comprehensive specification document `docs/SPEC-CHAIN-ANCHORING.md` documenting Invariant I-3, canonical JSON formatting, Ed25519 signatures, and error responses.
+  - Documented CLI invocations (`aiosh anchor create`, `aiosh anchor verify`) and FastMCP tool invocations (`aios_anchor_create`, `aios_anchor_verify`).
+  - Outlined known limitations and linked all architectural evidence files.
+  - Documented evidence in `docs/tasks/evidence/T-02860-documentation.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/SPEC-CHAIN-ANCHORING.md` (created)
+  - `docs/tasks/evidence/T-02860-documentation.md` (created)
+  - `docs/tasks/evidence/T-02860-chain-anchoring-completeness-checkpoints-documentation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02861 (`chain anchoring & completeness checkpoints: Verification & Evidence`).

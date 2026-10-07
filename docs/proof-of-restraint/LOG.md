@@ -197,9 +197,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02842-research.md` (created)
   - `docs/tasks/evidence/T-02842-redeem-before-act-gate-research.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02843: Redeem-Before-Act Gate — Specification
+- **Task ID**: `T-02843`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Specified contracts for `audit_client.grant_redeem()` with atomic conditional SQL update and fail-closed rollback.
+  - Specified integration of `grant_redeem()` into `aiosh_mcp._dispatch.dispatch()`.
+  - Defined explicit failure envelopes and rejection reasons (`"already redeemed at ..."`, `"expired"`).
+  - Formally guaranteed Invariant I-2: tool invocation is blocked if single-use redemption fails, ensuring zero unrecorded consequential actions.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02843-spec.md` (created)
+  - `docs/tasks/evidence/T-02843-redeem-before-act-gate-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Research complete. Advancing to T-02843 (`redeem-before-act gate: Specification`).
+  - Specification complete. Advancing to T-02844 (`redeem-before-act gate: Scaffold`).
 ---
+
 
 
 

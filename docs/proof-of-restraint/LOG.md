@@ -146,9 +146,24 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Files Touched**:
   - `docs/tasks/evidence/T-02838-capability-mint-redeem-records-security-review.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-04 — T-02839: Capability Mint/Redeem Records — Hardening
+- **Task ID**: `T-02839`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Hardened `PepGrantManager.redeem()` in `code/aiosh-cli/src/pep.ts`.
+  - Added strict parameter bounding (8192 characters) for `tool` and `command` strings to block DoS.
+  - Implemented explicit distinction between single-use conditional locking (`redeemed_at IS NULL`) and multi-use timestamp recording.
+  - Added atomic rollback of `redeemed_at` in the event of `AuditRing` write failure to preserve fail-closed synchronization.
+  - Passed clean TypeScript build and all unit & integration test suites.
+- **Files Touched**:
+  - `code/aiosh-cli/src/pep.ts` (modified)
+  - `docs/tasks/evidence/T-02839-capability-mint-redeem-records-hardening.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Security review complete. Advancing to T-02839 (`capability mint/redeem records: Hardening`).
+  - Hardening complete. Advancing to T-02840 (`capability mint/redeem records: Documentation`).
 ---
+
 
 
 

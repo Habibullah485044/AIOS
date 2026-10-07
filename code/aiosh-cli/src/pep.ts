@@ -271,31 +271,53 @@ export class PepStore {
     if (g.single_use && g.redeemed_at) {
       return { ok: false, reason: `grant ${grant_id} already redeemed at ${g.redeemed_at}` };
     }
+    const MAX_PARAM_LEN = 8192;
+    if (tool.length > MAX_PARAM_LEN || command.length > MAX_PARAM_LEN) {
+      return { ok: false, reason: "tool or command parameter exceeds maximum allowed length (8192)" };
+    }
     const now = new Date().toISOString();
-    const res = this.db_.prepare(`
-      UPDATE pep_grants SET redeemed_at = ?
-      WHERE grant_id = ? AND redeemed_at IS NULL
-    `).run(now, grant_id);
-    if (g.single_use && res.changes === 0) {
-      return { ok: false, reason: `grant ${grant_id} already redeemed concurrently` };
+    if (g.single_use) {
+      const res = this.db_.prepare(`
+        UPDATE pep_grants SET redeemed_at = ?
+        WHERE grant_id = ? AND redeemed_at IS NULL
+      `).run(now, grant_id);
+      if (res.changes === 0) {
+        return { ok: false, reason: `grant ${grant_id} already redeemed concurrently` };
+      }
+    } else {
+      this.db_.prepare(`
+        UPDATE pep_grants SET redeemed_at = ?
+        WHERE grant_id = ?
+      `).run(now, grant_id);
     }
     let audit_hash: string | undefined;
     if (ring) {
-      const row = ring.write({
-        actor: "agent",
-        actor_id: actor,
-        tool: "pep.capability.redeem",
-        command,
-        args: { grant_id, tool, command },
-        target: undefined,
-        outcome: "ok",
-        outcome_detail: undefined,
-        constitution_rev: g.constitution_rev,
-        grant_token: grant_id,
-        c_flags: { c1: false, c2: false, c3: false, c4: false },
-        ts: now,
-      });
-      audit_hash = row.hash;
+      try {
+        const row = ring.write({
+          actor: "agent",
+          actor_id: actor,
+          tool: "pep.capability.redeem",
+          command,
+          args: { grant_id, tool, command },
+          target: undefined,
+          outcome: "ok",
+          outcome_detail: undefined,
+          constitution_rev: g.constitution_rev,
+          grant_token: grant_id,
+          c_flags: { c1: false, c2: false, c3: false, c4: false },
+          ts: now,
+        });
+        audit_hash = row.hash;
+      } catch (err) {
+        // Rollback redemption state if audit log failed (fail-closed integrity)
+        if (g.single_use) {
+          this.db_.prepare(`
+            UPDATE pep_grants SET redeemed_at = NULL
+            WHERE grant_id = ? AND redeemed_at = ?
+          `).run(grant_id, now);
+        }
+        return { ok: false, reason: `audit ring write failed: ${String(err)}` };
+      }
     }
     const updated = this.get(grant_id);
     return { ok: true, grant: updated, audit_hash };

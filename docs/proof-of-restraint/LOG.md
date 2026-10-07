@@ -333,4 +333,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02853 (`chain anchoring & completeness checkpoints: Specification`).
 
-
+### 2026-10-07 — T-02853: Chain Anchoring & Completeness Checkpoints — Specification
+- **Task ID**: `T-02853`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored formal specification for Chain Anchoring & Completeness Checkpoints implementing Invariant I-3.
+  - Specified `AnchorRecord` schema with `schema_version`, `seq`, `head_hash`, `timestamp`, `pubkey`, and 64-byte Ed25519 signature.
+  - Specified canonical JSON byte payload hashing rules to guarantee cross-substrate determinism between Python and TypeScript.
+  - Defined external persistence contract: `$AIOSH_HOME/anchors/anchors.jsonl`, strict key file permissions, and zero private key presence in `audit.db`.
+  - Defined comprehensive verification API contract (`verify_chain_against_anchors`) handling truncation, forks, and signature corruption.
+  - Documented specification in `docs/tasks/evidence/T-02853-spec.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02853-spec.md` (created)
+  - `docs/tasks/evidence/T-02853-chain-anchoring-completeness-checkpoints-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02854 (`chain anchoring & completeness checkpoints: Scaffold`).

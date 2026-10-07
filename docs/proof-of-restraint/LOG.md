@@ -173,9 +173,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/SPEC-RESTRAINT-MINT-REDEEM.md` (created)
   - `docs/tasks/evidence/T-02840-capability-mint-redeem-records-documentation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02841: Capability Mint/Redeem Records — Verification & Evidence
+- **Task ID**: `T-02841`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Executed full test verification suite: unit test (`test_restraint_mint_redeem.py`), integration test (`test_por_integration.py`), and CLI smoke test (`test_capability_cli_smoke.py`). All passed 100% green.
+  - Formally certified Invariant I-1 (1:1 mint:redeem mapping) and Invariant I-2 (atomic single-use gate).
+  - Closed Component 1 ("capability mint/redeem records") with evidence in `docs/tasks/evidence/T-02841-verify.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02841-verify.md` (created)
+  - `docs/tasks/evidence/T-02841-capability-mint-redeem-records-verification-evidenc.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Documentation complete. Advancing to T-02841 (`capability mint/redeem records: Verification & Evidence`).
+  - Component 1 complete! Advancing to Component 2: T-02842 (`redeem-before-act gate: Research`).
 ---
+
 
 
 

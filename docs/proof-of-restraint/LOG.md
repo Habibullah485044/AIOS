@@ -222,9 +222,24 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (modified)
   - `docs/tasks/evidence/T-02844-redeem-before-act-gate-scaffold.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02845: Redeem-Before-Act Gate — Implementation
+- **Task ID**: `T-02845`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented `audit_client.grant_redeem()` in `code/aiosh-mcp/aiosh_mcp/audit_client.py` with atomic conditional SQL update and rollback protection.
+  - Wired Gate #2.5 redeem-before-act validation into `_dispatch.dispatch()` in `code/aiosh-mcp/aiosh_mcp/_dispatch.py`.
+  - Added unit test `code/aiosh-mcp/tests/test_por_redeem_gate.py` verifying single-use token consumption, replay rejection, and hash chain verification.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (modified)
+  - `code/aiosh-mcp/aiosh_mcp/_dispatch.py` (modified)
+  - `code/aiosh-mcp/tests/test_por_redeem_gate.py` (created)
+  - `docs/tasks/evidence/T-02845-redeem-before-act-gate-implementation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Scaffold complete. Advancing to T-02845 (`redeem-before-act gate: Implementation`).
+  - Implementation complete. Advancing to T-02846 (`redeem-before-act gate: Unit Test`).
 ---
+
 
 
 

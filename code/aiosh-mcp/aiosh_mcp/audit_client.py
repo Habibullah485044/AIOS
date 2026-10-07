@@ -322,6 +322,7 @@ def load_grant(conn: sqlite3.Connection, grant_id: str) -> dict[str, Any] | None
         return None
     if row["revoked_at"] is not None:
         return None
+    keys = row.keys()
     return {
         "grant_id": row["grant_id"],
         "issued_at": row["issued_at"],
@@ -329,6 +330,8 @@ def load_grant(conn: sqlite3.Connection, grant_id: str) -> dict[str, Any] | None
         "issued_to": row["issued_to"],
         "constitution_rev": row["constitution_rev"],
         "scope": json.loads(row["scope_json"]),
+        "single_use": bool(row["single_use"]) if "single_use" in keys and row["single_use"] is not None else True,
+        "redeemed_at": row["redeemed_at"] if "redeemed_at" in keys else None,
     }
 
 
@@ -434,6 +437,8 @@ def grant_check(
                 "reason": f"grant {grant_id} expired or has malformed expires_at"}
     if expires < now:
         return {"ok": False, "reason": f"grant {grant_id} expired"}
+    if g.get("single_use", True) and g.get("redeemed_at") is not None:
+        return {"ok": False, "reason": f"grant {grant_id} already redeemed at {g['redeemed_at']}"}
     # Scope check: tool must be in grant.scope.tools (glob match).
     scope_tools = g["scope"].get("tools", []) or []
     if not tool_glob_match(tool, scope_tools):
@@ -467,11 +472,55 @@ def grant_redeem(
     args: dict[str, Any] | None = None,
     target: str | None = None,
 ) -> dict[str, Any]:
-    """Proof of Restraint (Layer 1): atomically redeem single-use capability token before execution.
+    """Proof of Restraint (Layer 1): atomically redeem capability token before execution."""
+    chk = grant_check(conn, grant_id, tool, target)
+    if not chk["ok"]:
+        return chk
 
-    Scaffold stub for T-02844. Full implementation follows in T-02845.
-    """
-    raise NotImplementedError("grant_redeem scaffold stub (T-02844)")
+    g = load_grant(conn, grant_id)
+    if not g:
+        return {"ok": False, "reason": f"unknown or revoked grant: {grant_id}"}
+
+    MAX_PARAM_LEN = 8192
+    if len(tool) > MAX_PARAM_LEN or len(command) > MAX_PARAM_LEN:
+        return {"ok": False, "reason": "tool or command parameter exceeds maximum allowed length (8192)"}
+
+    now_iso = utcnow_iso()
+    is_single_use = g.get("single_use", True)
+
+    if is_single_use:
+        cur = conn.execute("""
+            UPDATE pep_grants SET redeemed_at = ?
+            WHERE grant_id = ? AND redeemed_at IS NULL AND revoked_at IS NULL
+        """, (now_iso, grant_id))
+        if cur.rowcount == 0:
+            existing = conn.execute("SELECT redeemed_at, revoked_at FROM pep_grants WHERE grant_id = ?", (grant_id,)).fetchone()
+            if existing and existing["redeemed_at"]:
+                return {"ok": False, "reason": f"single-use grant {grant_id} already redeemed at {existing['redeemed_at']}"}
+            return {"ok": False, "reason": f"grant {grant_id} already redeemed concurrently or revoked"}
+    else:
+        conn.execute("UPDATE pep_grants SET redeemed_at = ? WHERE grant_id = ?", (now_iso, grant_id))
+
+    try:
+        row = write_audit_row(conn, {
+            "ts": now_iso,
+            "actor": actor,
+            "actor_id": actor_id,
+            "tool": "pep.capability.redeem",
+            "command": command or f"redeem {grant_id}",
+            "args": args or {"grant_id": grant_id, "tool": tool, "command": command},
+            "target": target,
+            "outcome": "ok",
+            "outcome_detail": None,
+            "constitution_rev": g.get("constitution_rev", "v0.0"),
+            "grant_token": grant_id,
+            "c_flags": {"c1": False, "c2": False, "c3": False, "c4": False},
+        })
+        return {"ok": True, "grant_id": grant_id, "audit_row": row}
+    except Exception as exc:
+        if is_single_use:
+            conn.execute("UPDATE pep_grants SET redeemed_at = NULL WHERE grant_id = ? AND redeemed_at = ?", (grant_id, now_iso))
+        return {"ok": False, "reason": f"audit ring write failed during redemption: {exc}"}
 
 
 def cFlagsFor(tool: str, target: str | None,

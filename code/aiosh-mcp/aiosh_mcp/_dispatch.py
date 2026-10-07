@@ -201,6 +201,42 @@ def dispatch(
             return ({"ok": False, "tool": tool,
                      "audit_id": row.id, "reason": verdict["reason"],
                      "gate": "pep", "policy_revision": cls_policy}, row)
+
+        # Gate #2.5 — Invariant I-2: Redeem-Before-Act Gate
+        if grant_id is not None:
+            redeem_res = audit_client.grant_redeem(
+                conn,
+                grant_id=grant_id,
+                actor=actor,
+                actor_id=actor_id,
+                tool=tool,
+                command=command,
+                args=args,
+                target=target,
+            )
+            if not redeem_res["ok"]:
+                row = audit_client.write_audit_row(conn, {
+                    "ts": audit_client.utcnow_iso(),
+                    "actor": actor,
+                    "actor_id": actor_id,
+                    "tool": tool,
+                    "command": command,
+                    "args": args,
+                    "target": target,
+                    "outcome": "refused",
+                    "outcome_detail": redeem_res["reason"],
+                    "constitution_rev": active_constitution_rev(),
+                    "grant_token": grant_id,
+                    "c_flags": cls_c_flags,
+                    "policy_revision": cls_policy,
+                    "classify_rule_ids": cls_rule_ids,
+                    "classify_evidence": cls_evidence,
+                    "classify_overall_verdict": cls_overall,
+                    "classify_verdict_reason": cls_reason,
+                })
+                return ({"ok": False, "tool": tool,
+                         "audit_id": row.id, "reason": redeem_res["reason"],
+                         "gate": "pep.redeem", "policy_revision": cls_policy}, row)
     # Gate passed: caller still writes the success/error row inside its
     # own try/except via commit(...). The classification_result is also
     # returned for the caller's audit-row write path to mirror.

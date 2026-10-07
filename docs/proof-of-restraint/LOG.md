@@ -538,3 +538,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02864 (`restraint proof generator: Scaffold`).
+
+### 2026-10-07 — T-02864: Restraint Proof Generator — Scaffold
+- **Task ID**: `T-02864`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Created module skeletons for Restraint Proof Generator in Python (`code/aiosh-mcp/aiosh_mcp/restraint.py`) and TypeScript (`code/aiosh-cli/src/restraint.ts`).
+  - Implemented typed `RestraintProofPackage` data models with serialization support.
+  - Defined strict method signatures with `NotImplementedError` / `Error("Not implemented")` bodies for proof generation.
+  - Verified Python import and TypeScript `npm run build` pass with zero errors.
+  - Documented scaffolding in `docs/tasks/evidence/T-02864-scaffold.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/restraint.py` (created)
+  - `code/aiosh-cli/src/restraint.ts` (created)
+  - `docs/tasks/evidence/T-02864-scaffold.md` (created)
+  - `docs/tasks/evidence/T-02864-restraint-proof-generator-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Completed requested 30-task block! Advancing to T-02865 (`restraint proof generator: Implementation`).

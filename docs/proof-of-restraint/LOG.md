@@ -609,8 +609,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02867-integration.md` (created)
   - `docs/tasks/evidence/T-02867-restraint-proof-generator-integration.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02868: Restraint Proof Generator — Security Review
+- **Task ID**: `T-02868`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Conducted threat modeling and vulnerability assessment across Python and TypeScript implementations of Restraint Proof Generator.
+  - Audited 6 threat vectors: window boundary under-coverage, SQL injection, path traversal, Bloom filter collision dynamics, live range tampering, and timestamp skew.
+  - Identified critical security finding: anchor candidate fallback logic allowed unbounding anchors if window extended beyond external anchor coverage.
+  - Documented findings, threat matrix, and hardening backlog in `docs/tasks/evidence/T-02868-security.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02868-security.md` (created)
+  - `docs/tasks/evidence/T-02868-restraint-proof-generator-security-review.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02868 (`restraint proof generator: Security Review`).
+  - Advancing to T-02869 (`restraint proof generator: Hardening`).
+
 
 
 

@@ -248,9 +248,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-mcp/tests/test_por_redeem_gate.py` (modified)
   - `docs/tasks/evidence/T-02846-redeem-before-act-gate-unit-test.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02847: Redeem-Before-Act Gate — Integration
+- **Task ID**: `T-02847`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Wired and verified the redeem-before-act gate through the real FastMCP and `pentest` tool execution surface (`aios_pentest_nmap`).
+  - Added end-to-end integration test `code/aiosh-mcp/tests/test_por_gate_integration.py` proving that consequential tool execution commits `pep.capability.redeem` prior to host execution and blocks replay attempts.
+  - Verified 100% hash chain integrity across all test runs.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_gate_integration.py` (created)
+  - `docs/tasks/evidence/T-02847-redeem-before-act-gate-integration.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Unit test complete. Advancing to T-02847 (`redeem-before-act gate: Integration`).
+  - Integration complete. Advancing to T-02848 (`redeem-before-act gate: Security Review`).
 ---
+
 
 
 

@@ -522,3 +522,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02863 (`restraint proof generator: Specification`).
+
+### 2026-10-07 — T-02863: Restraint Proof Generator — Specification
+- **Task ID**: `T-02863`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored formal specification for Component 4 (Restraint Proof Generator) and Invariant I-4.
+  - Specified self-contained `restraint_proof.json` package format encompassing capability parameters, window anchors, archived segment Bloom exclusions, and live range hash continuities.
+  - Defined generator API (`generate_restraint_proof`), error conditions (`GRANT_NOT_FOUND`, `GRANT_REDEEMED`, `NO_COVERING_ANCHORS`, `WINDOW_INVALID`), and audit trails.
+  - Documented specification in `docs/tasks/evidence/T-02863-spec.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02863-spec.md` (created)
+  - `docs/tasks/evidence/T-02863-restraint-proof-generator-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02864 (`restraint proof generator: Scaffold`).

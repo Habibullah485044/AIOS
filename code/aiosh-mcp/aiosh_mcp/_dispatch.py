@@ -204,16 +204,20 @@ def dispatch(
 
         # Gate #2.5 — Invariant I-2: Redeem-Before-Act Gate
         if grant_id is not None:
-            redeem_res = audit_client.grant_redeem(
-                conn,
-                grant_id=grant_id,
-                actor=actor,
-                actor_id=actor_id,
-                tool=tool,
-                command=command,
-                args=args,
-                target=target,
-            )
+            try:
+                redeem_res = audit_client.grant_redeem(
+                    conn,
+                    grant_id=grant_id,
+                    actor=actor,
+                    actor_id=actor_id,
+                    tool=tool,
+                    command=command,
+                    args=args,
+                    target=target,
+                )
+            except Exception as exc:
+                redeem_res = {"ok": False, "reason": f"redemption exception: {exc}"}
+
             if not redeem_res["ok"]:
                 row = audit_client.write_audit_row(conn, {
                     "ts": audit_client.utcnow_iso(),
@@ -224,7 +228,7 @@ def dispatch(
                     "args": args,
                     "target": target,
                     "outcome": "refused",
-                    "outcome_detail": redeem_res["reason"],
+                    "outcome_detail": str(redeem_res["reason"])[:1024],
                     "constitution_rev": active_constitution_rev(),
                     "grant_token": grant_id,
                     "c_flags": cls_c_flags,

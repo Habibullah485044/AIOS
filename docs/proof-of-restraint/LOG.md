@@ -273,9 +273,24 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02848-security.md` (created)
   - `docs/tasks/evidence/T-02848-redeem-before-act-gate-security-review.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02849: Redeem-Before-Act Gate — Hardening
+- **Task ID**: `T-02849`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Hardened `audit_client.grant_redeem()` with SQLite WAL `busy_timeout = 5000` to prevent lock errors under concurrency.
+  - Added input parameter sanitization and length bounds (8192 characters).
+  - Isolated Gate #2.5 redemption in `_dispatch.dispatch()` with exception trapping and honest refusal audit row logging, guaranteeing fail-closed execution.
+  - Verified all integration, unit, and capability smoke test suites green.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (modified)
+  - `code/aiosh-mcp/aiosh_mcp/_dispatch.py` (modified)
+  - `docs/tasks/evidence/T-02849-redeem-before-act-gate-hardening.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Security review complete. Advancing to T-02849 (`redeem-before-act gate: Hardening`).
+  - Hardening complete. Advancing to T-02850 (`redeem-before-act gate: Documentation`).
 ---
+
 
 
 

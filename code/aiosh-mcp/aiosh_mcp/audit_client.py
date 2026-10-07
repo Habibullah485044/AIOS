@@ -472,7 +472,15 @@ def grant_redeem(
     args: dict[str, Any] | None = None,
     target: str | None = None,
 ) -> dict[str, Any]:
-    """Proof of Restraint (Layer 1): atomically redeem capability token before execution."""
+    grant_id = grant_id.strip() if grant_id else ""
+    if not grant_id:
+        return {"ok": False, "reason": "empty or whitespace grant_id"}
+
+    try:
+        conn.execute("PRAGMA busy_timeout = 5000;")
+    except Exception:
+        pass
+
     chk = grant_check(conn, grant_id, tool, target)
     if not chk["ok"]:
         return chk

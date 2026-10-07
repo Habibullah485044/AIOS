@@ -369,3 +369,25 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02855 (`chain anchoring & completeness checkpoints: Implementation`).
+
+### 2026-10-07 — T-02855: Chain Anchoring & Completeness Checkpoints — Implementation
+- **Task ID**: `T-02855`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented cross-substrate Ed25519 signing and verification in Python (`code/aiosh-mcp/aiosh_mcp/anchors.py`) and TypeScript (`code/aiosh-cli/src/anchors.ts`).
+  - Implemented canonical JSON byte payload hashing guaranteeing cross-language signature determinism.
+  - Implemented `append_anchor`, `load_anchors`, and `verify_chain_against_anchors` validating against tampering, key mismatch, truncation, and forks.
+  - Validated Python assertions and TypeScript runtime behavior. Rebuilt TypeScript (`npm run build`) cleanly.
+  - Validated zero regression in existing test suite (`test_por_gate_integration.py`).
+  - Documented implementation in `docs/tasks/evidence/T-02855-implementation.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/anchors.py` (updated)
+  - `code/aiosh-cli/src/anchors.ts` (updated)
+  - `code/aiosh-cli/dist/anchors.js` (compiled)
+  - `code/aiosh-cli/dist/anchors.d.ts` (compiled)
+  - `docs/tasks/evidence/T-02855-implementation.md` (created)
+  - `docs/tasks/evidence/T-02855-chain-anchoring-completeness-checkpoints-implementation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02856 (`chain anchoring & completeness checkpoints: Unit Test`).

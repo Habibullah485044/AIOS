@@ -836,3 +836,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Component 5 certified complete, hardened, documented, and locked.
   - Advancing to T-02882 (`continuous restraint conformance: Research`).
 
+### 2026-10-07 — T-02882: Continuous Restraint Conformance — Research
+- **Task ID**: `T-02882`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / continuous restraint conformance (Component 6)
+- **Summary**:
+  - Researched the Invariant I-5 Continuous Conformance Gate: a CI-enforced regression oracle for negative attestation.
+  - Defined drift model D1..D5 (redeem-gate bypass, mint/redeem parity drift, untouched-grant instability, touched-grant leakage, substrate divergence) with D4 identified as the catastrophic direction.
+  - Defined conformance dimensions C1..C6 (non-bypassability, audit parity, restraint stability, invalidation, substrate oracle parity, anchor/chain continuity).
+  - Surveyed existing assets (`tools/ci_suites.py` registry, `test_ledger_matrix_smoke.py` M1..M6, mint/redeem tests, PoR batteries); identified the standing-gate gap: no suite re-executes mint -> anchor -> prove -> verify per CI run.
+  - Blueprinted the harness (`test_por_conformance.py`, `tools/test_por_conformance_suites.py`, CI registration, `CONFORMANCE.md` manifest).
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02882-research.md` (created)
+  - `docs/tasks/evidence/T-02882-continuous-restraint-conformance-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02883 (`continuous restraint conformance: Specification`).
+

@@ -46,6 +46,7 @@ import {
 import * as retention from "./retention.js";
 import * as anchors from "./anchors.js";
 import * as restraint from "./restraint.js";
+import * as verifier from "./verifier.js";
 
 const aiHome = process.env["AIOSH_HOME"] ?? `${process.env["HOME"]}/.aios`;
 mkdirSync(aiHome, { recursive: true });
@@ -657,6 +658,47 @@ proveCmd
         audit_id: -1, error: err?.message ?? String(err), data: {},
       });
     } finally { ctx.db.close(); }
+  });
+
+proveCmd
+  .command("verify")
+  .description("Verify a self-contained RestraintProofPackage purely mathematically.")
+  .requiredOption("--proof <path>", "Path to restraint proof JSON file")
+  .option("--pubkey <hex...>", "Trusted Ed25519 public key hex(es)")
+  .action((opts: { proof: string; pubkey?: string[] | string }) => {
+    try {
+      const keys = opts.pubkey
+        ? Array.isArray(opts.pubkey)
+          ? opts.pubkey
+          : [opts.pubkey]
+        : process.env["AIOSH_ANCHOR_PUBKEY"]
+        ? [process.env["AIOSH_ANCHOR_PUBKEY"]!]
+        : [];
+      if (keys.length === 0) {
+        errOut({
+          ok: false, subcommand: "prove verify", outcome: "refused",
+          audit_id: -1, error: "No trusted public key provided (set AIOSH_ANCHOR_PUBKEY or pass --pubkey)", data: {},
+        });
+        return;
+      }
+      const res = verifier.verifyRestraintProof(opts.proof, keys);
+      if (res.valid) {
+        okOut({
+          ok: true, subcommand: "prove verify", outcome: "ok",
+          audit_id: -1, data: res as unknown as Record<string, unknown>,
+        });
+      } else {
+        errOut({
+          ok: false, subcommand: "prove verify", outcome: "refused",
+          audit_id: -1, error: res.reason ?? "VERIFY_FAILED", data: res as unknown as Record<string, unknown>,
+        });
+      }
+    } catch (err: any) {
+      errOut({
+        ok: false, subcommand: "prove verify", outcome: "refused",
+        audit_id: -1, error: err?.message ?? String(err), data: {},
+      });
+    }
   });
 
 // ---- grant -------------------------------------------------------------

@@ -737,8 +737,26 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02876-unit-test.md` (created)
   - `docs/tasks/evidence/T-02876-standalone-proof-verifier-unit-test.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02877: Standalone Proof Verifier — Integration
+- **Task ID**: `T-02877`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Registered `aios_restraint_verify` MCP tool in `code/aiosh-mcp/aiosh_mcp/server.py`.
+  - Added `aiosh prove verify` subcommand in `code/aiosh-cli/src/cli.ts` supporting `--proof` and `--pubkey`.
+  - Rebuilt TypeScript distribution cleanly (`npm run build`).
+  - Authored and verified integration test suite `code/aiosh-mcp/tests/test_por_verifier_integration.py` (3 tests passed).
+  - Confirmed end-to-end integration across proof generation, standalone verification, MCP remote calls, and anti-forgery rejection.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/server.py` (updated)
+  - `code/aiosh-cli/src/cli.ts` (updated)
+  - `code/aiosh-mcp/tests/test_por_verifier_integration.py` (created)
+  - `docs/tasks/evidence/T-02877-integration.md` (created)
+  - `docs/tasks/evidence/T-02877-standalone-proof-verifier-integration.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02877 (`standalone proof verifier: Integration`).
+  - Advancing to T-02878 (`standalone proof verifier: Security Review`).
+
 
 
 

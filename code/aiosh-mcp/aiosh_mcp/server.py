@@ -43,6 +43,7 @@ from . import pentest as pentest_mod
 from . import retention as retention_mod
 from . import anchors as anchors_mod
 from . import restraint as restraint_mod
+from . import verifier as verifier_mod
 
 mcp = FastMCP("aiosh-mcp")
 SCHEMA_VERSION = "2025-06-18"   # MCP schema version pinned by ADR-0035 §D-2.
@@ -480,6 +481,36 @@ def aios_restraint_prove(
         tool=tool, command=command, args=args,
         target=grant_id, grant_id=caller_grant_id, fn=run,
     )
+
+
+@mcp.tool()
+def aios_restraint_verify(
+    proof: dict | str,
+    trusted_pubkeys: list[str] | str,
+    caller_grant_id: str | None = None,
+) -> dict:
+    """Verify a self-contained RestraintProofPackage purely mathematically against trusted Ed25519 public keys."""
+    tool = "aios.restraint.verify"
+    command = "restraint.verify"
+    keys = [trusted_pubkeys] if isinstance(trusted_pubkeys, str) else trusted_pubkeys
+    args = {"trusted_keys_count": len(keys)}
+
+    def run() -> dict:
+        try:
+            res = verifier_mod.verify_restraint_proof(proof, keys)
+            return {
+                "ok": res.valid,
+                "tool": tool,
+                "result": res.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "tool": tool, "error": f"INTERNAL_ERROR: {str(exc)}"}
+
+    return _recorded_call(
+        tool=tool, command=command, args=args,
+        target=None, grant_id=caller_grant_id, fn=run,
+    )
+
 
 
 

@@ -391,3 +391,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02856 (`chain anchoring & completeness checkpoints: Unit Test`).
+
+### 2026-10-07 — T-02856: Chain Anchoring & Completeness Checkpoints — Unit Test
+- **Task ID**: `T-02856`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Added unit test suite `code/aiosh-mcp/tests/test_por_chain_anchoring.py` verifying Invariant I-3.
+  - Tested positive and negative cases: Ed25519 keypair generation, signature verification, corrupt signature rejection, tampered seq/head_hash/timestamp rejection, untrusted key rejection.
+  - Verified chain completeness checks against signed checkpoints: untampered chain passes, truncated chain fails with `TRUNCATION_DETECTED`, forked/modified chain fails with `FORK_DETECTED`.
+  - Verified key separation invariant (no private key material stored in `audit.db`).
+  - Executed tests standalone and via `pytest` (9/9 passed).
+  - Documented evidence in `docs/tasks/evidence/T-02856-unit-test.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_chain_anchoring.py` (created)
+  - `docs/tasks/evidence/T-02856-unit-test.md` (created)
+  - `docs/tasks/evidence/T-02856-chain-anchoring-completeness-checkpoints-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02857 (`chain anchoring & completeness checkpoints: Integration`).

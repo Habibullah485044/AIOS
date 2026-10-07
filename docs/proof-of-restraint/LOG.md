@@ -300,9 +300,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/SPEC-REDEEM-BEFORE-ACT-GATE.md` (created)
   - `docs/tasks/evidence/T-02850-redeem-before-act-gate-documentation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02851: Redeem-Before-Act Gate — Verification & Evidence
+- **Task ID**: `T-02851`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Executed full test verification suite: integration test (`test_por_gate_integration.py`), unit test (`test_por_redeem_gate.py`), and capability smoke tests (`test_capability_cli_smoke.py`). All passed 100% green.
+  - Formally certified Invariant I-2: consequential actions cannot run without committing a `pep.capability.redeem` audit row first, and replay attempts are rejected at the dispatch gate.
+  - Closed Component 2 ("redeem-before-act gate") with evidence in `docs/tasks/evidence/T-02851-verify.md`.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02851-verify.md` (created)
+  - `docs/tasks/evidence/T-02851-redeem-before-act-gate-verification-evidenc.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Documentation complete. Advancing to T-02851 (`redeem-before-act gate: Verification & Evidence`).
+  - Component 2 complete! Advancing to Component 3: T-02852 (`chain anchoring & completeness checkpoints: Research`).
 ---
+
 
 
 

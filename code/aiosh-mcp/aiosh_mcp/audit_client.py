@@ -277,7 +277,9 @@ CREATE TABLE IF NOT EXISTS pep_grants (
   constitution_rev  TEXT NOT NULL,
   scope_json        TEXT NOT NULL,
   scope_hash        TEXT NOT NULL,
-  revoked_at        TEXT
+  revoked_at        TEXT,
+  single_use        INTEGER NOT NULL DEFAULT 1,
+  redeemed_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_grants_active
   ON pep_grants(issued_to) WHERE revoked_at IS NULL;
@@ -290,6 +292,12 @@ def ensure_pep_schema(conn: sqlite3.Connection) -> None:
     if the MCP server is used as the first writer (e.g. in tests), we still
     need the table to be present so that the grant gate can read it."""
     conn.executescript(_PEP_SCHEMA)
+    cur = conn.execute("PRAGMA table_info(pep_grants)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "single_use" not in cols:
+        conn.execute("ALTER TABLE pep_grants ADD COLUMN single_use INTEGER NOT NULL DEFAULT 1")
+    if "redeemed_at" not in cols:
+        conn.execute("ALTER TABLE pep_grants ADD COLUMN redeemed_at TEXT")
     conn.commit()
 
 

@@ -556,4 +556,25 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02864-restraint-proof-generator-scaffold.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Completed requested 30-task block! Advancing to T-02865 (`restraint proof generator: Implementation`).
+  - Advancing to T-02865 (`restraint proof generator: Implementation`).
+
+### 2026-10-07 — T-02865: Restraint Proof Generator — Implementation
+- **Task ID**: `T-02865`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented `generate_restraint_proof` in Python (`code/aiosh-mcp/aiosh_mcp/restraint.py`) and TypeScript (`code/aiosh-cli/src/restraint.ts`).
+  - Implemented validation for grant existence, unredeemed status, bounding anchors selection from `anchors.jsonl`, archived segment Bloom exclusion testing, and live range continuous hash walks.
+  - Aligned `_PEP_SCHEMA` in `audit_client.py` with `single_use` and `redeemed_at` columns.
+  - Verified targeted tests and confirmed 11/11 tests passing in pytest suite.
+  - Documented evidence in `docs/tasks/evidence/T-02865-implementation.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/restraint.py` (updated)
+  - `code/aiosh-cli/src/restraint.ts` (updated)
+  - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (updated)
+  - `code/aiosh-cli/dist/restraint.js` (compiled)
+  - `docs/tasks/evidence/T-02865-implementation.md` (created)
+  - `docs/tasks/evidence/T-02865-restraint-proof-generator-implementation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02866 (`restraint proof generator: Unit Test`).

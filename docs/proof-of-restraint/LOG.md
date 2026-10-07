@@ -666,8 +666,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02871-verify.md` (created)
   - `docs/tasks/evidence/T-02871-restraint-proof-generator-verification-and-evidence.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02872: Standalone Proof Verifier — Research
+- **Task ID**: `T-02872`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Researched standalone zero-knowledge / zero-trust verifier requirements for Proof of Restraint (Invariant I-4).
+  - Formulated 5-step mathematical verification sequence: schema validity, grant non-redemption and window coverage, Ed25519 external anchor signatures and bounding timestamps, Bloom filter negative evaluation, and live range terminal hash matching.
+  - Certified zero dependency on host database (`audit.db`), file system, or network credentials.
+  - Documented findings in `docs/tasks/evidence/T-02872-research.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02872-research.md` (created)
+  - `docs/tasks/evidence/T-02872-standalone-proof-verifier-research.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Component 4 closeout complete. Advancing to Component 5 kickoff: T-02872 (`standalone proof verifier: Research`).
+  - Advancing to T-02873 (`standalone proof verifier: Specification`).
+
 
 
 

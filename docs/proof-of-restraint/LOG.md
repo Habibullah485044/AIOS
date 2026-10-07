@@ -691,8 +691,24 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02873-spec.md` (created)
   - `docs/tasks/evidence/T-02873-standalone-proof-verifier-specification.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02874: Standalone Proof Verifier — Scaffold
+- **Task ID**: `T-02874`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Scaffolding of `code/aiosh-mcp/aiosh_mcp/verifier.py` (Python) and `code/aiosh-cli/src/verifier.ts` (TypeScript).
+  - Defined data structures `VerificationResult` and function signatures `verify_restraint_proof` / `verifyRestraintProof`.
+  - Verified Python imports and completed TypeScript compilation cleanly (`npm run build`).
+  - Documented scaffolding in `docs/tasks/evidence/T-02874-scaffold.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/verifier.py` (created)
+  - `code/aiosh-cli/src/verifier.ts` (created)
+  - `docs/tasks/evidence/T-02874-scaffold.md` (created)
+  - `docs/tasks/evidence/T-02874-standalone-proof-verifier-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02874 (`standalone proof verifier: Scaffold`).
+  - Advancing to T-02875 (`standalone proof verifier: Implementation`).
+
 
 
 

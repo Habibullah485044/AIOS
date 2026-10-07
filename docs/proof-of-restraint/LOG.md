@@ -722,8 +722,24 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02875-implementation.md` (created)
   - `docs/tasks/evidence/T-02875-standalone-proof-verifier-implementation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02876: Standalone Proof Verifier — Unit Test
+- **Task ID**: `T-02876`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Implemented unit test suite `code/aiosh-mcp/tests/test_por_verifier.py` (11 test cases).
+  - Validated all 7 gates: valid proof acceptance, schema validation, unredeemed & single-use checks, timestamp and window bounds, anchor public key whitelisting, Ed25519 signature verification, Bloom filter negative evaluation, and live chain continuity.
+  - Certified zero database interactions during verification.
+  - All 11 tests passed in 0.38s.
+  - Documented evidence in `docs/tasks/evidence/T-02876-unit-test.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_verifier.py` (created)
+  - `docs/tasks/evidence/T-02876-unit-test.md` (created)
+  - `docs/tasks/evidence/T-02876-standalone-proof-verifier-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02876 (`standalone proof verifier: Unit Test`).
+  - Advancing to T-02877 (`standalone proof verifier: Integration`).
+
 
 
 

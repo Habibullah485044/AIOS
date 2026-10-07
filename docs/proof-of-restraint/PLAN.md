@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Feature ID** | `proof-of-restraint` |
-| **Status** | Accepted & Locked via ADR-0037 |
+| **Status** | Shipped — maintained by standing rules (locked via ADR-0037) |
 | **Date Initiated** | 2026-10-04 |
 | **Pillar** | Pillar C (AI Kernel Subsystem) & Pillar 2 (Security Kernel & PEP Fabric) |
 | **Ledger Epic** | `Proof of Restraint` |
@@ -198,3 +198,38 @@ To ensure that multiple agents (Claude, Gemini, Codex, or human operators) maint
 |---|---|---|---|---|
 | 2026-10-04 | Pre-T-02831 | Architecture Agent | All | Initial comprehensive baseline plan & living specification created. |
 | 2026-10-04 | T-02831 | Architecture Agent | All | Locked ADR-0037 as accepted and binding; verified code baseline. |
+| 2026-10-08 | T-02892 | Coding Agent | 6, 8 | Milestone shipped: added §8 Demo (live mint→anchor→prove→verify + post-anchor tamper demo, `tools/demo_por.py`); status → "Shipped — maintained by standing rules". Living-doc update per task instruction (PLAN.md §Demo referenced but absent; created here). |
+
+---
+
+## 8. Demo (Live Milestone Demonstration)
+
+Re-runnable end-to-end demonstration of the shipped capability:
+
+```bash
+python3 tools/demo_por.py
+```
+
+Script: [`tools/demo_por.py`](demo_por.py). Full captured transcript: [`docs/tasks/evidence/T-02892-demo.md`](../tasks/evidence/T-02892-demo.md).
+
+Steps (all against the real production surfaces — `audit_client`, PEP mint,
+`anchors`, `restraint`, standalone `verifier`):
+
+1. **Mint a capability and leave it unused** — one `pep_grants` row + one
+   `pep.capability.mint` audit row (I-1 mint contract), never redeemed.
+2. **Anchor the audit ring** — signed Ed25519 checkpoints over the ring head
+   (start anchor ≤ window start, end anchor ≥ window end).
+3. **Generate a restraint proof** — `restraint.generate_restraint_proof` →
+   verdict `PROVABLY_RESTRAINED`.
+4. **Verify with the standalone verifier** — zero database: API
+   (`verifier.verify_restraint_proof`) and CLI
+   (`python -m aiosh_mcp.verifier <proof.json> --pubkey <hex>`) both return
+   `valid: true` with all 7 checks green.
+5. **Tamper: delete a row and re-chain** — the ring becomes internally
+   consistent again (`verify_live: ok`), but a freshly generated proof is
+   **rejected** with `HEAD_HASH_MISMATCH` (signed anchor still commits to the
+   old tail); CLI exit code 1.
+
+Exit code 0 only when the honest proof verifies AND the tampered proof is
+rejected (fail-closed demo contract). The demo is also covered by the
+conformance battery (C3/C4/C6) that runs in CI on every run.

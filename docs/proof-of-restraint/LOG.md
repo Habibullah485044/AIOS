@@ -940,3 +940,8 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 ## T-02891 - continuous restraint conformance: Verification & Evidence (2026-10-08)
 - Component 6 (I-5) closeout, series T-02882..T-02891. Fresh verification: PoR battery 77 passed / 1 skipped; CONFORMANT C1..C6 PASS in strict + default modes (zero skips); CI registry valid (30 suites). Residual risks recorded (rust_smoke pre-existing defects, POSIX-only interpreter checks, C5 dist/node dependency).
 - Evidence: docs/tasks/evidence/T-02891-*.md
+
+## T-02892 - Proof of Restraint: milestone close & live demo (2026-10-08) [FINAL - MILESTONE SHIPPED]
+- Live demo (tools/demo_por.py): mint -> anchor -> prove -> verify PASS (7/7 checks, standalone CLI exit 0); tamper (delete row + re-chain) REJECTED with HEAD_HASH_MISMATCH (CLI exit 1). Transcript: docs/tasks/evidence/T-02892-demo.md.
+- Updated GOALS.md (What is already done), task_plan.md (milestone entry), PLAN.md (status -> 'Shipped - maintained by standing rules', new §8 Demo + Change Log row).
+- Proof of Restraint (ADR-0037, I-1..I-5) is SHIPPED; maintained by standing rules (PLAN.md §6) and the por_conformance CI gate.

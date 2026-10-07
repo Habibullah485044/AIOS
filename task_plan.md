@@ -1414,3 +1414,13 @@ graph-derived reconstruction (`authoritative: false`,
 artifact, not a real status. Source of truth for "what's done" is
 repository evidence: ADRs + shipped code with green smokes (per
 README *How to keep going*). The live v2/Sprint plan is this file.
+
+
+### 2026-10-08 - MILESTONE: Proof of Restraint SHIPPED (T-02831..T-02892)
+
+Proof of Restraint (ADR-0037, Invariants I-1..I-5) is shipped and maintained by standing rules:
+- **Capability**: cryptographically prove a granted capability was left untouched (mint -> anchor -> prove -> verify), no trust in operator logs.
+- **Components**: PEP mint/redeem (I-1), signed anchors (I-2), Bloom absence via retention (I-3), zero-DB standalone verifier (I-4), continuous conformance gate in CI (I-5).
+- **Surfaces**: `restraint.generate_restraint_proof`, `verifier.verify_restraint_proof`, `python -m aiosh_mcp.verifier <proof.json> --pubkey <hex>`, `python3 tools/test_por_conformance_suites.py` (CI suite `por_conformance`), milestone demo `python3 tools/demo_por.py`.
+- **Live demo (T-02892)**: honest proof verifies 7/7 checks; post-anchor tamper (delete row + re-chain) rejected with HEAD_HASH_MISMATCH (docs/tasks/evidence/T-02892-demo.md).
+- **Docs**: docs/proof-of-restraint/PLAN.md (status: Shipped - maintained by standing rules), docs/SPEC-RESTRAINT-PROOF-GENERATOR.md, docs/SPEC-RESTRAINT-PROOF-VERIFIER.md, docs/SPEC-RESTRAINT-CONFORMANCE-GATE.md.

@@ -60,6 +60,11 @@ All work is driven by `docs/tasks/MASTER_TASK_LEDGER.jsonl`
 - Sprint 2: classifier-gated agent loop over MCP (Ollama + stub)
 - Sprint 3 item 1: **audit-ring retention** (checkpointed rotation + bloom
   filter, ADR-0036, `test_retention_smoke.py` R1–R7)
+- Proof of Restraint **SHIPPED** (ADR-0037, T-02831..T-02892): mint ->
+  anchor -> prove -> verify chain with signed Ed25519 checkpoints, Bloom
+  absence proofs, zero-DB standalone verifier, and the `por_conformance`
+  CI gate (docs/proof-of-restraint/PLAN.md). Status: Shipped - maintained
+  by standing rules.
 
 ## Next queue (from task_plan.md)
 

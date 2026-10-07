@@ -945,3 +945,7 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Live demo (tools/demo_por.py): mint -> anchor -> prove -> verify PASS (7/7 checks, standalone CLI exit 0); tamper (delete row + re-chain) REJECTED with HEAD_HASH_MISMATCH (CLI exit 1). Transcript: docs/tasks/evidence/T-02892-demo.md.
 - Updated GOALS.md (What is already done), task_plan.md (milestone entry), PLAN.md (status -> 'Shipped - maintained by standing rules', new §8 Demo + Change Log row).
 - Proof of Restraint (ADR-0037, I-1..I-5) is SHIPPED; maintained by standing rules (PLAN.md §6) and the por_conformance CI gate.
+
+## T-02893 - Compliance Mapping / MCP-API surface: Research (2026-10-08)
+- Collected facts (MCP spec 2025-06-18 / 2026-07-28, JSON-RPC 2.0, Python SDK 1.29.1; repo: _recorded_call envelope, PEP gating, Rust ComplianceService substrate, docs/compliance_map.json store, aiosh compliance CLI). 4 assumptions flagged, 8 decisions queued for spec. No code changed.
+- Evidence: docs/tasks/evidence/T-02893-*.md

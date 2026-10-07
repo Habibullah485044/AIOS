@@ -160,8 +160,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-cli/src/pep.ts` (modified)
   - `docs/tasks/evidence/T-02839-capability-mint-redeem-records-hardening.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02840: Capability Mint/Redeem Records — Documentation
+- **Task ID**: `T-02840`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / capability mint/redeem records
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored comprehensive specification document `docs/SPEC-RESTRAINT-MINT-REDEEM.md`.
+  - Documented schema contracts for `pep_grants` table and event payloads for `pep.capability.mint` and `pep.capability.redeem`.
+  - Provided working TypeScript and Python cross-substrate usage examples.
+  - Honestly documented security bounds, unanchored chain limitations, and crash consistency semantics.
+- **Files Touched**:
+  - `docs/SPEC-RESTRAINT-MINT-REDEEM.md` (created)
+  - `docs/tasks/evidence/T-02840-capability-mint-redeem-records-documentation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Hardening complete. Advancing to T-02840 (`capability mint/redeem records: Documentation`).
+  - Documentation complete. Advancing to T-02841 (`capability mint/redeem records: Verification & Evidence`).
 ---
 
 

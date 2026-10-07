@@ -2876,3 +2876,4 @@
 {"seq":2876,"ts":"2026-10-07T18:25:54Z","event":"completed","task_id":2876,"note":"","evidence":[]}
 {"seq":2877,"ts":"2026-10-07T18:34:11Z","event":"completed","task_id":2877,"note":"","evidence":[]}
 {"seq":2878,"ts":"2026-10-07T18:36:53Z","event":"completed","task_id":2878,"note":"","evidence":[]}
+{"seq":2879,"ts":"2026-10-07T19:04:02Z","event":"completed","task_id":2879,"note":"Hardening: payload cap 20MiB, segments/hashes caps, bloom param bounds + strict hex, strict ISO-8601 UTC instant comparison, type guards; Python/TS parity; 11 new tests, PoR battery 38 passed 1 skipped","evidence":["docs/tasks/evidence/T-02879-hardening.md","docs/tasks/evidence/T-02879-standalone-proof-verifier-hardening.md"]}

@@ -10,11 +10,42 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from . import anchors as anchors_mod
 from . import retention as retention_mod
+
+MAX_PROOF_PAYLOAD_BYTES = 20 * 1024 * 1024  # 20 MB cap
+MAX_SEGMENTS_COUNT = 10_000
+MAX_LIVE_HASHES_COUNT = 100_000
+MAX_BLOOM_BITS = 16_000_000  # ~2 MB bitset
+MAX_BLOOM_K = 64
+MAX_FIELD_STR_LEN = 4_096
+
+
+def _parse_iso8601_utc(ts: Any) -> Optional[datetime]:
+    if not isinstance(ts, str) or not ts.strip():
+        return None
+    try:
+        norm = ts.strip()
+        if norm.endswith("Z"):
+            norm = norm[:-1] + "+00:00"
+        dt = datetime.fromisoformat(norm)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _require_dt(ts: Any, field: str) -> datetime:
+    """Strict ISO-8601 UTC parse. Raises ValueError with TIMESTAMP_INVALID on failure."""
+    dt = _parse_iso8601_utc(ts)
+    if dt is None:
+        raise ValueError(f"TIMESTAMP_INVALID: {field} ({ts!r}) is not a valid ISO-8601 UTC timestamp")
+    return dt
 
 
 @dataclass(frozen=True)
@@ -42,11 +73,19 @@ def _load_proof_dict(proof: Union[dict[str, Any], str, Path]) -> dict[str, Any]:
     if isinstance(proof, (str, Path)):
         p = Path(proof)
         if p.is_file():
+            size = p.stat().st_size
+            if size > MAX_PROOF_PAYLOAD_BYTES:
+                raise ValueError(f"PAYLOAD_TOO_LARGE: proof file size ({size} bytes) exceeds limit ({MAX_PROOF_PAYLOAD_BYTES} bytes)")
             content = p.read_text(encoding="utf-8")
             return json.loads(content)
         # If string is raw JSON
-        if isinstance(proof, str) and (proof.startswith("{") or proof.startswith("[")):
-            return json.loads(proof)
+        if isinstance(proof, str):
+            encoded = proof.encode("utf-8")
+            if len(encoded) > MAX_PROOF_PAYLOAD_BYTES:
+                raise ValueError(f"PAYLOAD_TOO_LARGE: proof string exceeds limit ({MAX_PROOF_PAYLOAD_BYTES} bytes)")
+            trimmed = proof.strip()
+            if trimmed.startswith("{") or trimmed.startswith("["):
+                return json.loads(trimmed)
     raise ValueError(f"PARAM_INVALID: cannot parse proof from {type(proof)}")
 
 
@@ -90,14 +129,30 @@ def verify_restraint_proof(
     for k in required_keys:
         if k not in data or data[k] is None:
             return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: MISSING_FIELD: {k}", checks=checks)
+
+    # Structural type guards (hardening T-02879)
+    if not isinstance(data["grant"], dict) or not isinstance(data["window"], dict) or not isinstance(data["anchors"], dict):
+        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: grant/window/anchors must be JSON objects", checks=checks)
+    if not isinstance(data["segments_checked"], list):
+        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: segments_checked must be a list", checks=checks)
+    if not isinstance(data["live_range"], dict):
+        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: live_range must be a JSON object", checks=checks)
+    if len(data["segments_checked"]) > MAX_SEGMENTS_COUNT:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: PROOF_TOO_COMPLEX: segments_checked ({len(data['segments_checked'])}) exceeds limit ({MAX_SEGMENTS_COUNT})", checks=checks)
+    live_hashes = data["live_range"].get("hashes", [])
+    if not isinstance(live_hashes, list):
+        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: live_range.hashes must be a list", checks=checks)
+    if len(live_hashes) > MAX_LIVE_HASHES_COUNT:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: PROOF_TOO_COMPLEX: live_range.hashes ({len(live_hashes)}) exceeds limit ({MAX_LIVE_HASHES_COUNT})", checks=checks)
+
     checks["schema"] = True
 
     # 2. CHECK_GRANT
     grant = data["grant"]
     window = data["window"]
     grant_id = grant.get("grant_id")
-    if not grant_id:
-        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: GRANT_INVALID: missing grant_id", checks=checks)
+    if not isinstance(grant_id, str) or not grant_id or len(grant_id) > MAX_FIELD_STR_LEN:
+        return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: GRANT_INVALID: missing or invalid grant_id", checks=checks)
 
     if grant.get("redeemed_at") is not None:
         return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: GRANT_REDEEMED: grant was redeemed at {grant.get('redeemed_at')}", checks=checks)
@@ -105,18 +160,28 @@ def verify_restraint_proof(
     if not grant.get("single_use", False):
         return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: GRANT_INVALID: proof requires single_use=true capability grant", checks=checks)
 
-    w_start = window.get("start")
-    w_end = window.get("end")
-    if not w_start or not w_end or w_start > w_end:
-        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: WINDOW_INVALID: [{w_start}, {w_end}]", checks=checks)
+    w_start_raw = window.get("start")
+    w_end_raw = window.get("end")
+    try:
+        w_start_dt = _require_dt(w_start_raw, "window.start")
+        w_end_dt = _require_dt(w_end_raw, "window.end")
+    except ValueError as exc:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: {exc}", checks=checks)
+    if w_start_dt > w_end_dt:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: WINDOW_INVALID: [{w_start_raw}, {w_end_raw}]", checks=checks)
 
-    # Confirm grant validity bounds claimed window
-    g_issued = grant.get("issued_at")
-    g_expires = grant.get("expires_at")
-    if g_issued and g_issued > w_start:
-        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: GRANT_INVALID: grant issued ({g_issued}) after window start ({w_start})", checks=checks)
-    if g_expires and g_expires < w_end:
-        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: GRANT_INVALID: grant expired ({g_expires}) before window end ({w_end})", checks=checks)
+    # Confirm grant validity bounds claimed window (strict UTC instants)
+    g_issued_raw = grant.get("issued_at")
+    g_expires_raw = grant.get("expires_at")
+    try:
+        g_issued_dt = _require_dt(g_issued_raw, "grant.issued_at") if g_issued_raw is not None else None
+        g_expires_dt = _require_dt(g_expires_raw, "grant.expires_at") if g_expires_raw is not None else None
+    except ValueError as exc:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: {exc}", checks=checks)
+    if g_issued_dt is not None and g_issued_dt > w_start_dt:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: GRANT_INVALID: grant issued ({g_issued_raw}) after window start ({w_start_raw})", checks=checks)
+    if g_expires_dt is not None and g_expires_dt < w_end_dt:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: GRANT_INVALID: grant expired ({g_expires_raw}) before window end ({w_end_raw})", checks=checks)
 
     checks["grant"] = True
 
@@ -164,19 +229,26 @@ def verify_restraint_proof(
 
     checks["anchor_sigs"] = True
 
-    # 5. CHECK_ANCHOR_BOUNDS
-    if rec_start.timestamp > w_start:
-        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: UNBOUNDED_WINDOW: start anchor ts ({rec_start.timestamp}) > window start ({w_start})", checks=checks)
-    if rec_end.timestamp < w_end:
-        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: UNBOUNDED_WINDOW: end anchor ts ({rec_end.timestamp}) < window end ({w_end})", checks=checks)
+    # 5. CHECK_ANCHOR_BOUNDS (strict UTC instants)
+    try:
+        sa_dt = _require_dt(rec_start.timestamp, "start_anchor.timestamp")
+        ea_dt = _require_dt(rec_end.timestamp, "end_anchor.timestamp")
+    except ValueError as exc:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: {exc}", checks=checks)
+    if sa_dt > w_start_dt:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: UNBOUNDED_WINDOW: start anchor ts ({rec_start.timestamp}) > window start ({w_start_raw})", checks=checks)
+    if ea_dt < w_end_dt:
+        return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: UNBOUNDED_WINDOW: end anchor ts ({rec_end.timestamp}) < window end ({w_end_raw})", checks=checks)
     if rec_start.seq > rec_end.seq:
         return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: UNBOUNDED_WINDOW: start anchor seq {rec_start.seq} > end anchor seq {rec_end.seq}", checks=checks)
 
     checks["anchor_bounds"] = True
 
-    # 6. CHECK_BLOOM_EXCLUSION
-    segments = data.get("segments_checked", [])
+    # 6. CHECK_BLOOM_EXCLUSION (hardened decode: caps + strict hex + param bounds)
+    segments = data["segments_checked"]
     for seg in segments:
+        if not isinstance(seg, dict):
+            return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: segment entries must be JSON objects", checks=checks)
         m = seg.get("bloom_m_bits")
         k = seg.get("bloom_k")
         bhex = seg.get("bloom_hex")
@@ -186,6 +258,12 @@ def verify_restraint_proof(
             if not seg.get("bloom_negative", False):
                 return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: BLOOM_POSITIVE: segment {seg.get('segment_id')} not negative", checks=checks)
         else:
+            if not isinstance(m, int) or isinstance(m, bool) or m <= 0 or m % 8 != 0 or m > MAX_BLOOM_BITS:
+                return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: BLOOM_INVALID: segment {seg.get('segment_id')} bloom_m_bits ({m!r}) outside bounds", checks=checks)
+            if not isinstance(k, int) or isinstance(k, bool) or k <= 0 or k > MAX_BLOOM_K:
+                return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: BLOOM_INVALID: segment {seg.get('segment_id')} bloom_k ({k!r}) outside bounds", checks=checks)
+            if not isinstance(bhex, str) or len(bhex) != m // 4 or any(c not in "0123456789abcdefABCDEF" for c in bhex):
+                return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: BLOOM_INVALID: segment {seg.get('segment_id')} bloom_hex malformed or length mismatch", checks=checks)
             bits = bytes.fromhex(bhex)
             if retention_mod.bloom_test(bits, m, k, grant_id):
                 return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: BLOOM_INDICATES_PRESENCE: segment {seg.get('segment_id')} bloom matches grant {grant_id}", checks=checks)
@@ -193,9 +271,10 @@ def verify_restraint_proof(
     checks["bloom_exclusion"] = True
 
     # 7. CHECK_LIVE_CHAIN
-    live_range = data.get("live_range", {})
-    hashes = live_range.get("hashes", [])
+    hashes = data["live_range"].get("hashes", [])
     if hashes:
+        if any(not isinstance(h, str) for h in hashes):
+            return VerificationResult(valid=False, proof_id=proof_id, reason="VERIFY_FAILED: INVALID_SCHEMA: live_range.hashes entries must be strings", checks=checks)
         last_hash = hashes[-1]
         if last_hash != rec_end.head_hash:
             return VerificationResult(valid=False, proof_id=proof_id, reason=f"VERIFY_FAILED: HEAD_HASH_MISMATCH: chain tail {last_hash} != anchor head_hash {rec_end.head_hash}", checks=checks)

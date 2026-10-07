@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from aiosh_mcp.anchors import generate_keypair, sign_checkpoint
 from aiosh_mcp.retention import bloom_add
+from aiosh_mcp import verifier as verifier_mod
 from aiosh_mcp.verifier import VerificationResult, verify_restraint_proof
 
 
@@ -204,3 +205,101 @@ def test_verify_file_loading_roundtrip(keys):
         assert res.proof_id == pkg["proof_id"]
     finally:
         Path(f_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Hardening suite (T-02879)
+# ---------------------------------------------------------------------------
+
+def test_hardened_invalid_timestamp_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"], window_start="not-a-timestamp")
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "TIMESTAMP_INVALID" in res.reason
+
+
+def test_hardened_unparseable_anchor_timestamp_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["anchors"]["start_anchor"]["timestamp"] = "garbage-ts"
+    # Re-sign so the signature check passes and the timestamp check is reached
+    # (signature covers seq/head_hash/pubkey; tamper is caught earlier if signed).
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert ("TIMESTAMP_INVALID" in res.reason) or ("INVALID_ANCHOR_SIGNATURE" in res.reason)
+
+
+def test_hardened_segments_cap_rejection(keys, monkeypatch):
+    monkeypatch.setattr(verifier_mod, "MAX_SEGMENTS_COUNT", 2)
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["segments_checked"] = [pkg["segments_checked"][0]] * 3
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "PROOF_TOO_COMPLEX" in res.reason
+
+
+def test_hardened_live_hashes_cap_rejection(keys, monkeypatch):
+    monkeypatch.setattr(verifier_mod, "MAX_LIVE_HASHES_COUNT", 2)
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["live_range"]["hashes"] = ["h1", "h2", "h3"]
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "PROOF_TOO_COMPLEX" in res.reason
+
+
+def test_hardened_bloom_hex_malformed_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["segments_checked"][0]["bloom_hex"] = "zz" * 128  # invalid hex chars
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "BLOOM_INVALID" in res.reason
+
+
+def test_hardened_bloom_length_mismatch_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["segments_checked"][0]["bloom_hex"] = "ab" * 8  # m=1024 bits expects 256 hex chars
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "BLOOM_INVALID" in res.reason
+
+
+def test_hardened_bloom_k_bounds_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["segments_checked"][0]["bloom_k"] = 10_000
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "BLOOM_INVALID" in res.reason
+
+
+def test_hardened_bloom_m_bounds_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["segments_checked"][0]["bloom_m_bits"] = 1023  # not a multiple of 8
+    pkg["segments_checked"][0]["bloom_hex"] = "00" * 128
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "BLOOM_INVALID" in res.reason
+
+
+def test_hardened_payload_too_large_rejection(keys, monkeypatch):
+    monkeypatch.setattr(verifier_mod, "MAX_PROOF_PAYLOAD_BYTES", 64)
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    raw = json.dumps(pkg)
+    assert len(raw) > 64
+    res = verify_restraint_proof(raw, [keys["pub"]])
+    assert res.valid is False
+    assert "PAYLOAD_TOO_LARGE" in res.reason
+
+
+def test_hardened_non_dict_grant_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["grant"] = "not-a-dict"
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "INVALID_SCHEMA" in res.reason
+
+
+def test_hardened_non_string_grant_id_rejection(keys):
+    pkg = _create_synthetic_proof(keys["priv"], keys["pub"])
+    pkg["grant"]["grant_id"] = {"nested": "object"}
+    res = verify_restraint_proof(pkg, [keys["pub"]])
+    assert res.valid is False
+    assert "GRANT_INVALID" in res.reason

@@ -6,10 +6,32 @@
  * Requires ZERO access to audit.db, agent host, or network services.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import type { RestraintProofPackage } from "./restraint.js";
 import { type AnchorRecord, verifyCheckpoint } from "./anchors.js";
 import { bloomTest } from "./retention.js";
+
+const MAX_PROOF_PAYLOAD_BYTES = 20 * 1024 * 1024; // 20 MB cap
+const MAX_SEGMENTS_COUNT = 10_000;
+const MAX_LIVE_HASHES_COUNT = 100_000;
+const MAX_BLOOM_BITS = 16_000_000; // ~2 MB bitset
+const MAX_BLOOM_K = 64;
+const MAX_FIELD_STR_LEN = 4_096;
+
+function parseIso8601Utc(ts: unknown, field: string): Date {
+  if (typeof ts !== "string" || !ts.trim()) {
+    throw new Error(
+      `TIMESTAMP_INVALID: ${field} (${JSON.stringify(ts)}) is not a valid ISO-8601 UTC timestamp`
+    );
+  }
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) {
+    throw new Error(
+      `TIMESTAMP_INVALID: ${field} (${ts}) is not a valid ISO-8601 UTC timestamp`
+    );
+  }
+  return d;
+}
 
 export interface VerificationResult {
   valid: boolean;
@@ -24,8 +46,20 @@ function loadProof(proof: RestraintProofPackage | string): RestraintProofPackage
   }
   if (typeof proof === "string") {
     const trimmed = proof.trim();
-    if (trimmed.startsWith("{")) {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      const encoded = Buffer.byteLength(proof, "utf-8");
+      if (encoded > MAX_PROOF_PAYLOAD_BYTES) {
+        throw new Error(
+          `PAYLOAD_TOO_LARGE: proof string exceeds limit (${MAX_PROOF_PAYLOAD_BYTES} bytes)`
+        );
+      }
       return JSON.parse(trimmed) as RestraintProofPackage;
+    }
+    const stat = statSync(proof);
+    if (stat.size > MAX_PROOF_PAYLOAD_BYTES) {
+      throw new Error(
+        `PAYLOAD_TOO_LARGE: proof file size (${stat.size} bytes) exceeds limit (${MAX_PROOF_PAYLOAD_BYTES} bytes)`
+      );
     }
     const content = readFileSync(proof, "utf-8");
     return JSON.parse(content) as RestraintProofPackage;
@@ -84,17 +118,66 @@ export function verifyRestraintProof(
       checks,
     };
   }
+
+  // Structural type guards (hardening T-02879)
+  if (
+    typeof pkg.grant !== "object" || Array.isArray(pkg.grant) ||
+    typeof pkg.window !== "object" || Array.isArray(pkg.window) ||
+    typeof pkg.anchors !== "object" || Array.isArray(pkg.anchors) ||
+    typeof pkg.live_range !== "object" || Array.isArray(pkg.live_range)
+  ) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: "VERIFY_FAILED: INVALID_SCHEMA: grant/window/anchors/live_range must be JSON objects",
+      checks,
+    };
+  }
+  const segmentsRaw = (pkg.segments_checked ?? []) as unknown;
+  if (!Array.isArray(segmentsRaw)) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: "VERIFY_FAILED: INVALID_SCHEMA: segments_checked must be a list",
+      checks,
+    };
+  }
+  if (segmentsRaw.length > MAX_SEGMENTS_COUNT) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: `VERIFY_FAILED: PROOF_TOO_COMPLEX: segments_checked (${segmentsRaw.length}) exceeds limit (${MAX_SEGMENTS_COUNT})`,
+      checks,
+    };
+  }
+  const hashesRaw = ((pkg.live_range as { hashes?: unknown }).hashes ?? []) as unknown;
+  if (!Array.isArray(hashesRaw)) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: "VERIFY_FAILED: INVALID_SCHEMA: live_range.hashes must be a list",
+      checks,
+    };
+  }
+  if (hashesRaw.length > MAX_LIVE_HASHES_COUNT) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: `VERIFY_FAILED: PROOF_TOO_COMPLEX: live_range.hashes (${hashesRaw.length}) exceeds limit (${MAX_LIVE_HASHES_COUNT})`,
+      checks,
+    };
+  }
   checks.schema = true;
 
   // 2. CHECK_GRANT
   const grant = pkg.grant;
   const window = pkg.window;
-  const grantId = grant["grant_id"] as string | undefined;
-  if (!grantId) {
+  const grantId = grant["grant_id"] as unknown;
+  if (typeof grantId !== "string" || !grantId || grantId.length > MAX_FIELD_STR_LEN) {
     return {
       valid: false,
       proof_id: proofId,
-      reason: "VERIFY_FAILED: GRANT_INVALID: missing grant_id",
+      reason: "VERIFY_FAILED: GRANT_INVALID: missing or invalid grant_id",
       checks,
     };
   }
@@ -116,7 +199,20 @@ export function verifyRestraintProof(
   }
   const wStart = window.start;
   const wEnd = window.end;
-  if (!wStart || !wEnd || wStart > wEnd) {
+  let wStartDt: Date;
+  let wEndDt: Date;
+  try {
+    wStartDt = parseIso8601Utc(wStart, "window.start");
+    wEndDt = parseIso8601Utc(wEnd, "window.end");
+  } catch (err: any) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: `VERIFY_FAILED: ${err?.message ?? String(err)}`,
+      checks,
+    };
+  }
+  if (wStartDt.getTime() > wEndDt.getTime()) {
     return {
       valid: false,
       proof_id: proofId,
@@ -126,7 +222,24 @@ export function verifyRestraintProof(
   }
   const gIssued = grant["issued_at"] as string | undefined;
   const gExpires = grant["expires_at"] as string | undefined;
-  if (gIssued && gIssued > wStart) {
+  let gIssuedDt: Date | undefined;
+  let gExpiresDt: Date | undefined;
+  try {
+    if (gIssued !== undefined && gIssued !== null) {
+      gIssuedDt = parseIso8601Utc(gIssued, "grant.issued_at");
+    }
+    if (gExpires !== undefined && gExpires !== null) {
+      gExpiresDt = parseIso8601Utc(gExpires, "grant.expires_at");
+    }
+  } catch (err: any) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: `VERIFY_FAILED: ${err?.message ?? String(err)}`,
+      checks,
+    };
+  }
+  if (gIssuedDt && gIssuedDt.getTime() > wStartDt.getTime()) {
     return {
       valid: false,
       proof_id: proofId,
@@ -134,7 +247,7 @@ export function verifyRestraintProof(
       checks,
     };
   }
-  if (gExpires && gExpires < wEnd) {
+  if (gExpiresDt && gExpiresDt.getTime() < wEndDt.getTime()) {
     return {
       valid: false,
       proof_id: proofId,
@@ -196,8 +309,21 @@ export function verifyRestraintProof(
   }
   checks.anchor_sigs = true;
 
-  // 5. CHECK_ANCHOR_BOUNDS
-  if (startAnchor.timestamp > wStart) {
+  // 5. CHECK_ANCHOR_BOUNDS (strict UTC instants)
+  let saDt: Date;
+  let eaDt: Date;
+  try {
+    saDt = parseIso8601Utc(startAnchor.timestamp, "start_anchor.timestamp");
+    eaDt = parseIso8601Utc(endAnchor.timestamp, "end_anchor.timestamp");
+  } catch (err: any) {
+    return {
+      valid: false,
+      proof_id: proofId,
+      reason: `VERIFY_FAILED: ${err?.message ?? String(err)}`,
+      checks,
+    };
+  }
+  if (saDt.getTime() > wStartDt.getTime()) {
     return {
       valid: false,
       proof_id: proofId,
@@ -205,7 +331,7 @@ export function verifyRestraintProof(
       checks,
     };
   }
-  if (endAnchor.timestamp < wEnd) {
+  if (eaDt.getTime() < wEndDt.getTime()) {
     return {
       valid: false,
       proof_id: proofId,
@@ -223,13 +349,45 @@ export function verifyRestraintProof(
   }
   checks.anchor_bounds = true;
 
-  // 6. CHECK_BLOOM_EXCLUSION
-  const segments = (pkg.segments_checked ?? []) as Array<Record<string, unknown>>;
+  // 6. CHECK_BLOOM_EXCLUSION (hardened decode: caps + strict hex + param bounds)
+  const segments = segmentsRaw as Array<Record<string, unknown>>;
   for (const seg of segments) {
+    if (typeof seg !== "object" || seg === null || Array.isArray(seg)) {
+      return {
+        valid: false,
+        proof_id: proofId,
+        reason: "VERIFY_FAILED: INVALID_SCHEMA: segment entries must be JSON objects",
+        checks,
+      };
+    }
     const m = seg["bloom_m_bits"] as number | undefined;
     const k = seg["bloom_k"] as number | undefined;
     const bhex = seg["bloom_hex"] as string | undefined;
     if (m && k && bhex) {
+      if (!Number.isInteger(m) || m <= 0 || m % 8 !== 0 || m > MAX_BLOOM_BITS) {
+        return {
+          valid: false,
+          proof_id: proofId,
+          reason: `VERIFY_FAILED: BLOOM_INVALID: segment ${seg["segment_id"]} bloom_m_bits (${String(m)}) outside bounds`,
+          checks,
+        };
+      }
+      if (!Number.isInteger(k) || k <= 0 || k > MAX_BLOOM_K) {
+        return {
+          valid: false,
+          proof_id: proofId,
+          reason: `VERIFY_FAILED: BLOOM_INVALID: segment ${seg["segment_id"]} bloom_k (${String(k)}) outside bounds`,
+          checks,
+        };
+      }
+      if (typeof bhex !== "string" || bhex.length !== m / 4 || !/^[0-9a-fA-F]+$/.test(bhex)) {
+        return {
+          valid: false,
+          proof_id: proofId,
+          reason: `VERIFY_FAILED: BLOOM_INVALID: segment ${seg["segment_id"]} bloom_hex malformed or length mismatch`,
+          checks,
+        };
+      }
       const bits = Buffer.from(bhex, "hex");
       if (bloomTest(bits, m, k, grantId)) {
         return {
@@ -256,6 +414,14 @@ export function verifyRestraintProof(
   const liveRange = pkg.live_range as { hashes?: string[] };
   const hashes = liveRange.hashes ?? [];
   if (hashes.length > 0) {
+    if (hashes.some((h) => typeof h !== "string")) {
+      return {
+        valid: false,
+        proof_id: proofId,
+        reason: "VERIFY_FAILED: INVALID_SCHEMA: live_range.hashes entries must be strings",
+        checks,
+      };
+    }
     const lastHash = hashes[hashes.length - 1];
     if (lastHash !== endAnchor.head_hash) {
       return {

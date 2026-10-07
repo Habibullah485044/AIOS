@@ -783,3 +783,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 
 
 
+### 2026-10-07 — T-02879: Standalone Proof Verifier — Hardening
+- **Task ID**: `T-02879`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Summary**:
+  - Closed security-review findings TV-POR-05 (JSON bomb / memory exhaustion DoS) and TV-POR-06 (non-normalized ISO-8601 timestamp evasion) from T-02878.
+  - Enforced 20 MiB payload cap on proof files and raw JSON strings, `MAX_SEGMENTS_COUNT` (10 000) / `MAX_LIVE_HASHES_COUNT` (100 000) collection caps (`PROOF_TOO_COMPLEX`), and Bloom parameter bounds (`bloom_m_bits` ≤ 16M bits and multiple of 8, `bloom_k` ∈ [1, 64], strict hex with exact length — `BLOOM_INVALID`).
+  - Replaced all lexicographic timestamp comparisons with strict ISO-8601 UTC instant parsing (`_parse_iso8601_utc` / `parseIso8601Utc`) across window, grant, and anchor fields (`TIMESTAMP_INVALID` on failure).
+  - Added structural type guards for `grant`/`window`/`anchors`/`live_range`/`segments_checked` and `grant_id` string validation (`MAX_FIELD_STR_LEN`).
+  - Full Python/TypeScript substrate parity (`aiosh_mcp/verifier.py`, `cli/src/verifier.ts`); zero `tsc` errors.
+  - Added 11 `test_hardened_*` unit tests; full PoR battery green (38 passed, 1 skipped; CLI-side 4 passed).
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/verifier.py` (hardened)
+  - `code/aiosh-cli/src/verifier.ts` (hardened)
+  - `code/aiosh-mcp/tests/test_por_verifier.py` (11 hardening tests added)
+  - `docs/tasks/evidence/T-02879-hardening.md` (created)
+  - `docs/tasks/evidence/T-02879-standalone-proof-verifier-hardening.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02880 (`standalone proof verifier: Documentation`).
+

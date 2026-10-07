@@ -679,8 +679,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02872-research.md` (created)
   - `docs/tasks/evidence/T-02872-standalone-proof-verifier-research.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02873: Standalone Proof Verifier — Specification
+- **Task ID**: `T-02873`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Specified API contracts, data models (`VerificationResult`), and 7 verification stages for Standalone Proof Verifier across Python and TypeScript substrates.
+  - Specified pure mathematical and cryptographic verification rules (zero database dependencies).
+  - Documented error states, return envelopes, and CLI interface syntax in `docs/tasks/evidence/T-02873-spec.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02873-spec.md` (created)
+  - `docs/tasks/evidence/T-02873-standalone-proof-verifier-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02873 (`standalone proof verifier: Specification`).
+  - Advancing to T-02874 (`standalone proof verifier: Scaffold`).
+
 
 
 

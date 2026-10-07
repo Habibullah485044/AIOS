@@ -754,8 +754,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02877-integration.md` (created)
   - `docs/tasks/evidence/T-02877-standalone-proof-verifier-integration.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02878: Standalone Proof Verifier — Security Review
+- **Task ID**: `T-02878`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Agent**: Antigravity System
+- **Summary**:
+  - Conducted comprehensive threat modeling and vulnerability assessment of Standalone Proof Verifier across Python and TypeScript implementations.
+  - Audited 6 threat vectors: untrusted public key injection, signature malleability/forgery, unbounded window/narrow anchor truncation, re-chaining/live range disconnect, JSON memory exhaustion DoS, and non-normalized ISO-8601 timestamp evasion.
+  - Verified Invariants I-1, I-2, I-3, and I-4: verified zero database operations, zero network reliance, and strict Ed25519 cryptographic checking.
+  - Formulated hardening recommendations for T-02879 (strict payload size limit, ISO-8601 UTC timestamp validation, and array dimension caps).
+  - Documented evidence in `docs/tasks/evidence/T-02878-security.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02878-security.md` (created)
+  - `docs/tasks/evidence/T-02878-standalone-proof-verifier-security-review.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02878 (`standalone proof verifier: Security Review`).
+  - Advancing to T-02879 (`standalone proof verifier: Hardening`).
 
 
 

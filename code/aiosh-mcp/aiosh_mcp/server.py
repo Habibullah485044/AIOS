@@ -42,6 +42,7 @@ from . import _dispatch as dispatch_mod
 from . import pentest as pentest_mod
 from . import retention as retention_mod
 from . import anchors as anchors_mod
+from . import restraint as restraint_mod
 
 mcp = FastMCP("aiosh-mcp")
 SCHEMA_VERSION = "2025-06-18"   # MCP schema version pinned by ADR-0035 §D-2.
@@ -434,6 +435,52 @@ def aios_anchor_verify(pubkey: str | None = None) -> dict:
         tool=tool, command=command, args=args,
         target=None, grant_id=None, fn=run,
     )
+
+
+# -----------------------------------------------------------------------
+# Proof of Restraint: Restraint Proof Generator (Component 4)
+# -----------------------------------------------------------------------
+
+
+@mcp.tool()
+def aios_restraint_prove(
+    grant_id: str,
+    window_start: str,
+    window_end: str,
+    anchors_path: str | None = None,
+    caller_grant_id: str | None = None,
+) -> dict:
+    """Generate a self-contained RestraintProofPackage proving negative attestation
+    (non-use) of grant_id during the interval [window_start, window_end]."""
+    tool = "aios.restraint.prove"
+    command = f"restraint.prove {grant_id}"
+    args = {"grant_id": grant_id, "window_start": window_start, "window_end": window_end}
+
+    def run() -> dict:
+        try:
+            with audit_lib.open_db() as conn:
+                proof = restraint_mod.generate_restraint_proof(
+                    conn=conn,
+                    grant_id=grant_id,
+                    window_start=window_start,
+                    window_end=window_end,
+                    anchors_path=anchors_path,
+                )
+            return {
+                "ok": True,
+                "tool": tool,
+                "proof": proof.to_dict(),
+            }
+        except ValueError as exc:
+            return {"ok": False, "tool": tool, "error": str(exc)}
+        except Exception as exc:
+            return {"ok": False, "tool": tool, "error": f"INTERNAL_ERROR: {str(exc)}"}
+
+    return _recorded_call(
+        tool=tool, command=command, args=args,
+        target=grant_id, grant_id=caller_grant_id, fn=run,
+    )
+
 
 
 

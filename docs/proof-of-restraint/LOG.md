@@ -591,7 +591,26 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02866-unit-test.md` (created)
   - `docs/tasks/evidence/T-02866-restraint-proof-generator-unit-test.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02867: Restraint Proof Generator — Integration
+- **Task ID**: `T-02867`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Registered `aios_restraint_prove` MCP tool in `code/aiosh-mcp/aiosh_mcp/server.py`.
+  - Added `aiosh prove restraint` CLI subcommand in `code/aiosh-cli/src/cli.ts` supporting `--grant`, `--window-start`, `--window-end`, `--anchors`, and `--out`.
+  - Compiled and typechecked TypeScript distribution (`npm run build`).
+  - Implemented integration test suite `code/aiosh-mcp/tests/test_por_restraint_integration.py` verifying MCP tool and CLI proof generation and audit ring emission.
+  - Performed security audit verifying error envelopes, parameters, and audit logging.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/server.py` (updated)
+  - `code/aiosh-cli/src/cli.ts` (updated)
+  - `code/aiosh-cli/dist/cli.js` (compiled)
+  - `code/aiosh-mcp/tests/test_por_restraint_integration.py` (created)
+  - `docs/tasks/evidence/T-02867-integration.md` (created)
+  - `docs/tasks/evidence/T-02867-restraint-proof-generator-integration.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02867 (`restraint proof generator: Integration`).
+  - Advancing to T-02868 (`restraint proof generator: Security Review`).
+
 
 

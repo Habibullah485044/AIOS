@@ -25,7 +25,7 @@ import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 // ESM shim: `__dirname` does not exist in ES modules.
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +45,7 @@ import {
 } from "./pentest.js";
 import * as retention from "./retention.js";
 import * as anchors from "./anchors.js";
+import * as restraint from "./restraint.js";
 
 const aiHome = process.env["AIOSH_HOME"] ?? `${process.env["HOME"]}/.aios`;
 mkdirSync(aiHome, { recursive: true });
@@ -611,6 +612,49 @@ anchorCmd
         ok: result.valid, subcommand: "anchor verify",
         outcome: result.valid ? "ok" : "refused",
         audit_id: -1, data: { anchors_count: recordList.length, ...result },
+      });
+    } finally { ctx.db.close(); }
+  });
+
+// ---- prove (Proof of Restraint Layer 2) --------------------------------
+
+const proveCmd = program
+  .command("prove")
+  .description("Generate cryptographic proofs of agent restraint and non-use.");
+
+proveCmd
+  .command("restraint")
+  .description("Generate self-contained Proof of Restraint package for a grant over a time window.")
+  .requiredOption("--grant <id>", "Capability grant ID")
+  .requiredOption("--window-start <iso>", "Start of restraint window (ISO-8601)")
+  .requiredOption("--window-end <iso>", "End of restraint window (ISO-8601)")
+  .option("--anchors <path>", "Path to external anchors.jsonl file")
+  .option("--out <path>", "Path to write output proof JSON file")
+  .action((opts: { grant: string; windowStart: string; windowEnd: string; anchors?: string; out?: string }) => {
+    const ctx = openContext();
+    try {
+      const anchorsPath = opts.anchors ?? join(aiHome, "anchors", "anchors.jsonl");
+      const proof = restraint.generateRestraintProof(
+        ctx.db,
+        opts.grant,
+        opts.windowStart,
+        opts.windowEnd,
+        anchorsPath,
+      );
+      if (opts.out) {
+        writeFileSync(opts.out, JSON.stringify(proof, null, 2), "utf-8");
+      }
+      emit(ctx.ring, ctx.con, "restraint.prove", `aiosh prove restraint --grant ${opts.grant}`,
+        { grant_id: opts.grant, window_start: opts.windowStart, window_end: opts.windowEnd }, "ok", opts.grant, undefined,
+        "user", opts.grant, false, false, false, true);
+      okOut({
+        ok: true, subcommand: "prove restraint", outcome: "ok",
+        audit_id: -1, data: proof as unknown as Record<string, unknown>,
+      });
+    } catch (err: any) {
+      errOut({
+        ok: false, subcommand: "prove restraint", outcome: "refused",
+        audit_id: -1, error: err?.message ?? String(err), data: {},
       });
     } finally { ctx.db.close(); }
   });

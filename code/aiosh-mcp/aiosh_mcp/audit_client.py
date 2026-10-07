@@ -457,6 +457,23 @@ def grant_check(
     return {"ok": True}
 
 
+def grant_redeem(
+    conn: sqlite3.Connection,
+    grant_id: str,
+    actor: str = "agent",
+    actor_id: str = "agent:mcp@aiosh-mcp",
+    tool: str = "",
+    command: str = "",
+    args: dict[str, Any] | None = None,
+    target: str | None = None,
+) -> dict[str, Any]:
+    """Proof of Restraint (Layer 1): atomically redeem single-use capability token before execution.
+
+    Scaffold stub for T-02844. Full implementation follows in T-02845.
+    """
+    raise NotImplementedError("grant_redeem scaffold stub (T-02844)")
+
+
 def cFlagsFor(tool: str, target: str | None,
               args: dict[str, Any]) -> dict[str, bool]:
     """Replicates `code/aiosh-cli/src/constitution.ts:cFlagsFor()` in Python.

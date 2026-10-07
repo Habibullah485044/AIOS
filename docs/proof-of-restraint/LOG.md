@@ -210,9 +210,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02843-spec.md` (created)
   - `docs/tasks/evidence/T-02843-redeem-before-act-gate-specification.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02844: Redeem-Before-Act Gate — Scaffold
+- **Task ID**: `T-02844`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Scaffolded typed stub for `audit_client.grant_redeem()` in `code/aiosh-mcp/aiosh_mcp/audit_client.py`.
+  - Verified clean module imports and verified that un-implemented invocation raises `NotImplementedError`.
+  - Ran capability CLI smoke tests (100% green).
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (modified)
+  - `docs/tasks/evidence/T-02844-redeem-before-act-gate-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Specification complete. Advancing to T-02844 (`redeem-before-act gate: Scaffold`).
+  - Scaffold complete. Advancing to T-02845 (`redeem-before-act gate: Implementation`).
 ---
+
 
 
 

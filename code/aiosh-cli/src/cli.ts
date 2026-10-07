@@ -44,6 +44,7 @@ import {
   pentest_tshark, pentest_aircrack_ng,
 } from "./pentest.js";
 import * as retention from "./retention.js";
+import * as anchors from "./anchors.js";
 
 const aiHome = process.env["AIOSH_HOME"] ?? `${process.env["HOME"]}/.aios`;
 mkdirSync(aiHome, { recursive: true });
@@ -551,6 +552,65 @@ auditCmd
       okOut({
         ok: true, subcommand: "audit seen", outcome: "ok",
         audit_id: -1, data: res,
+      });
+    } finally { ctx.db.close(); }
+  });
+
+// ---- anchor (Proof of Restraint Component 3) ---------------------------
+
+const anchorCmd = program
+  .command("anchor")
+  .description("Manage and verify external completeness checkpoints (Proof of Restraint Layer 2).");
+
+anchorCmd
+  .command("create")
+  .description("Sign and append an external checkpoint anchor for the current audit head.")
+  .option("--key <hex>", "Ed25519 private key hex (defaults to AIOSH_ANCHOR_KEY env)")
+  .action((opts: { key?: string }) => {
+    const ctx = openContext();
+    try {
+      const privKey = opts.key ?? process.env["AIOSH_ANCHOR_KEY"];
+      if (!privKey) {
+        errOut({ ok: false, subcommand: "anchor create", outcome: "refused", audit_id: -1, error: "No signing key provided (set AIOSH_ANCHOR_KEY or pass --key)", data: {} });
+        return;
+      }
+      const head = ctx.ring.tail(1)[0];
+      if (!head) {
+        errOut({ ok: false, subcommand: "anchor create", outcome: "refused", audit_id: -1, error: "Audit ring is empty", data: {} });
+        return;
+      }
+      const record = anchors.signCheckpoint(head.id, head.hash, head.ts, privKey);
+      const anchorsPath = join(aiHome, "anchors", "anchors.jsonl");
+      anchors.appendAnchor(record, anchorsPath);
+      emit(ctx.ring, ctx.con, "audit.anchor", "aiosh anchor create",
+        { seq: head.id, head_hash: head.hash }, "ok", undefined, undefined,
+        "user", undefined, false, false, false, true);
+      okOut({
+        ok: true, subcommand: "anchor create", outcome: "ok",
+        audit_id: -1, data: { anchor: record, path: anchorsPath },
+      });
+    } finally { ctx.db.close(); }
+  });
+
+anchorCmd
+  .command("verify")
+  .description("Verify audit chain integrity against external signed anchors.")
+  .option("--pubkey <hex>", "Trusted Ed25519 public key hex (defaults to AIOSH_ANCHOR_PUBKEY env)")
+  .action((opts: { pubkey?: string }) => {
+    const ctx = openContext();
+    try {
+      const anchorsPath = join(aiHome, "anchors", "anchors.jsonl");
+      const recordList = anchors.loadAnchors(anchorsPath);
+      const trusted = opts.pubkey ?? process.env["AIOSH_ANCHOR_PUBKEY"];
+      const rows = ctx.db.prepare("SELECT id, hash FROM audit_ring ORDER BY id ASC").all() as Array<{ id: number; hash: string }>;
+      const result = anchors.verifyChainAgainstAnchors(rows, recordList, trusted);
+      emit(ctx.ring, ctx.con, "audit.anchor", "aiosh anchor verify",
+        { count: recordList.length }, result.valid ? "ok" : "refused", undefined, result.reason,
+        "user", undefined, false, false, false, true);
+      okOut({
+        ok: result.valid, subcommand: "anchor verify",
+        outcome: result.valid ? "ok" : "refused",
+        audit_id: -1, data: { anchors_count: recordList.length, ...result },
       });
     } finally { ctx.db.close(); }
   });

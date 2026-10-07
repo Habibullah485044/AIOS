@@ -41,6 +41,7 @@ from . import audit_client as audit_lib
 from . import _dispatch as dispatch_mod
 from . import pentest as pentest_mod
 from . import retention as retention_mod
+from . import anchors as anchors_mod
 
 mcp = FastMCP("aiosh-mcp")
 SCHEMA_VERSION = "2025-06-18"   # MCP schema version pinned by ADR-0035 §D-2.
@@ -360,6 +361,80 @@ def aios_audit_seen(hash_hex: str, exact: bool = False) -> dict:
         args={"hash": hash_hex, "exact": exact},
         target=None, grant_id=None, fn=run,
     )
+
+
+# -----------------------------------------------------------------------
+# Proof of Restraint: Chain Anchoring & Completeness Checkpoints (Component 3)
+# -----------------------------------------------------------------------
+
+
+@mcp.tool()
+def aios_anchor_create(key_hex: str | None = None, grant_id: str | None = None) -> dict:
+    """Create an Ed25519-signed anchor for current audit chain head outside audit.db.
+    Appends anchor to $AIOSH_HOME/anchors/anchors.jsonl.
+    Key is loaded from key_hex parameter or AIOSH_ANCHOR_KEY environment variable.
+    """
+    tool = "aios.anchor.create"
+    command = "anchor.create"
+    args = {"has_key": bool(key_hex or os.environ.get("AIOSH_ANCHOR_KEY"))}
+
+    def run() -> dict:
+        priv_key = key_hex or os.environ.get("AIOSH_ANCHOR_KEY")
+        if not priv_key:
+            return {"ok": False, "error": "No anchor signing key provided (set AIOSH_ANCHOR_KEY or pass key_hex)"}
+        with audit_lib.open_db() as conn:
+            head = audit_lib.head(conn)
+            if not head:
+                return {"ok": False, "error": "Audit ring is empty; cannot anchor genesis without rows"}
+            seq = head.id
+            head_hash = head.hash
+            ts = head.ts
+
+        anchor = anchors_mod.sign_checkpoint(seq=seq, head_hash=head_hash, timestamp=ts, private_key_hex=priv_key)
+        aiosh_home = Path(os.environ.get("AIOSH_HOME", f"{os.environ.get('HOME', '/tmp')}/.aios"))
+        anchors_path = aiosh_home / "anchors" / "anchors.jsonl"
+        anchors_mod.append_anchor(anchor, anchors_path)
+        return {"ok": True, "tool": tool, "anchor": anchor.to_dict(), "path": str(anchors_path)}
+
+    return _recorded_call(
+        tool=tool, command=command, args=args,
+        target=None, grant_id=grant_id, fn=run,
+    )
+
+
+@mcp.tool()
+def aios_anchor_verify(pubkey: str | None = None) -> dict:
+    """Verify the audit chain against external signed completeness anchors in $AIOSH_HOME/anchors/anchors.jsonl."""
+    tool = "aios.anchor.verify"
+    command = "anchor.verify"
+    args = {"pubkey": pubkey}
+
+    def run() -> dict:
+        aiosh_home = Path(os.environ.get("AIOSH_HOME", f"{os.environ.get('HOME', '/tmp')}/.aios"))
+        anchors_path = aiosh_home / "anchors" / "anchors.jsonl"
+        anchors = anchors_mod.load_anchors(anchors_path)
+        if not anchors:
+            return {"ok": True, "tool": tool, "anchors_count": 0, "verified": True, "message": "No anchors found to verify"}
+
+        trusted = pubkey or os.environ.get("AIOSH_ANCHOR_PUBKEY")
+        with audit_lib.open_db() as conn:
+            cursor = conn.execute("SELECT id, hash FROM audit_ring ORDER BY id ASC")
+            chain_rows = [{"id": r[0], "hash": r[1]} for r in cursor.fetchall()]
+
+        valid, err = anchors_mod.verify_chain_against_anchors(chain_rows, anchors, trusted_pubkey=trusted)
+        return {
+            "ok": valid,
+            "tool": tool,
+            "anchors_count": len(anchors),
+            "verified": valid,
+            "error": err,
+        }
+
+    return _recorded_call(
+        tool=tool, command=command, args=args,
+        target=None, grant_id=None, fn=run,
+    )
+
 
 
 # -----------------------------------------------------------------------

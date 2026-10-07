@@ -177,6 +177,13 @@ def tail(conn: sqlite3.Connection, n: int = 10) -> list[AuditRow]:
     return [AuditRow.from_sql(r) for r in reversed(list(cur))]
 
 
+def head(conn: sqlite3.Connection) -> AuditRow | None:
+    """Return the newest AuditRow in the live table, or None if empty."""
+    cur = conn.execute("SELECT * FROM audit_ring ORDER BY id DESC LIMIT 1")
+    r = cur.fetchone()
+    return AuditRow.from_sql(r) if r else None
+
+
 def verify_live(conn: sqlite3.Connection, anchor: str | None = None) -> dict[str, Any]:
     """Verify the live (non-archived) portion of the audit ring.
 

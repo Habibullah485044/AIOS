@@ -410,3 +410,26 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02857 (`chain anchoring & completeness checkpoints: Integration`).
+
+### 2026-10-07 — T-02857: Chain Anchoring & Completeness Checkpoints — Integration
+- **Task ID**: `T-02857`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Wired external chain anchoring into FastMCP tool surface (`aios_anchor_create`, `aios_anchor_verify`) in `code/aiosh-mcp/aiosh_mcp/server.py`.
+  - Added CLI command group `aiosh anchor create` and `aiosh anchor verify` in `code/aiosh-cli/src/cli.ts`.
+  - Added helper `head()` to `code/aiosh-mcp/aiosh_mcp/audit_client.py` for reading the current chain head.
+  - Added end-to-end integration test `code/aiosh-mcp/tests/test_por_anchoring_integration.py` exercising tool registration, anchor creation, audit row recording, verification, fork detection, and truncation detection.
+  - Ran full test suite across all PoR components (11/11 tests passing).
+  - Documented evidence in `docs/tasks/evidence/T-02857-integration.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/server.py` (updated)
+  - `code/aiosh-mcp/aiosh_mcp/audit_client.py` (updated)
+  - `code/aiosh-cli/src/cli.ts` (updated)
+  - `code/aiosh-cli/dist/cli.js` (compiled)
+  - `code/aiosh-mcp/tests/test_por_anchoring_integration.py` (created)
+  - `docs/tasks/evidence/T-02857-integration.md` (created)
+  - `docs/tasks/evidence/T-02857-chain-anchoring-completeness-checkpoints-integration.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02858 (`chain anchoring & completeness checkpoints: Security Review`).

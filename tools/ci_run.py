@@ -27,6 +27,7 @@ at all); the summary records status="timeout".
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -63,10 +64,20 @@ def _host_repair() -> None:
 
 
 def _effective_command(argv: list[str]) -> list[str]:
-    """Honor the legacy $PYTHON override (bash used PY=${PYTHON:-python3})."""
+    """Honor the legacy $PYTHON override (bash used PY=${PYTHON:-python3}).
+
+    Also resolve bare `bash` through $AIOSH_BASH / PATH lookup: on Windows,
+    CreateProcess finds System32\\bash.exe (WSL) before any PATH entry, which
+    silently reroutes every bash suite to a host without installed distros.
+    A PATH-only lookup (shutil.which) finds the intended Git Bash first.
+    """
     py = os.environ.get("PYTHON")
     if py and argv and argv[0] == "python3":
         return [py, *argv[1:]]
+    if argv and argv[0] == "bash":
+        bash = os.environ.get("AIOSH_BASH") or shutil.which("bash")
+        if bash:
+            return [bash, *argv[1:]]
     return argv
 
 

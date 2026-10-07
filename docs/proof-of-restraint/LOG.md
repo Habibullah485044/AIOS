@@ -916,3 +916,9 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02887 (`continuous restraint conformance: Integration`).
 
+
+## T-02887 - continuous restraint conformance: Integration (2026-10-08)
+- Registered `por_conformance` in `tools/ci_suites.py` (index 29, 30 suites total) with command `python3 tools/test_por_conformance_suites.py`.
+- Fixed `tools/ci_run.py` `_effective_command` to resolve bare `bash` via `$AIOSH_BASH` or a PATH-only lookup, bypassing the Windows System32 WSL shadow that killed every bash suite on this host.
+- Verified: registry schema validates; `tools/test_por_conformance_suites.py` -> `CONFORMANT: C1..C6 PASS` (exit 0); two full orchestrator runs wrote schema-valid summary artifacts. Both runs stopped at pre-existing `rust_smoke` defects (flaky cargo tests; stale wire-contract assertion 13 vs 205 tools) before reaching suite 30 - follow-up work.
+- Evidence: docs/tasks/evidence/T-02887-*.md

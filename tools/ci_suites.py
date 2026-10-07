@@ -163,6 +163,11 @@ SUITES: list[SuiteDef] = [
     {"name": "evidence_unit",
      "command": _py("tools/test_check_evidence.py"),
      "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-02887: Continuous Restraint Conformance Gate (Invariant I-5) —
+    # tail append keeps every pre-existing index stable.
+    {"name": "por_conformance",
+     "command": _py("tools/test_por_conformance_suites.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

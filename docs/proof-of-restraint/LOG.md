@@ -932,3 +932,7 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Closed TV-CRC-01 (interpreter resolution validation, AIOSH_NODE/AIOSH_BASH overrides, world-writable rejection), TV-CRC-05 (skip-transparent fail-closed runner + AIOSH_CONFORMANCE_STRICT), TV-CRC-04 (monkeypatch-based AIOSH_HOME sandbox), TV-CRC-07 (temp-root atexit hygiene; fixed real sqlite3 connection leak that blocked sandbox removal on Windows).
 - Bounded external processes (900s criteria, 120s CLI verify, 60s node oracle; hangs fail loudly). Verified: 24 tests green, CONFORMANT C1..C6 in both modes, PoR suite 77 passed / 1 skipped.
 - Evidence: docs/tasks/evidence/T-02889-*.md
+
+## T-02890 - continuous restraint conformance: Documentation (2026-10-08)
+- Created docs/SPEC-RESTRAINT-CONFORMANCE-GATE.md (SPEC-RESTRAINT-CONFORMANCE-GATE-v1): components, C1..C6 criteria, copy-pasteable invocation, env vars (AIOSH_CONFORMANCE_STRICT/AIOSH_BASH/AIOSH_NODE), hardening properties, honest constraints, evidence links T-02882..T-02891.
+- Evidence: docs/tasks/evidence/T-02890-*.md

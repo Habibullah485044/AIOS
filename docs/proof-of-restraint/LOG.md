@@ -350,3 +350,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02854 (`chain anchoring & completeness checkpoints: Scaffold`).
+
+### 2026-10-07 — T-02854: Chain Anchoring & Completeness Checkpoints — Scaffold
+- **Task ID**: `T-02854`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Created module skeletons for Chain Anchoring in Python (`code/aiosh-mcp/aiosh_mcp/anchors.py`) and TypeScript (`code/aiosh-cli/src/anchors.ts`).
+  - Implemented typed `AnchorRecord` data model with canonical JSON conversion and schema parsing.
+  - Defined strict method signatures with `NotImplementedError` / `Error("Not implemented")` bodies for key generation, signing, verification, and chain integrity checking.
+  - Verified Python import and TypeScript `npm run build` and `npm run typecheck` pass with 0 errors.
+  - Documented scaffolding in `docs/tasks/evidence/T-02854-scaffold.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/anchors.py` (created)
+  - `code/aiosh-cli/src/anchors.ts` (created)
+  - `docs/tasks/evidence/T-02854-scaffold.md` (created)
+  - `docs/tasks/evidence/T-02854-chain-anchoring-completeness-checkpoints-scaffold.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02855 (`chain anchoring & completeness checkpoints: Implementation`).

@@ -433,3 +433,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02858 (`chain anchoring & completeness checkpoints: Security Review`).
+
+### 2026-10-07 — T-02858: Chain Anchoring & Completeness Checkpoints — Security Review
+- **Task ID**: `T-02858`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Conducted security review of Component 3 (chain anchoring & completeness checkpoints).
+  - Evaluated key separation: verified zero private key storage in `audit.db` and zero private key leakage in `audit_ring` arguments across both MCP and CLI surfaces.
+  - Analyzed threat models and attack scenarios: private key WAL leakage (prevented), rogue anchor forgery (prevented via pinned `trusted_pubkey`), chain truncation (detected via `TRUNCATION_DETECTED`), and history rewrites (detected via `FORK_DETECTED`).
+  - Identified hardening recommendations for T-02859: directory permission enforcement, strict key length validation, and malformed JSONL error handling.
+  - Documented findings in `docs/tasks/evidence/T-02858-security.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02858-security.md` (created)
+  - `docs/tasks/evidence/T-02858-chain-anchoring-completeness-checkpoints-security-review.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02859 (`chain anchoring & completeness checkpoints: Hardening`).

@@ -936,3 +936,7 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 ## T-02890 - continuous restraint conformance: Documentation (2026-10-08)
 - Created docs/SPEC-RESTRAINT-CONFORMANCE-GATE.md (SPEC-RESTRAINT-CONFORMANCE-GATE-v1): components, C1..C6 criteria, copy-pasteable invocation, env vars (AIOSH_CONFORMANCE_STRICT/AIOSH_BASH/AIOSH_NODE), hardening properties, honest constraints, evidence links T-02882..T-02891.
 - Evidence: docs/tasks/evidence/T-02890-*.md
+
+## T-02891 - continuous restraint conformance: Verification & Evidence (2026-10-08)
+- Component 6 (I-5) closeout, series T-02882..T-02891. Fresh verification: PoR battery 77 passed / 1 skipped; CONFORMANT C1..C6 PASS in strict + default modes (zero skips); CI registry valid (30 suites). Residual risks recorded (rust_smoke pre-existing defects, POSIX-only interpreter checks, C5 dist/node dependency).
+- Evidence: docs/tasks/evidence/T-02891-*.md

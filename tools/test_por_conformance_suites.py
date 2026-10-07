@@ -17,6 +17,8 @@ sequence (skip-safe); a criterion passes only when pytest exits 0.
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +30,26 @@ TESTS = REPO / "code" / "aiosh-mcp" / "tests"
 SUITE = TESTS / "test_por_conformance.py"
 
 CRITERIA = ("C1", "C2", "C3", "C4", "C5", "C6")
+
+# Bounded external-process execution (T-02889 hardening).
+CRITERION_TIMEOUT_S = 900
+
+
+def _skipped_count(stdout: str) -> int:
+    """Extract pytest's skipped-node count from its summary line (TV-CRC-05)."""
+    m = re.search(r"(\d+) skipped", stdout)
+    return int(m.group(1)) if m else 0
+
+
+def _criterion_verdict(returncode: int, skipped: int, strict: bool) -> bool:
+    """Fail-closed verdict: any pytest failure fails the criterion; any skip
+    fails it too in strict mode (AIOSH_CONFORMANCE_STRICT=1). Never silent:
+    skips are always reported by run_criterion."""
+    if returncode != 0:
+        return False
+    if strict and skipped:
+        return False
+    return True
 
 # criterion -> pytest node ids implementing it (T-02885 maps these)
 CRITERIA_TESTS: dict[str, tuple[str, ...]] = {
@@ -49,14 +71,29 @@ CRITERIA_TESTS: dict[str, tuple[str, ...]] = {
 
 
 def run_criterion(criterion: str, verbose: bool = True) -> bool:
-    """Run one criterion's test nodes. Returns True iff all pass (fail-closed)."""
+    """Run one criterion's test nodes. Returns True iff all pass (fail-closed).
+
+    T-02889 hardening: bounded subprocess timeout (fail-closed on hang),
+    skip-transparency (skips always reported, never silently green), and
+    strict mode (AIOSH_CONFORMANCE_STRICT=1) where any skip fails the
+    criterion — honest disclosure per ADR-0035 §F-2.
+    """
     nodes = CRITERIA_TESTS.get(criterion, ())
     if not nodes:
         print(f"{criterion}: no test nodes mapped")
         return False
-    cmd = [sys.executable, "-m", "pytest", "-q", "--no-header",
+    cmd = [sys.executable, "-m", "pytest", "-q", "--no-header", "-rs",
            "-p", "no:cacheprovider"] + [f"{SUITE}::{n}" for n in nodes]
-    proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
+    strict = os.environ.get("AIOSH_CONFORMANCE_STRICT") == "1"
+    try:
+        proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True,
+                              timeout=CRITERION_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        print(f"    ! FAIL: criterion timed out after {CRITERION_TIMEOUT_S}s")
+        return False
+    except OSError as e:
+        print(f"    ! FAIL: could not execute pytest: {e}")
+        return False
     if verbose and proc.stdout:
         tail = proc.stdout.strip().splitlines()
         for line in tail[-4:]:
@@ -64,11 +101,24 @@ def run_criterion(criterion: str, verbose: bool = True) -> bool:
     if proc.returncode != 0 and proc.stderr:
         for line in proc.stderr.strip().splitlines()[-6:]:
             print(f"    ! {line}")
-    return proc.returncode == 0
+    skipped = _skipped_count(proc.stdout)
+    if skipped:
+        for line in proc.stdout.splitlines():
+            if "SKIPPED" in line:
+                print(f"    ~ {line.strip()}")
+        if strict:
+            print(f"    ! FAIL: {skipped} skipped node(s) under AIOSH_CONFORMANCE_STRICT=1")
+        else:
+            print(f"    ~ {skipped} skipped node(s) treated as pass "
+                  "(set AIOSH_CONFORMANCE_STRICT=1 to fail on skips)")
+    return _criterion_verdict(proc.returncode, skipped, strict)
 
 
 def main() -> int:
     print("Continuous Restraint Conformance Suite (CRCS) — Invariant I-5")
+    strict = os.environ.get("AIOSH_CONFORMANCE_STRICT") == "1"
+    print(f"mode: {'STRICT (skips fail)' if strict else 'skip-transparent'}; "
+          f"timeout: {CRITERION_TIMEOUT_S}s per criterion")
     print("=" * 64)
     failed: list[str] = []
     for criterion in CRITERIA:

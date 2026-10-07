@@ -11,6 +11,12 @@ Unit-level verification of the CRCS harness itself (meta-tests):
   M4  fail-closed runner: unmapped criterion => run_criterion() returns False
   M5  sandbox isolation: conform_env never touches the real AIOSH_HOME/audit.db
   M6  contract fixtures: F-* fixture identifiers from T-02883 exist in the suite
+
+T-02889 hardening verification:
+  H1  skip transparency + strict-mode fail-closed verdict (TV-CRC-05)
+  H2  interpreter resolution: override trust, PATH lookup, loud failure (TV-CRC-01)
+  H3  sandbox AIOSH_HOME via monkeypatch, never global env (TV-CRC-04)
+  H4  temp-root registration/release, atexit hygiene (TV-CRC-07)
 """
 
 from __future__ import annotations
@@ -108,3 +114,77 @@ def test_m6_contract_fixture_identifiers(crcs):
     assert crcs.WINDOW_START < crcs.WINDOW_END              # F-ANCHOR-CADENCE window
     assert callable(crcs._forge_proof)                      # F-REDEEMED forgeries (C4.2)
     assert callable(crcs._ts_canonical_json)                # F-PARITY (C5)
+
+
+# ---------------------------------------------------------------------------
+# T-02889 hardening verification
+# ---------------------------------------------------------------------------
+class _StubMP:
+    """Records setenv calls without touching the global environment."""
+
+    def __init__(self):
+        self.setenv_calls: list[tuple[str, str]] = []
+
+    def setenv(self, key: str, value: str) -> None:
+        self.setenv_calls.append((key, value))
+
+
+def test_hardened_h1_skip_transparency_and_strict_verdict(battery):
+    """H1 / TV-CRC-05: skips are parsed and reported; strict mode is fail-closed."""
+    assert battery._skipped_count("3 passed, 2 skipped in 0.50s") == 2
+    assert battery._skipped_count("5 passed in 0.50s") == 0
+    assert battery._skipped_count("") == 0
+    assert battery._criterion_verdict(0, 0, False) is True
+    assert battery._criterion_verdict(0, 1, False) is True    # surfaced, not silently green
+    assert battery._criterion_verdict(0, 1, True) is False    # strict: any skip fails
+    assert battery._criterion_verdict(1, 0, False) is False
+    assert battery._criterion_verdict(1, 1, True) is False
+
+
+def test_hardened_h2_interpreter_resolution(crcs, monkeypatch):
+    """H2 / TV-CRC-01: override is trusted verbatim; PATH resolution lands on a
+    real file; unresolvable interpreters fail loudly."""
+    monkeypatch.setenv("AIOSH_NODE", "explicit-node-override")
+    assert crcs._resolve_interpreter("node", "AIOSH_NODE") == ["explicit-node-override"]
+
+    monkeypatch.delenv("AIOSH_NODE")
+    if not os.environ.get("PATH"):
+        pytest.skip("no PATH to resolve against")
+    try:
+        argv = crcs._resolve_interpreter("node", "AIOSH_NODE")
+    except FileNotFoundError:
+        pytest.skip("node not on PATH")
+    assert Path(argv[0]).is_file(), "resolved interpreter must be a real file"
+
+    monkeypatch.delenv("AIOSH_NODE_ABSENT", raising=False)
+    with pytest.raises(FileNotFoundError):
+        crcs._resolve_interpreter("definitely-not-a-real-interpreter-xyz",
+                                 "AIOSH_NODE_ABSENT")
+
+
+def test_hardened_h3_sandbox_uses_monkeypatch_not_global_env(crcs):
+    """H3 / TV-CRC-04: with a monkeypatch supplied, the global AIOSH_HOME
+    environment is never mutated by the sandbox factory."""
+    before = os.environ.get("AIOSH_HOME")
+    mp = _StubMP()
+    env, cleanup = crcs._make_env(mp)
+    try:
+        assert mp.setenv_calls and mp.setenv_calls[0][0] == "AIOSH_HOME"
+        assert mp.setenv_calls[0][1] == str(env["aiosh_home"])
+        assert os.environ.get("AIOSH_HOME") == before, \
+            "global env must be untouched when a monkeypatch is supplied"
+    finally:
+        cleanup()
+
+
+def test_hardened_h4_temp_roots_registered_and_released(crcs):
+    """H4 / TV-CRC-07: sandboxes register with the atexit registry and are
+    removed + unregistered on cleanup."""
+    env, cleanup = crcs._make_env()
+    tmp = env["aiosh_home"].parent
+    try:
+        assert tmp in crcs._TEMP_ROOTS, "sandbox root must be tracked for atexit hygiene"
+    finally:
+        cleanup()
+    assert tmp not in crcs._TEMP_ROOTS, "cleanup must release the tracking slot"
+    assert not tmp.exists(), "cleanup must remove the sandbox tree"

@@ -75,10 +75,29 @@ def _effective_command(argv: list[str]) -> list[str]:
     if py and argv and argv[0] == "python3":
         return [py, *argv[1:]]
     if argv and argv[0] == "bash":
-        bash = os.environ.get("AIOSH_BASH") or shutil.which("bash")
+        override = os.environ.get("AIOSH_BASH")
+        if override:
+            return [override, *argv[1:]]  # explicit operator trust
+        bash = shutil.which("bash")
         if bash:
+            _validate_interpreter(bash, "bash")
             return [bash, *argv[1:]]
+        raise RuntimeError(
+            "bash not resolvable via PATH; set $AIOSH_BASH to a known-good shell")
     return argv
+
+
+def _validate_interpreter(path: str, name: str) -> None:
+    """TV-CRC-01 (T-02889): refuse to execute an interpreter from a
+    world-writable directory (POSIX mode check; skipped on Windows where
+    mode bits are unreliable). Raises on violation — fail-closed, never
+    silently rerouted."""
+    resolved = Path(path).resolve()
+    if not resolved.is_file():
+        raise RuntimeError(f"interpreter {name!r} not found at {resolved}")
+    if os.name == "posix" and (resolved.parent.stat().st_mode & 0o002):
+        raise RuntimeError(
+            f"refusing to run {name!r} from world-writable {resolved.parent}")
 
 
 from ci_config import CiConfig

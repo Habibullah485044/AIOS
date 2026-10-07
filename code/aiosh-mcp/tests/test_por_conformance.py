@@ -22,6 +22,7 @@ F-ANCHOR-CADENCE (see T-02883-spec.md §3).
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
@@ -53,6 +54,42 @@ GRANT_REDEEMED = "gr_conform_redeemed"
 
 CLI_DIST = REPO / "code" / "aiosh-cli" / "dist" / "cli.js"
 PENTEST_SRC = REPO / "code" / "aiosh-mcp" / "aiosh_mcp" / "pentest.py"
+
+
+# ---------------------------------------------------------------------------
+# T-02889 hardening: interpreter resolution & temp hygiene (TV-CRC-01/07)
+# ---------------------------------------------------------------------------
+_TEMP_ROOTS: list[Path] = []
+
+
+def _cleanup_temp_roots() -> None:
+    """atexit belt-and-braces: never leak por-conform-* sandboxes on hard abort."""
+    while _TEMP_ROOTS:
+        shutil.rmtree(_TEMP_ROOTS.pop(), ignore_errors=True)
+
+
+atexit.register(_cleanup_temp_roots)
+
+
+def _resolve_interpreter(name: str, override_var: str) -> list[str]:
+    """Resolve an external interpreter (TV-CRC-01 hardening, T-02889).
+
+    The explicit override env var is trusted verbatim (operator intent).
+    Otherwise a PATH-only lookup is used and the resolved binary must live in
+    a non-world-writable directory (POSIX mode check; skipped on Windows
+    where mode bits are unreliable). Missing interpreters raise — the child
+    process fails loudly, never silently."""
+    override = os.environ.get(override_var)
+    if override:
+        return [override]
+    path = shutil.which(name)
+    if not path:
+        raise FileNotFoundError(f"{name} not found on PATH; set ${override_var}")
+    resolved = Path(path).resolve()
+    if os.name == "posix" and (resolved.parent.stat().st_mode & 0o002):
+        raise RuntimeError(
+            f"refusing to run {name} from world-writable {resolved.parent}")
+    return [str(resolved)]
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +150,14 @@ def _open(env):
         conn.close()
 
 
-def _make_env():
-    """Build an isolated conformance sandbox. Returns (env, cleanup)."""
+def _make_env(mp=None):
+    """Build an isolated conformance sandbox. Returns (env, cleanup).
+
+    T-02889 hardening (TV-CRC-04): pass a pytest `monkeypatch` (conform_env
+    does) so the AIOSH_HOME mutation is per-test and concurrency-safe; the
+    bare fallback (meta tests) restores the environment in cleanup()."""
     tmp = Path(tempfile.mkdtemp(prefix="por-conform-"))
+    _TEMP_ROOTS.append(tmp)
     aiosh_home = tmp / ".aios"
     anchors_dir = aiosh_home / "anchors"
     anchors_dir.mkdir(parents=True, exist_ok=True)
@@ -123,9 +165,16 @@ def _make_env():
     anchors_path = anchors_dir / "anchors.jsonl"
 
     old_home = os.environ.get("AIOSH_HOME")
-    os.environ["AIOSH_HOME"] = str(aiosh_home)
+    if mp is not None:
+        mp.setenv("AIOSH_HOME", str(aiosh_home))
+    else:
+        os.environ["AIOSH_HOME"] = str(aiosh_home)
 
-    with sqlite3.connect(str(db_path)) as conn:
+    # T-02889 (TV-CRC-07): explicit connect/close — sqlite3's context manager
+    # only commits; an unclosed handle keeps audit.db locked on Windows and
+    # blocks sandbox removal.
+    conn = sqlite3.connect(str(db_path))
+    try:
         conn.row_factory = sqlite3.Row
         audit_client.ensure_audit_schema(conn)
         audit_client.ensure_pep_schema(conn)
@@ -156,6 +205,8 @@ def _make_env():
             "SELECT id, hash FROM audit_ring ORDER BY id DESC LIMIT 1"
         ).fetchone()
         tail_id, tail_hash = tail["id"], tail["hash"]
+    finally:
+        conn.close()
 
     priv, pub = anchors_mod.generate_keypair()
     a1 = anchors_mod.sign_checkpoint(
@@ -194,19 +245,22 @@ def _make_env():
     env["verify"] = verify
 
     def cleanup():
-        if old_home is not None:
-            os.environ["AIOSH_HOME"] = old_home
-        else:
-            os.environ.pop("AIOSH_HOME", None)
+        if mp is None:
+            if old_home is not None:
+                os.environ["AIOSH_HOME"] = old_home
+            else:
+                os.environ.pop("AIOSH_HOME", None)
+        if tmp in _TEMP_ROOTS:
+            _TEMP_ROOTS.remove(tmp)
         shutil.rmtree(tmp, ignore_errors=True)
 
     return env, cleanup
 
 
 @pytest.fixture
-def conform_env():
+def conform_env(monkeypatch):
     """Isolated AIOSH_HOME + temp audit.db; zero network. Yields paths/keys/helpers."""
-    env, cleanup = _make_env()
+    env, cleanup = _make_env(monkeypatch)
     yield env
     cleanup()
 
@@ -514,12 +568,16 @@ def _run_cli_verify(proof_path: Path, pub: str) -> dict | None:
     if not CLI_DIST.exists():
         pytest.skip("aiosh-cli dist/cli.js not compiled")
     env = os.environ.copy()
-    p = subprocess.run(
-        ["node", str(CLI_DIST), "prove", "verify",
-         "--proof", str(proof_path), "--pubkey", pub],
-        env=env, cwd=str(REPO / "code" / "aiosh-cli"),
-        capture_output=True, text=True,
-    )
+    try:
+        p = subprocess.run(
+            [*_resolve_interpreter("node", "AIOSH_NODE"), str(CLI_DIST),
+             "prove", "verify",
+             "--proof", str(proof_path), "--pubkey", pub],
+            env=env, cwd=str(REPO / "code" / "aiosh-cli"),
+            capture_output=True, text=True, timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("aiosh-cli prove verify timed out after 120s (bounded child process)")
     if "not a valid Win32 application" in p.stderr or "not a valid Win32 application" in p.stdout:
         pytest.skip("better-sqlite3 native binary compiled for non-Win32 substrate")
     assert p.returncode in (0, 1), f"CLI crashed: {p.stderr}"
@@ -582,13 +640,16 @@ def _ts_canonical_json(obj: dict) -> str | None:
         return None
     try:
         proc = subprocess.run(
-            ["node", "--input-type=module", "-e",
+            [*_resolve_interpreter("node", "AIOSH_NODE"),
+             "--input-type=module", "-e",
              f"const m = await import({json.dumps(audit_js.as_uri())});"
              "let s='';"
              "process.stdin.on('data', d => s += d);"
              "process.stdin.on('end', () => process.stdout.write(m.canonicalJson(JSON.parse(s))));"],
             input=json.dumps(obj), capture_output=True, text=True, timeout=60,
         )
+    except subprocess.TimeoutExpired:
+        raise  # a hang is a failure, never an 'unavailable substrate' skip
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:

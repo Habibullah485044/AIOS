@@ -927,3 +927,8 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Reviewed CRCS (test_por_conformance.py, test_por_conformance_suites.py, ci_suites.py, ci_run.py bash fix) against 7 threat vectors TV-CRC-01..07.
 - Verdict: no runtime policy bypass; PEP gating + audit emission verified by C1/C2. Findings for hardening (T-02889): PATH-interpreter validation, skip-transparent fail-closed runner, concurrency-safe AIOSH_HOME sandbox, temp-tree hygiene.
 - Evidence: docs/tasks/evidence/T-02888-*.md
+
+## T-02889 - continuous restraint conformance: Hardening (2026-10-08)
+- Closed TV-CRC-01 (interpreter resolution validation, AIOSH_NODE/AIOSH_BASH overrides, world-writable rejection), TV-CRC-05 (skip-transparent fail-closed runner + AIOSH_CONFORMANCE_STRICT), TV-CRC-04 (monkeypatch-based AIOSH_HOME sandbox), TV-CRC-07 (temp-root atexit hygiene; fixed real sqlite3 connection leak that blocked sandbox removal on Windows).
+- Bounded external processes (900s criteria, 120s CLI verify, 60s node oracle; hangs fail loudly). Verified: 24 tests green, CONFORMANT C1..C6 in both modes, PoR suite 77 passed / 1 skipped.
+- Evidence: docs/tasks/evidence/T-02889-*.md

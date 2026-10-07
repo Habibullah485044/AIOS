@@ -949,3 +949,7 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 ## T-02893 - Compliance Mapping / MCP-API surface: Research (2026-10-08)
 - Collected facts (MCP spec 2025-06-18 / 2026-07-28, JSON-RPC 2.0, Python SDK 1.29.1; repo: _recorded_call envelope, PEP gating, Rust ComplianceService substrate, docs/compliance_map.json store, aiosh compliance CLI). 4 assumptions flagged, 8 decisions queued for spec. No code changed.
 - Evidence: docs/tasks/evidence/T-02893-*.md
+
+## T-02894 - Compliance Mapping / MCP-API surface: Specification (2026-10-08)
+- Normative contract: aios.compliance action-dispatch tool (7 CLI verbs), reuse/new table, happy/failure paths + error-code table with CLI exit parity, persistence (canonical byte-stable store form, atomic writes, 1024 cap), validation parity bounds, one-audit-row-per-call semantics, PEP gating matrix, D1..D8 decision log. AIOS-specific proposals marked.
+- Evidence: docs/tasks/evidence/T-02894-*.md

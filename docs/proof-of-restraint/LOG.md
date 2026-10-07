@@ -852,3 +852,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02883 (`continuous restraint conformance: Specification`).
 
+### 2026-10-07 — T-02883: Continuous Restraint Conformance — Specification
+- **Task ID**: `T-02883`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / continuous restraint conformance (Component 6)
+- **Summary**:
+  - Authored the normative CRCS specification: formal criteria C1..C6 (non-bypassability, mint/redeem parity, untouched-grant stability, touched-grant invalidation, substrate oracle parity, anchor/chain continuity).
+  - Defined deterministic scenario fixtures F-UNTOUCHED, F-REDEEMED, F-SPENT-RETRY, F-NO-GRANT, F-PARITY, F-ANCHOR-CADENCE.
+  - Specified harness interface (`test_por_conformance.py`, `tools/test_por_conformance_suites.py`), CI registration contract (`tools/ci_suites.py`, `ci_service.py check`), and the `CONFORMANCE.md` auditor manifest.
+  - Locked binding acceptance criteria for T-02884..T-02891, including the D4 catastrophic-direction guarantee.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02883-spec.md` (created)
+  - `docs/tasks/evidence/T-02883-continuous-restraint-conformance-specification.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02884 (`continuous restraint conformance: Scaffold`).
+

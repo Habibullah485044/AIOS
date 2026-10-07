@@ -450,3 +450,25 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
   - Advancing to T-02859 (`chain anchoring & completeness checkpoints: Hardening`).
+
+### 2026-10-07 — T-02859: Chain Anchoring & Completeness Checkpoints — Hardening
+- **Task ID**: `T-02859`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / chain anchoring & completeness checkpoints
+- **Agent**: Antigravity System
+- **Summary**:
+  - Hardened Python (`anchors.py`) and TypeScript (`anchors.ts`) against input injection, memory exhaustion, and invalid keys.
+  - Added strict 64-hex string regex and decoding validation on all private and public keys.
+  - Added file size limit (`MAX_ANCHORS_FILE_SIZE = 10MB`) to prevent DoS via oversized log files.
+  - Added directory permission enforcement (`0700`) and key/anchor file permission restrictions (`0600`).
+  - Added fail-closed line parsing with explicit line number reporting on corrupted records in `anchors.jsonl`.
+  - Rebuilt TypeScript (`npm run build`) and verified full test suite passes (11/11 tests).
+  - Documented evidence in `docs/tasks/evidence/T-02859-hardening.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/anchors.py` (hardened)
+  - `code/aiosh-cli/src/anchors.ts` (hardened)
+  - `code/aiosh-cli/dist/anchors.js` (compiled)
+  - `docs/tasks/evidence/T-02859-hardening.md` (created)
+  - `docs/tasks/evidence/T-02859-chain-anchoring-completeness-checkpoints-hardening.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02860 (`chain anchoring & completeness checkpoints: Documentation`).

@@ -3,10 +3,11 @@
  *
  * Sprint / Architecture: ADR-0037, PLAN.md §Layer 2, Invariant I-3.
  * Cross-substrate mirror of `code/aiosh-mcp/aiosh_mcp/anchors.py`.
+ * Hardened against input tampering, key confusion, and corrupted records (T-02859).
  */
 
 import { generateKeyPairSync, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, appendFileSync, statSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
 
 export interface AnchorRecord {
@@ -18,8 +19,17 @@ export interface AnchorRecord {
   signature: string;
 }
 
+const MAX_ANCHORS_FILE_SIZE = 10 * 1024 * 1024; // 10MB cap
 const PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 const SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+const HEX_64_REGEX = /^[0-9a-fA-F]{64}$/;
+
+function validateHexKey(keyHex: string, name = "key"): Buffer {
+  if (!keyHex || !HEX_64_REGEX.test(keyHex.trim())) {
+    throw new Error(`Invalid ${name}: must be a 64-character hex string (32 bytes)`);
+  }
+  return Buffer.from(keyHex.trim(), "hex");
+}
 
 export function canonicalAnchorPayload(seq: number, headHash: string, timestamp: string): Buffer {
   const payload = {
@@ -50,7 +60,7 @@ export function signCheckpoint(
   timestamp: string,
   privateKeyHex: string
 ): AnchorRecord {
-  const rawPriv = Buffer.from(privateKeyHex, "hex");
+  const rawPriv = validateHexKey(privateKeyHex, "privateKey");
   const privKey = createPrivateKey({
     key: Buffer.concat([PKCS8_PREFIX, rawPriv]),
     format: "der",
@@ -76,7 +86,10 @@ export function signCheckpoint(
 
 export function verifyCheckpoint(anchor: AnchorRecord): boolean {
   try {
-    const rawPub = Buffer.from(anchor.pubkey, "hex");
+    const rawPub = validateHexKey(anchor.pubkey, "pubkey");
+    if (!anchor.signature || anchor.signature.length !== 128) {
+      return false;
+    }
     const pubKey = createPublicKey({
       key: Buffer.concat([SPKI_PREFIX, rawPub]),
       format: "der",
@@ -96,21 +109,46 @@ export function appendAnchor(anchor: AnchorRecord, anchorsPath: string): void {
   const dir = dirname(anchorsPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      // Windows non-fatal
+    }
   }
   const line = JSON.stringify(anchor) + "\n";
   appendFileSync(anchorsPath, line, "utf-8");
+  try {
+    chmodSync(anchorsPath, 0o600);
+  } catch {
+    // Windows non-fatal
+  }
 }
 
 export function loadAnchors(anchorsPath: string): AnchorRecord[] {
   if (!existsSync(anchorsPath)) {
     return [];
   }
+  const stat = statSync(anchorsPath);
+  if (stat.size > MAX_ANCHORS_FILE_SIZE) {
+    throw new Error(`Anchors file exceeds size limit of ${MAX_ANCHORS_FILE_SIZE} bytes`);
+  }
+
   const content = readFileSync(anchorsPath, "utf-8");
   const records: AnchorRecord[] = [];
+  let lineNum = 0;
   for (const line of content.split("\n")) {
+    lineNum++;
     const trimmed = line.trim();
     if (!trimmed) continue;
-    records.push(JSON.parse(trimmed) as AnchorRecord);
+    try {
+      const parsed = JSON.parse(trimmed) as AnchorRecord;
+      if (!parsed.pubkey || !parsed.signature || parsed.seq === undefined) {
+        throw new Error("Missing required anchor fields");
+      }
+      records.push(parsed);
+    } catch (e) {
+      throw new Error(`Corrupted anchor record at line ${lineNum}: ${(e as Error).message}`);
+    }
   }
   return records;
 }
@@ -124,6 +162,14 @@ export function verifyChainAgainstAnchors(
     return { valid: true };
   }
 
+  if (trustedPubkey) {
+    try {
+      validateHexKey(trustedPubkey, "trustedPubkey");
+    } catch (e) {
+      return { valid: false, reason: `INVALID_TRUSTED_PUBKEY: ${(e as Error).message}` };
+    }
+  }
+
   const rowMap = new Map<number, string>();
   let maxChainId = 0;
   for (const r of chainRows) {
@@ -134,7 +180,7 @@ export function verifyChainAgainstAnchors(
   }
 
   for (const anchor of anchors) {
-    if (trustedPubkey && anchor.pubkey !== trustedPubkey) {
+    if (trustedPubkey && anchor.pubkey.toLowerCase() !== trustedPubkey.toLowerCase()) {
       return {
         valid: false,
         reason: `UNTRUSTED_KEY: anchor pubkey ${anchor.pubkey} != trusted ${trustedPubkey}`,

@@ -11,18 +11,21 @@ report. Exit 0 only when every criterion passes (fail-closed).
 Usage:
   python3 tools/test_por_conformance_suites.py
 
-Scaffold contract: bodies fail loudly until T-02885 (Implementation).
+Implementation: T-02885. Each criterion runs its pytest node ids in
+sequence (skip-safe); a criterion passes only when pytest exits 0.
 """
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parent
 
 TESTS = REPO / "code" / "aiosh-mcp" / "tests"
+SUITE = TESTS / "test_por_conformance.py"
 
 CRITERIA = ("C1", "C2", "C3", "C4", "C5", "C6")
 
@@ -45,9 +48,23 @@ CRITERIA_TESTS: dict[str, tuple[str, ...]] = {
 }
 
 
-def run_criterion(criterion: str) -> bool:
-    """Run one criterion's test nodes. Returns True iff all pass."""
-    raise NotImplementedError(f"[{criterion}] T-02885 (continuous restraint conformance: implementation) pending")
+def run_criterion(criterion: str, verbose: bool = True) -> bool:
+    """Run one criterion's test nodes. Returns True iff all pass (fail-closed)."""
+    nodes = CRITERIA_TESTS.get(criterion, ())
+    if not nodes:
+        print(f"{criterion}: no test nodes mapped")
+        return False
+    cmd = [sys.executable, "-m", "pytest", "-q", "--no-header",
+           "-p", "no:cacheprovider"] + [f"{SUITE}::{n}" for n in nodes]
+    proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True)
+    if verbose and proc.stdout:
+        tail = proc.stdout.strip().splitlines()
+        for line in tail[-4:]:
+            print(f"    {line}")
+    if proc.returncode != 0 and proc.stderr:
+        for line in proc.stderr.strip().splitlines()[-6:]:
+            print(f"    ! {line}")
+    return proc.returncode == 0
 
 
 def main() -> int:
@@ -55,11 +72,7 @@ def main() -> int:
     print("=" * 64)
     failed: list[str] = []
     for criterion in CRITERIA:
-        try:
-            ok = run_criterion(criterion)
-        except NotImplementedError as exc:
-            print(f"{criterion}: FAIL (scaffold) — {exc}")
-            ok = False
+        ok = run_criterion(criterion)
         print(f"{criterion}: {'PASS' if ok else 'FAIL'}")
         if not ok:
             failed.append(criterion)

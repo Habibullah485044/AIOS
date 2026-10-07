@@ -883,3 +883,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02885 (`continuous restraint conformance: Implementation`).
 
+### 2026-10-07 — T-02885: Continuous Restraint Conformance — Implementation
+- **Task ID**: `T-02885`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / continuous restraint conformance (Component 6)
+- **Summary**:
+  - Implemented all 14 CRCS scenario tests: C1 non-bypassability (gate + dispatch surfaces, spent-grant replay, source-scanned tool coverage), C2 mint/redeem parity + canonical JSON, C3 untouched-grant stability, C4 touched-grant invalidation (catastrophic direction), C5 live Python/TypeScript oracle parity, C6 anchor continuity + window bounding.
+  - Implemented the fail-closed criteria battery (`tools/test_por_conformance_suites.py`); fixed scaffold path-resolution bug; reports `CONFORMANT: C1..C6 PASS`.
+  - C5 runs the real TS substrate (`node dist/cli.js prove verify`) with byte-level canonical parity; C2.2 compares against TS `canonicalJson` via live node invocation.
+  - Results: 14/14 conformance tests PASS; full PoR battery 52 passed, 1 skipped (no regressions).
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_conformance.py` (implemented)
+  - `tools/test_por_conformance_suites.py` (implemented)
+  - `docs/tasks/evidence/T-02885-implementation.md` (created)
+  - `docs/tasks/evidence/T-02885-continuous-restraint-conformance-implementation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Advancing to T-02886 (`continuous restraint conformance: Unit Test`).
+

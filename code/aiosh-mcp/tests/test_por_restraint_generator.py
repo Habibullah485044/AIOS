@@ -398,3 +398,51 @@ def test_no_covering_anchors_rejection(test_env):
             window_end="2026-10-07T12:30:00Z",
             anchors_path=anchors_path,
         )
+
+
+def test_hardened_invalid_timestamp_rejection(test_env):
+    conn = test_env["conn"]
+    _insert_grant(conn, "grant-ts-test")
+    with pytest.raises(ValueError, match="PARAM_INVALID.*window_start"):
+        generate_restraint_proof(
+            conn=conn,
+            grant_id="grant-ts-test",
+            window_start="invalid-date-string",
+            window_end="2026-10-07T12:30:00Z",
+        )
+
+
+def test_hardened_nul_byte_path_rejection(test_env):
+    conn = test_env["conn"]
+    _insert_grant(conn, "grant-nul-test")
+    with pytest.raises(ValueError, match="PARAM_INVALID.*NUL byte"):
+        generate_restraint_proof(
+            conn=conn,
+            grant_id="grant-nul-test",
+            window_start="2026-10-07T12:00:00Z",
+            window_end="2026-10-07T12:30:00Z",
+            anchors_path="path/with/\0/evil.jsonl",
+        )
+
+
+def test_hardened_unbounding_anchors_rejection(test_env):
+    conn = test_env["conn"]
+    anchors_path = test_env["anchors_path"]
+    priv = test_env["priv"]
+    _insert_grant(conn, "grant-unbounded-test")
+
+    # Anchor at 12:05 and 12:10, but window starts at 12:00 (no anchor precedes 12:00)
+    a1 = sign_checkpoint(seq=5, head_hash="hash_0005", timestamp="2026-10-07T12:05:00Z", private_key_hex=priv)
+    a2 = sign_checkpoint(seq=10, head_hash="hash_0010", timestamp="2026-10-07T12:10:00Z", private_key_hex=priv)
+    append_anchor(a1, anchors_path)
+    append_anchor(a2, anchors_path)
+
+    with pytest.raises(ValueError, match="NO_COVERING_ANCHORS: no anchor precedes window_start"):
+        generate_restraint_proof(
+            conn=conn,
+            grant_id="grant-unbounded-test",
+            window_start="2026-10-07T12:00:00Z",
+            window_end="2026-10-07T12:08:00Z",
+            anchors_path=anchors_path,
+        )
+

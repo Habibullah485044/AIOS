@@ -622,8 +622,26 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02868-security.md` (created)
   - `docs/tasks/evidence/T-02868-restraint-proof-generator-security-review.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02869: Restraint Proof Generator — Hardening
+- **Task ID**: `T-02869`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Remediated anchor boundary fallback vulnerability in `restraint.py` and `restraint.ts`: strictly enforce covering bounding anchors ($T_{start\_anchor} \le T_{start}$ and $T_{end\_anchor} \ge T_{end}$) without unsafe fallback.
+  - Hardened input validation: added strict ISO-8601 UTC timestamp parsing and sanitized path traversal against NUL bytes.
+  - Rebuilt TypeScript distribution (`npm run build`) with zero compiler warnings.
+  - Expanded unit test suite `code/aiosh-mcp/tests/test_por_restraint_generator.py` to 11 tests verifying all hardened security guards.
+  - Documented hardening evidence in `docs/tasks/evidence/T-02869-hardening.md` and pointer artifact.
+- **Files Touched**:
+  - `code/aiosh-mcp/aiosh_mcp/restraint.py` (updated)
+  - `code/aiosh-cli/src/restraint.ts` (updated)
+  - `code/aiosh-mcp/tests/test_por_restraint_generator.py` (updated)
+  - `docs/tasks/evidence/T-02869-hardening.md` (created)
+  - `docs/tasks/evidence/T-02869-restraint-proof-generator-hardening.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02869 (`restraint proof generator: Hardening`).
+  - Advancing to T-02870 (`restraint proof generator: Documentation`).
+
 
 
 

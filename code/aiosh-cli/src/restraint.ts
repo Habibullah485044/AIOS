@@ -23,6 +23,24 @@ export interface RestraintProofPackage {
   verdict: string;
 }
 
+function validateIsoTimestamp(ts: string, name: string): void {
+  if (!ts || typeof ts !== "string") {
+    throw new Error(`PARAM_INVALID: ${name} must be a non-empty ISO-8601 string`);
+  }
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) {
+    throw new Error(`PARAM_INVALID: ${name} (${ts}) is not a valid ISO-8601 timestamp`);
+  }
+}
+
+function validateSafePath(p?: string): string {
+  if (p && p.includes("\0")) {
+    throw new Error("PARAM_INVALID: anchors_path contains NUL byte");
+  }
+  const defaultPath = join(process.env["AIOSH_HOME"] ?? `${process.env["HOME"]}/.aios`, "anchors", "anchors.jsonl");
+  return p ?? defaultPath;
+}
+
 export function generateRestraintProof(
   db: Database.Database,
   grantId: string,
@@ -30,6 +48,9 @@ export function generateRestraintProof(
   windowEnd: string,
   anchorsPath?: string
 ): RestraintProofPackage {
+  validateIsoTimestamp(windowStart, "windowStart");
+  validateIsoTimestamp(windowEnd, "windowEnd");
+
   if (windowStart > windowEnd) {
     throw new Error(`WINDOW_INVALID: windowStart (${windowStart}) > windowEnd (${windowEnd})`);
   }
@@ -57,8 +78,7 @@ export function generateRestraintProof(
   }
 
   // 2. Load covering anchors
-  const defaultPath = join(process.env["AIOSH_HOME"] ?? `${process.env["HOME"]}/.aios`, "anchors", "anchors.jsonl");
-  const path = anchorsPath ?? defaultPath;
+  const path = validateSafePath(anchorsPath);
   const loadedAnchors = anchorsMod.loadAnchors(path);
 
   if (loadedAnchors.length === 0) {
@@ -67,13 +87,19 @@ export function generateRestraintProof(
 
   const sortedAnchors = [...loadedAnchors].sort((a, b) => a.seq - b.seq);
   const startCandidates = sortedAnchors.filter((a) => a.timestamp <= windowStart);
-  const startAnchor = startCandidates.length > 0 ? startCandidates[startCandidates.length - 1] : sortedAnchors[0];
+  if (startCandidates.length === 0) {
+    throw new Error(`NO_COVERING_ANCHORS: no anchor precedes windowStart (${windowStart})`);
+  }
+  const startAnchor = startCandidates[startCandidates.length - 1];
 
   const endCandidates = sortedAnchors.filter((a) => a.timestamp >= windowEnd);
-  const endAnchor = endCandidates.length > 0 ? endCandidates[0] : sortedAnchors[sortedAnchors.length - 1];
+  if (endCandidates.length === 0) {
+    throw new Error(`NO_COVERING_ANCHORS: no anchor succeeds windowEnd (${windowEnd})`);
+  }
+  const endAnchor = endCandidates[0];
 
-  if (!startAnchor || !endAnchor || startAnchor.seq > endAnchor.seq) {
-    throw new Error(`NO_COVERING_ANCHORS: unable to identify bounding anchors for window [${windowStart}, ${windowEnd}]`);
+  if (startAnchor.seq > endAnchor.seq) {
+    throw new Error(`NO_COVERING_ANCHORS: start anchor seq ${startAnchor.seq} > end anchor seq ${endAnchor.seq}`);
   }
 
   // 3. Check segments via Bloom

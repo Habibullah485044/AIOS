@@ -55,6 +55,25 @@ def _default_anchors_path() -> Path:
     return Path(base) / "anchors" / "anchors.jsonl"
 
 
+def _validate_iso_timestamp(ts: str, param_name: str) -> None:
+    if not isinstance(ts, str) or not ts.strip():
+        raise ValueError(f"PARAM_INVALID: {param_name} must be a non-empty ISO-8601 string")
+    try:
+        cleaned = ts.replace("Z", "+00:00")
+        dt.datetime.fromisoformat(cleaned)
+    except Exception as exc:
+        raise ValueError(f"PARAM_INVALID: {param_name} ({ts}) is not a valid ISO-8601 timestamp: {exc}")
+
+
+def _validate_safe_path(p: str | Path | None) -> Path:
+    if p is None:
+        return _default_anchors_path()
+    s = str(p)
+    if "\0" in s:
+        raise ValueError("PARAM_INVALID: anchors_path contains NUL byte")
+    return Path(s).resolve()
+
+
 def generate_restraint_proof(
     conn: sqlite3.Connection,
     grant_id: str,
@@ -63,6 +82,9 @@ def generate_restraint_proof(
     anchors_path: Optional[str | Path] = None,
 ) -> RestraintProofPackage:
     """Generate self-contained RestraintProofPackage for grant_id across [window_start, window_end]."""
+    _validate_iso_timestamp(window_start, "window_start")
+    _validate_iso_timestamp(window_end, "window_end")
+
     if window_start > window_end:
         raise ValueError(f"WINDOW_INVALID: window_start ({window_start}) > window_end ({window_end})")
 
@@ -84,7 +106,7 @@ def generate_restraint_proof(
         raise ValueError(f"GRANT_REDEEMED: grant {grant_id} recorded redeemed at row {redeem_row[0]}")
 
     # 2. Find covering anchors
-    p = Path(anchors_path).resolve() if anchors_path else _default_anchors_path()
+    p = _validate_safe_path(anchors_path)
     loaded_anchors = anchors_mod.load_anchors(p)
     if not loaded_anchors:
         raise ValueError(f"NO_COVERING_ANCHORS: no anchors found in {p}")
@@ -93,14 +115,18 @@ def generate_restraint_proof(
 
     # Eligible start anchor: latest anchor with timestamp <= window_start
     start_candidates = [a for a in sorted_anchors if a.timestamp <= window_start]
-    start_anchor = start_candidates[-1] if start_candidates else sorted_anchors[0]
+    if not start_candidates:
+        raise ValueError(f"NO_COVERING_ANCHORS: no anchor precedes window_start ({window_start})")
+    start_anchor = start_candidates[-1]
 
     # Eligible end anchor: earliest anchor with timestamp >= window_end
     end_candidates = [a for a in sorted_anchors if a.timestamp >= window_end]
-    end_anchor = end_candidates[0] if end_candidates else sorted_anchors[-1]
+    if not end_candidates:
+        raise ValueError(f"NO_COVERING_ANCHORS: no anchor succeeds window_end ({window_end})")
+    end_anchor = end_candidates[0]
 
-    if start_anchor is None or end_anchor is None or start_anchor.seq > end_anchor.seq:
-        raise ValueError(f"NO_COVERING_ANCHORS: unable to identify bounding anchors for window [{window_start}, {window_end}]")
+    if start_anchor.seq > end_anchor.seq:
+        raise ValueError(f"NO_COVERING_ANCHORS: start anchor seq {start_anchor.seq} > end anchor seq {end_anchor.seq}")
 
     # 3. Check archived segments via Bloom filter
     segments_checked: list[dict[str, Any]] = []

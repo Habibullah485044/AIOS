@@ -131,13 +131,123 @@ def test_redeem_before_act_gate() -> bool:
     return True
 
 
+def test_expired_and_out_of_scope_rejection() -> bool:
+    print("[5] Testing expired and out-of-scope grant rejections at gate...")
+    tmp = Path(tempfile.mkdtemp(prefix="por-expired-gate-"))
+    db_path = tmp / "audit.db"
+
+    import os
+    os.environ["AIOSH_HOME"] = str(tmp)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = FULL;")
+        audit_client.ensure_audit_schema(conn)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pep_grants (
+                grant_id TEXT PRIMARY KEY, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                issued_to TEXT NOT NULL, constitution_rev TEXT NOT NULL, scope_json TEXT NOT NULL,
+                scope_hash TEXT NOT NULL, revoked_at TEXT, single_use INTEGER DEFAULT 1, redeemed_at TEXT
+            );
+        """)
+        past = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)).isoformat()
+        expired = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).isoformat()
+
+        # Expired grant
+        conn.execute("""
+            INSERT INTO pep_grants (grant_id, issued_at, expires_at, issued_to, constitution_rev, scope_json, scope_hash, single_use)
+            VALUES ('gr_expired', ?, ?, 'agent:t', 'rev1', '{"tools":["pentest.nmap"]}', 'h1', 1)
+        """, (past, expired))
+
+        # Scope-mismatched grant
+        conn.execute("""
+            INSERT INTO pep_grants (grant_id, issued_at, expires_at, issued_to, constitution_rev, scope_json, scope_hash, single_use)
+            VALUES ('gr_wrong_scope', ?, ?, 'agent:t', 'rev1', '{"tools":["aios.fs.read"]}', 'h2', 1)
+        """, (past, future))
+
+    # Test 1: Expired grant dispatch
+    v_exp, r_exp = _dispatch.dispatch(
+        tool="pentest.nmap", command="nmap -sT 127.0.0.1", args={}, target=None,
+        grant_id="gr_expired", require_grant=True,
+    )
+    assert not v_exp["ok"], "Expired grant must fail dispatch"
+    assert "expired" in v_exp["reason"]
+    print(f"{PASS} Expired grant correctly refused: {v_exp['reason']}")
+
+    # Test 2: Out of scope dispatch
+    v_scope, r_scope = _dispatch.dispatch(
+        tool="pentest.nmap", command="nmap -sT 127.0.0.1", args={}, target=None,
+        grant_id="gr_wrong_scope", require_grant=True,
+    )
+    assert not v_scope["ok"], "Out of scope tool must fail dispatch"
+    assert "not in grant scope" in v_scope["reason"]
+    print(f"{PASS} Out of scope tool correctly refused: {v_scope['reason']}")
+
+    # Test 3: Irreversible tool without grant
+    v_nogrant, r_nogrant = _dispatch.dispatch(
+        tool="pentest.nmap", command="nmap -sT 127.0.0.1", args={}, target=None,
+        grant_id=None, require_grant=True,
+    )
+    assert not v_nogrant["ok"], "Missing grant on irreversible tool must fail dispatch"
+    print(f"{PASS} Missing grant on irreversible tool correctly refused")
+
+    return True
+
+
+def test_multi_use_grant_dispatch() -> bool:
+    print("[6] Testing multi-use grant dispatch (multiple permitted redemptions)...")
+    tmp = Path(tempfile.mkdtemp(prefix="por-multi-gate-"))
+    db_path = tmp / "audit.db"
+
+    import os
+    os.environ["AIOSH_HOME"] = str(tmp)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = FULL;")
+        audit_client.ensure_audit_schema(conn)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pep_grants (
+                grant_id TEXT PRIMARY KEY, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
+                issued_to TEXT NOT NULL, constitution_rev TEXT NOT NULL, scope_json TEXT NOT NULL,
+                scope_hash TEXT NOT NULL, revoked_at TEXT, single_use INTEGER DEFAULT 0, redeemed_at TEXT
+            );
+        """)
+        now = audit_client.utcnow_iso()
+        future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).isoformat()
+        conn.execute("""
+            INSERT INTO pep_grants (grant_id, issued_at, expires_at, issued_to, constitution_rev, scope_json, scope_hash, single_use)
+            VALUES ('gr_multi', ?, ?, 'agent:t', 'rev1', '{"tools":["pentest.nmap"]}', 'h1', 0)
+        """, (now, future))
+
+    # First dispatch
+    v1, _ = _dispatch.dispatch(
+        tool="pentest.nmap", command="nmap -sT 127.0.0.1", args={}, target=None,
+        grant_id="gr_multi", require_grant=True,
+    )
+    assert v1["ok"], f"Multi-use first dispatch failed: {v1}"
+
+    # Second dispatch
+    v2, _ = _dispatch.dispatch(
+        tool="pentest.nmap", command="nmap -sT 127.0.0.1", args={}, target=None,
+        grant_id="gr_multi", require_grant=True,
+    )
+    assert v2["ok"], f"Multi-use second dispatch failed: {v2}"
+    print(f"{PASS} Multi-use grant successfully allows repeated redemptions")
+
+    return True
+
+
 def main() -> int:
     try:
         assert test_redeem_before_act_gate()
-        print(f"\n{PASS} REDEEM-BEFORE-ACT GATE IMPLEMENTATION CERTIFIED (T-02845)")
+        assert test_expired_and_out_of_scope_rejection()
+        assert test_multi_use_grant_dispatch()
+        print(f"\n{PASS} ALL REDEEM-BEFORE-ACT UNIT TESTS PASSED (T-02846 certified)")
         return 0
     except Exception as e:
-        print(f"\n{FAIL} Test failed: {e}")
+        print(f"\n{FAIL} Unit test failure: {e}")
         import traceback
         traceback.print_exc()
         return 1

@@ -236,9 +236,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-mcp/tests/test_por_redeem_gate.py` (created)
   - `docs/tasks/evidence/T-02845-redeem-before-act-gate-implementation.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02846: Redeem-Before-Act Gate — Unit Test
+- **Task ID**: `T-02846`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Expanded unit test suite `code/aiosh-mcp/tests/test_por_redeem_gate.py` with 6 dedicated test cases.
+  - Verified happy path redemption, double-spend replay refusal at Gate #2.5, expired token rejection, out-of-scope tool rejection, and missing grant handling.
+  - Verified multi-use grant semantics and end-to-end hash chain integrity across all events.
+- **Files Touched**:
+  - `code/aiosh-mcp/tests/test_por_redeem_gate.py` (modified)
+  - `docs/tasks/evidence/T-02846-redeem-before-act-gate-unit-test.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Implementation complete. Advancing to T-02846 (`redeem-before-act gate: Unit Test`).
+  - Unit test complete. Advancing to T-02847 (`redeem-before-act gate: Integration`).
 ---
+
 
 
 

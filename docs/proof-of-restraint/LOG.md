@@ -639,8 +639,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `docs/tasks/evidence/T-02869-hardening.md` (created)
   - `docs/tasks/evidence/T-02869-restraint-proof-generator-hardening.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02870: Restraint Proof Generator — Documentation
+- **Task ID**: `T-02870`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / restraint proof generator
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored comprehensive architecture and reference specification `docs/SPEC-RESTRAINT-PROOF-GENERATOR.md`.
+  - Detailed `RestraintProofPackage` schema v1 canonical JSON format, generator execution flow, strict bounding anchor invariants, Bloom exclusion proofs, error catalog, and API surfaces.
+  - Formally defined handoff contracts for Component 5 (Standalone Proof Verifier).
+  - Documented evidence in `docs/tasks/evidence/T-02870-doc.md` and pointer artifact.
+- **Files Touched**:
+  - `docs/SPEC-RESTRAINT-PROOF-GENERATOR.md` (created)
+  - `docs/tasks/evidence/T-02870-doc.md` (created)
+  - `docs/tasks/evidence/T-02870-restraint-proof-generator-documentation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Advancing to T-02870 (`restraint proof generator: Documentation`).
+  - Advancing to T-02871 (`restraint proof generator: Verification & Evidence`).
+
 
 
 

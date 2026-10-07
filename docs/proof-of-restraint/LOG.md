@@ -820,3 +820,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - **Status / Next Steps**:
   - Advancing to T-02881 (`standalone proof verifier: Verification & Evidence`).
 
+### 2026-10-07 — T-02881: Standalone Proof Verifier — Verification & Evidence (Component 5 Closeout)
+- **Task ID**: `T-02881`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / standalone proof verifier
+- **Summary**:
+  - Component 5 (T-02872..T-02881) lifecycle complete: Research -> Specification -> Scaffold -> Implementation -> Unit Test -> Integration -> Security Review -> Hardening -> Documentation -> Verification & Evidence.
+  - Verification matrix: Python core 22/22, integration 3/3, CLI-side 4/4, `tsc` 0 errors, full PoR battery 38 passed / 1 skipped — no regressions.
+  - Certified zero-database Invariant I-4 (no `sqlite3` on the verify path) and fail-closed gate semantics.
+  - Evidence recorded in `docs/tasks/evidence/T-02881-verify.md` with full test telemetry.
+- **Files Touched**:
+  - `docs/tasks/evidence/T-02881-verify.md` (created)
+  - `docs/tasks/evidence/T-02881-standalone-proof-verifier-verification-and-evidence.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
+- **Status / Next Steps**:
+  - Component 5 certified complete, hardened, documented, and locked.
+  - Advancing to T-02882 (`continuous restraint conformance: Research`).
+

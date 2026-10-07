@@ -287,9 +287,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - `code/aiosh-mcp/aiosh_mcp/_dispatch.py` (modified)
   - `docs/tasks/evidence/T-02849-redeem-before-act-gate-hardening.md` (created)
   - `docs/proof-of-restraint/LOG.md` (updated)
+### 2026-10-07 — T-02850: Redeem-Before-Act Gate — Documentation
+- **Task ID**: `T-02850`
+- **Subsystem**: Phase 2 — Security Kernel & PEP Fabric / Proof of Restraint / redeem-before-act gate
+- **Agent**: Antigravity System
+- **Summary**:
+  - Authored specification document `docs/SPEC-REDEEM-BEFORE-ACT-GATE.md`.
+  - Documented complete dispatch sequence (Gate #1 -> Gate #2 -> Gate #2.5 -> Execution -> Commit).
+  - Provided copy-pasteable examples for FastMCP tool calls and dispatch checks.
+  - Formulated honest limitations regarding crash consistency and lock timeouts.
+- **Files Touched**:
+  - `docs/SPEC-REDEEM-BEFORE-ACT-GATE.md` (created)
+  - `docs/tasks/evidence/T-02850-redeem-before-act-gate-documentation.md` (created)
+  - `docs/proof-of-restraint/LOG.md` (updated)
 - **Status / Next Steps**:
-  - Hardening complete. Advancing to T-02850 (`redeem-before-act gate: Documentation`).
+  - Documentation complete. Advancing to T-02851 (`redeem-before-act gate: Verification & Evidence`).
 ---
+
 
 
 

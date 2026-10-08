@@ -44,6 +44,7 @@ pub mod capability_recovery;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;
+pub mod compliance_config;
 pub mod compliance_data_model;
 pub mod compliance_service;
 pub mod dispatch;
@@ -559,6 +560,25 @@ pub use compliance_service::{
     COMPLIANCESVC_ERR_NOT_FOUND, COMPLIANCESVC_ERR_CAPACITY_EXCEEDED,
     COMPLIANCESVC_ERR_FILE_SIZE, COMPLIANCESVC_ERR_PATH_TRAVERSAL,
     COMPLIANCESVC_ERR_IO, COMPLIANCESVC_ERR_PARSE,
+};
+// T-02905 scaffold: configuration module. Names that already exist at
+// crate root (from `secret_config`/`threat_model_config`) are aliased so
+// the crate keeps a single unambiguous export per identifier.
+pub use compliance_config::{
+    ComplianceConfig, ConfigSource, ResolvedConfig,
+    DEFAULT_CONFIG_PATH as DEFAULT_COMPLIANCE_CONFIG_PATH,
+    ENV_COMPLIANCE_CONFIG, ENV_COMPLIANCE_MAP_PATH,
+    DEFAULT_MAX_STORE_FILE_BYTES as DEFAULT_COMPLIANCE_MAX_STORE_FILE_BYTES,
+    MIN_MAX_STORE_FILE_BYTES as MIN_COMPLIANCE_MAX_STORE_FILE_BYTES,
+    MAX_MAX_STORE_FILE_BYTES as MAX_COMPLIANCE_MAX_STORE_FILE_BYTES,
+    DEFAULT_MAX_ENTRIES as DEFAULT_COMPLIANCE_MAX_ENTRIES,
+    MIN_MAX_ENTRIES as MIN_COMPLIANCE_MAX_ENTRIES,
+    MAX_MAX_ENTRIES as MAX_COMPLIANCE_MAX_ENTRIES,
+    MAX_CONFIG_FILE_BYTES as MAX_COMPLIANCE_CONFIG_FILE_BYTES,
+    MAX_CONFIG_PATH_LEN as MAX_COMPLIANCE_CONFIG_PATH_LEN,
+    COMPLIANCECONF_ERR_PATH_TRAVERSAL, COMPLIANCECONF_ERR_FILE_SIZE,
+    COMPLIANCECONF_ERR_PARSE, COMPLIANCECONF_ERR_BOUNDS,
+    COMPLIANCECONF_ERR_IO, COMPLIANCECONF_ERR_VALIDATION,
 };
 
 

@@ -953,3 +953,8 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 ## T-02894 - Compliance Mapping / MCP-API surface: Specification (2026-10-08)
 - Normative contract: aios.compliance action-dispatch tool (7 CLI verbs), reuse/new table, happy/failure paths + error-code table with CLI exit parity, persistence (canonical byte-stable store form, atomic writes, 1024 cap), validation parity bounds, one-audit-row-per-call semantics, PEP gating matrix, D1..D8 decision log. AIOS-specific proposals marked.
 - Evidence: docs/tasks/evidence/T-02894-*.md
+
+## T-02895 - Compliance Mapping / MCP-API surface: Scaffold (2026-10-08)
+- Created aiosh_mcp/compliance.py (typed interfaces, NotImplementedError bodies, Rust-parity constants/vocabularies/dataclasses); wired aios.compliance MCP tool in server.py; 10 test stubs (S1-S5 green, B1-B5 loud-fail for T-02896). Imports/build clean.
+- Incidental fix: conformance fixture grant expiry time-bomb detonated at UTC midnight 2026-10-08 (expires_at 2026-10-07T23:59:59Z -> grant_check refused redeem, 4 tests failed). Fixed to 2199-12-31T23:59:59Z; battery restored 77 passed / 1 skipped; CONFORMANT C1..C6 PASS.
+- Evidence: docs/tasks/evidence/T-02895-*.md

@@ -44,6 +44,7 @@ from . import retention as retention_mod
 from . import anchors as anchors_mod
 from . import restraint as restraint_mod
 from . import verifier as verifier_mod
+from . import compliance as compliance_mod
 
 mcp = FastMCP("aiosh-mcp")
 SCHEMA_VERSION = "2025-06-18"   # MCP schema version pinned by ADR-0035 §D-2.
@@ -783,6 +784,42 @@ def aios_task(
     # response carries the policy revision that decided it.
     out["classifier_policy_revision"] = verdict.get("policy_revision")
     return out
+
+
+# -----------------------------------------------------------------------
+# Compliance Mapping: MCP/API surface (Component 7) — T-02895 SCAFFOLD
+# Contract: docs/tasks/evidence/T-02894-spec.md (normative).
+# The tool body delegates to compliance_mod.execute, which fails loudly
+# until T-02896 (Implementation) wires PEP gating + the audit envelope.
+# -----------------------------------------------------------------------
+
+
+@mcp.tool()
+def aios_compliance(
+    action: str,
+    id: str | None = None,
+    framework: str | None = None,
+    status: str | None = None,
+    control_id: str | None = None,
+    target_type: str | None = None,
+    target_ref: str | None = None,
+    threat_ids: list[str] | None = None,
+    mitigation_summary: str | None = None,
+    tags: list[str] | None = None,
+    reason: str | None = None,
+    gate_id: str | None = None,
+    grant_id: str | None = None,
+) -> dict:
+    """Compliance Mapping control surface (T-02894-spec.md §2): action dispatch
+    over the compliance catalog. Actions: list | show | register | status |
+    assess | check-pep | init. Read actions need no grant; register/status/init
+    are state-changing and require a capability grant via grant_id."""
+    return compliance_mod.execute(
+        action=action, id=id, framework=framework, status=status,
+        control_id=control_id, target_type=target_type, target_ref=target_ref,
+        threat_ids=threat_ids, mitigation_summary=mitigation_summary,
+        tags=tags, reason=reason, gate_id=gate_id, grant_id=grant_id,
+    )
 
 
 # Sprint 1: register Pillar A pentest wrapper set.

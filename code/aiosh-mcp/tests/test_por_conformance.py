@@ -103,7 +103,10 @@ def _mint_grant(
     scope: dict | None = None,
     single_use: bool = True,
     issued_at: str = "2026-10-07T11:50:00Z",
-    expires_at: str = "2026-10-07T23:59:59Z",
+    # Far-future expiry: fixture grants must never expire against the wall
+    # clock (a 2026-10-07T23:59:59Z default detonated at UTC midnight and
+    # failed every grant_check/redeem). Time-robust by construction.
+    expires_at: str = "2199-12-31T23:59:59Z",
     issued_to: str = "agent:conformance",
     ts: str = "2026-10-07T12:05:30Z",
 ):

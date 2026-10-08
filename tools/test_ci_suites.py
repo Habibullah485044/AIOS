@@ -54,6 +54,7 @@ CANONICAL_ORDER = (
     "toolchain_mcp_smoke", "doc_cli_smoke", "doc_mcp_smoke",
     "doc_index_suites", "evidence_cli_smoke", "evidence_mcp_smoke",
     "evidence_checker", "evidence_unit",
+    "por_conformance", "compliance_integration",
 )
 
 
@@ -62,7 +63,7 @@ def main() -> int:
 
     # ---- W1 — registry IS the single source; bash is a delegating shim
     bash = (REPO / "ci" / "run_all_smokes.sh").read_text(encoding="utf-8")
-    ok = (len(cs.SUITES) == 29
+    ok = (len(cs.SUITES) == 31
           and cs.SUITE_NAMES == CANONICAL_ORDER
           and "tools/ci_run.py" in bash)
     if ok:

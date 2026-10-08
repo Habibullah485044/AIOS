@@ -26,8 +26,15 @@ pub const COMPLIANCE_ERR_MISSING_SUBSTRATE_REF: &str = "COMPLIANCE_ERR_MISSING_S
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComplianceFramework {
+    // Canonical JSON form (spec §5 / as_str) must equal the serialized name,
+    // so the two variants whose derived snake_case differs from as_str() carry
+    // explicit renames. Without them the Rust CLI wrote "nist_sp80053_rev5" /
+    // "iso27001" while Python and parse_framework() use "nist_sp_800_53_rev5" /
+    // "iso_27001_2022" — cross-substrate stores then failed to load (T-02898).
+    #[serde(rename = "nist_sp_800_53_rev5")]
     NistSp80053Rev5,
     Soc2Type2,
+    #[serde(rename = "iso_27001_2022")]
     Iso27001,
     CisControlsV8,
     HipaaSecurity,

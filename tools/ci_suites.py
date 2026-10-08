@@ -168,6 +168,14 @@ SUITES: list[SuiteDef] = [
     {"name": "por_conformance",
      "command": _py("tools/test_por_conformance_suites.py"),
      "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-02898: Compliance Mapping MCP/API surface integration (discoverable
+    # production path + cross-substrate canonical-JSON parity) — tail append
+    # keeps every pre-existing index stable.
+    {"name": "compliance_integration",
+     "command": ["python3", "-m", "pytest", "-q", "--no-header",
+                 "-p", "no:cacheprovider",
+                 "code/aiosh-mcp/tests/test_compliance_integration.py"],
+     "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

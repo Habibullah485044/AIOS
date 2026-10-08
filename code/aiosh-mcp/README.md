@@ -46,6 +46,7 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.fs_layout.set_active` | | ✓     | Moves the active-layout pointer — **requires grant + `store_path`** |
 | `aios.fs_layout.remove` |     | ✓     | Deletes a non-active, non-built-in layout — **requires grant + `store_path`** |
 | `aios.fs_layout.import_fstab` | | ✓   | Builds a layout from fstab text — **requires grant + `store_path`** |
+| `aios_compliance`   | ✓     | ✓     | Compliance Mapping (NIST SP 800-53 / SOC 2 / ISO 27001 / CIS v8): reads never create or touch the store; `register` / `status` transitions / `init` are PEP-gated writes; one canonical-JSON store shared byte-for-byte with the Rust CLI `aiosh compliance --path`; 1 MiB cap on load **and** save |
 
 ¹ The pentest, service action, and recovery tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously. Every `aios.fs_layout.*` call that reaches the gate writes exactly one hash-chained row too — on success, on a body refusal, and on a gate refusal alike (an unknown tool name is refused before the ring and leaves no row).
 
@@ -564,6 +565,124 @@ Audit Chain Extensions expose query, inspection, causal ancestry DAG traversal, 
 **Constraints & Boundaries**:
 - Query result limits are clamped between 1 and 1,000 rows (`MAX_QUERY_LIMIT = 1000`).
 - Causal ancestry traversal depth is clamped between 1 and 64 levels (`MAX_LINEAGE_DEPTH = 64`) with cyclic graph loop protection.
+
+## Compliance Mapping Tool (`aios_compliance`)
+
+Tool-facing surface of the Compliance Mapping Core Service
+([SPEC-COMPLIANCE-SERVICE](../../docs/SPEC-COMPLIANCE-SERVICE.md)).
+A single `action` argument dispatches `list` / `show` / `register` /
+`status` / `assess` / `check-pep` / `init` against one canonical-JSON
+store (`AIOSH_COMPLIANCE_MAP_PATH`, default `$AIOSH_HOME/compliance_map.json`)
+that both substrates operate on byte-for-byte: the Python tool surface
+above and the Rust CLI (`aiosh compliance ... --path`) below.
+
+### Copy-pasteable tool call examples
+
+#### 1. Read — list mappings (no grant needed)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_compliance",
+    "arguments": { "action": "list" }
+  }
+}
+```
+
+Response payload (`content[0].text`, pretty-printed):
+
+```json
+{"ok": true, "action": "list", "count": 4,
+ "mappings": [ /* the four canonical baseline mappings:
+     MAP-NIST-AC3-PEP, MAP-NIST-AU2-RING, MAP-SOC2-CC61-PEP,
+     MAP-CIS-CTRL6-PEP */ ], "audit_id": 1}
+```
+
+A missing store reads as the canonical baseline **without creating the
+file** (reads never write).
+
+#### 2. Write without a grant — refused at the PEP gate, fail-closed
+
+Same request shape with:
+
+```json
+"arguments": {"action": "register", "id": "MAP-DOC-001",
+  "control_id": "AC-2", "framework": "nist",
+  "target_type": "pep_gate", "target_ref": "pep_enforce_gate",
+  "status": "compliant", "mitigation_summary": "documented"}
+```
+
+returns exactly (captured live, 2026-10-08):
+
+```json
+{"ok": false, "tool": "aios.compliance", "audit_id": 1,
+ "reason": "tool 'aios.compliance' requires explicit PEP grant",
+ "gate": "pep", "policy_revision": "sprint-2-rule-pack-v1"}
+```
+
+No store file is created (fail-closed) and exactly one `refused` row
+lands in the audit ring. The same call with a pre-minted PEP grant
+(`grant_id`, scope `aios.compliance`, redeemed at most once) succeeds
+and persists the store.
+
+#### 3. Python direct call (identical envelopes)
+
+```bash
+PYTHONPATH=code/aiosh-mcp AIOSH_COMPLIANCE_MAP_PATH=/tmp/compliance_map.json \
+  python3 -c "from aiosh_mcp import compliance; print(compliance.execute(action='assess', framework='nist')['report'])"
+# {'total_mappings': 2, 'compliant_count': 2,
+#  'partially_compliant_count': 0, 'non_compliant_count': 0,
+#  'not_applicable_count': 0, 'compliance_percentage': 100.0, ...}
+```
+
+#### 4. Rust CLI — same store, other substrate
+
+```bash
+./code/aiosh-rust/target/debug/aiosh compliance init   --path /tmp/compliance_map.json
+./code/aiosh-rust/target/debug/aiosh compliance list   --path /tmp/compliance_map.json --json
+./code/aiosh-rust/target/debug/aiosh compliance assess --framework nist_sp_800_53_rev5 --json --path /tmp/compliance_map.json
+# {"assessment":{"compliance_percentage":100.0,"compliant_count":2,
+#  "gap_control_ids":[],...},"code":0}
+```
+
+Subcommands: `list|show|register|status|assess|check-pep|init`
+(`--framework F`, `--status S`, `--json`, `--path P`; `register`
+additionally `--id --control --target-type --target-ref --mitigation`).
+
+### Constraints & Boundaries (honest)
+
+- **Audit honesty (ADR-0035 §F-2)**: every tool call that reaches the
+  dispatch writes exactly one hash-chained audit row — `allowed`,
+  `refused`, or the error outcome for domain exceptions — with the
+  classifier verdict and policy revision attached.
+- **Store cap 1 MiB, both directions** (T-02900): loads use a bounded
+  read (closes the getsize→read TOCTOU); saves refuse a payload above
+  the cap **before any file handle is created**, so a store that could
+  never be re-loaded cannot be written (Python and Rust agree).
+- **MCP surface is Python-only**: the Rust `aiosh-mcp` server does not
+  expose `aios_compliance` — the Rust side of this feature is CLI-only.
+  Cross-substrate parity is through the shared store and is
+  integration-proven ([T-02898](../../docs/tasks/evidence/T-02898-mcp-api-surface-integration.md)).
+- **Status transitions**: `can_transition` mirrors the Rust
+  `_ => true` fallback — every transition is legal (test-pinned);
+  transitioning to `compliant` requires a mitigation summary or an
+  explicit reason.
+- **Path rules**: store path must end in `.json`, ≤16 components;
+  traversal (CWE-22) and symlinks (CWE-59) rejected.
+- **Baseline fallback**: a missing store serves the four canonical
+  baseline mappings read-only; only `init` / `register` create the file.
+
+### Evidence & specs
+
+- Service spec: [SPEC-COMPLIANCE-SERVICE](../../docs/SPEC-COMPLIANCE-SERVICE.md)
+  (+ `SPEC-COMPLIANCE-CLI.md`, `SPEC-COMPLIANCE-DATA-MODEL.md`)
+- Integration (wire + cross-substrate): [T-02898](../../docs/tasks/evidence/T-02898-mcp-api-surface-integration.md)
+- Security review: [T-02899](../../docs/tasks/evidence/T-02899-mcp-api-surface-security-review.md)
+- Hardening (caps/TOCTOU/auditable failure modes): [T-02900](../../docs/tasks/evidence/T-02900-mcp-api-surface-hardening.md)
+- This documentation task: [T-02901](../../docs/tasks/evidence/T-02901-mcp-api-surface-documentation.md)
 
 ## Tests
 

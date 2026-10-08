@@ -74,13 +74,15 @@ println!("Uncovered gates: {:?}", missing);
 - `COMPLYSVC1`: Non-destructive queries and assessment generation.
 - `COMPLYSVC2`: Crash-consistent atomic writes using PID/nanosecond-tagged temporary files (`.tmp.{pid}.{nanos}`) with guaranteed cleanup.
 - `COMPLYSVC3`: Path traversal (CWE-22) and symlink (CWE-59) rejection.
-- `COMPLYSVC4`: Hard 1 MiB store file size cap (`MAX_COMPLIANCE_STORE_SIZE`).
+- `COMPLYSVC4`: Hard 1 MiB store file size cap (`MAX_COMPLIANCE_STORE_SIZE`) enforced on **load** (bounded read, TOCTOU-safe) and on **save** (payload refused before any file handle is created — a store that could never be re-loaded is never written; both substrates, T-02900).
 - `COMPLYSVC5`: Quantitative compliance assessment reporting.
 
 ## 4. Constraints & Known Limitations
-- Storage file size cannot exceed 1 MiB.
+- Storage file size cannot exceed 1 MiB (load **and** save; the write path refuses oversized payloads up front).
 - Storage file paths must have `.json` extension.
 - File system depth cannot exceed 16 path components.
+- The MCP tool surface (`aios_compliance`) is Python-only; the Rust side is CLI-only (`aiosh compliance`). Parity is through the shared canonical-JSON store, integration-proven (T-02898).
+- Every status transition is legal (Rust `_ => true` fallback, mirrored and test-pinned); only the transition **to `compliant`** carries a guard (mitigation summary or explicit reason required).
 
 ## 5. Evidence Artifacts
 - Research: [T-02811 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02811-core-service-research.md)
@@ -91,3 +93,8 @@ println!("Uncovered gates: {:?}", missing);
 - Integration: [T-02816 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02816-core-service-integration.md)
 - Security Review: [T-02817 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02817-core-service-security-review.md)
 - Hardening: [T-02818 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02818-core-service-hardening.md)
+- MCP/API surface — spec: [T-02894 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02894-spec.md)
+- MCP/API surface — integration: [T-02898 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02898-mcp-api-surface-integration.md)
+- MCP/API surface — security review: [T-02899 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02899-mcp-api-surface-security-review.md)
+- MCP/API surface — hardening: [T-02900 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02900-mcp-api-surface-hardening.md)
+- MCP/API surface — documentation: [T-02901 Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02901-mcp-api-surface-documentation.md)

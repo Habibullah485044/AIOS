@@ -19443,8 +19443,32 @@ fn cmd_compliance(args: &[String]) -> i32 {
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
     let is_json = has_flag(rest, "--json");
 
-    let path_str = parse_flag(rest, "--path")
-        .unwrap_or_else(|| aiosh_core::compliance_service::DEFAULT_COMPLIANCE_MAP_PATH.to_string());
+    let arg_path = parse_flag(rest, "--path");
+    // T-02906: resolve the store path through the 4-level ladder
+    // (argument → env → config file → default) so both substrates agree
+    // on the authoritative store (spec §3.2). `--path` stays strongest.
+    let path_str = match aiosh_core::ComplianceConfig::resolve(
+        arg_path.as_deref(),
+        parse_flag(rest, "--config").as_deref(),
+    ) {
+        Ok(resolved) => resolved.config.store_path.to_string_lossy().into_owned(),
+        Err(e) => {
+            // spec §4.2: a malformed config fails CLOSED, never silently
+            // falls back to the default store.
+            let msg = format!("Invalid compliance configuration: {}", e);
+            classify_and_emit(
+                &mut ctx, "compliance", sub.unwrap_or("unknown"),
+                json!({ "error": &msg }),
+                "failure", None, Some("Config resolution failed"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "error": { "code": "CONFIG_ERROR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 2;
+        }
+    };
     let path = std::path::Path::new(&path_str);
 
     // Validate path hygiene early (CWE-22 / CWE-59)

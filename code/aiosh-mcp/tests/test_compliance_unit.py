@@ -581,20 +581,158 @@ def test_config_scaffold_constants_match_spec():
              cc.COMPLIANCECONF_ERR_VALIDATION}
     assert len(codes) == 6
 
-    # Scaffold contract: behavioral bodies raise NotImplementedError
-    # loudly (T-02906 implements them).
-    loud = (("load_config", lambda: cc.load_config()),
-            ("from_env", lambda: cc.from_env()),
-            ("resolve", lambda: cc.resolve()),
-            ("validate", lambda: cc.validate(defaults)),
-            ("hygiene_ok", lambda: cc.hygiene_ok("docs/x.json")))
-    for name, call in loud:
+    # Scaffold contract (T-02905) — since T-02906 the behavioral bodies
+    # are implemented, so assert they are callable and total rather than
+    # raising NotImplementedError.
+    assert callable(cc.load_config) and callable(cc.resolve)
+    assert callable(cc.validate) and callable(cc.hygiene_ok)
+    # hygiene_ok is total: returns a bool for any input, never raises.
+    assert isinstance(cc.hygiene_ok("docs/x.json"), bool)
+
+
+# ---------------------------------------------------------------------------
+# T-02906: precedence ladder + hygiene (spec §3.2 / §4.3) — FAILS FIRST
+# ---------------------------------------------------------------------------
+
+def test_config_precedence_ladder_argument_env_file_default():
+    """T-02906: argument > env > config file > default (spec §3.2),
+    with a per-key `source` map (spec §3.3/§4.1)."""
+    from aiosh_mcp import compliance_config as cc
+
+    with tempfile.TemporaryDirectory(prefix="cfg-ladder-") as td:
+        cfg_file = os.path.join(td, "compliance_config.json")
+        store_from_file = os.path.join(td, "from_file.json")
+        with open(cfg_file, "w", encoding="utf-8") as f:
+            json.dump({"store_path": store_from_file, "max_entries": 7}, f)
+
+        old_env = os.environ.get("AIOSH_COMPLIANCE_MAP_PATH")
+        old_cfg = os.environ.get("AIOSH_COMPLIANCE_CONFIG")
         try:
-            call()
-        except NotImplementedError as e:
-            assert "T-02906" in str(e), str(e)
+            # Level 4: nothing set -> defaults.
+            os.environ.pop("AIOSH_COMPLIANCE_MAP_PATH", None)
+            os.environ.pop("AIOSH_COMPLIANCE_CONFIG", None)
+            r = cc.resolve()
+            assert r["config"]["store_path"] == "docs/compliance_map.json"
+            assert r["source"]["store_path"] == "default"
+
+            # Level 3: config file supplies store_path.
+            os.environ["AIOSH_COMPLIANCE_CONFIG"] = cfg_file
+            r = cc.resolve()
+            assert r["config"]["store_path"] == store_from_file, r
+            assert r["source"]["store_path"] == "file"
+            assert r["config"]["max_entries"] == 7
+            assert r["source"]["max_entries"] == "file"
+
+            # Level 2: env beats the config file.
+            env_store = os.path.join(td, "from_env.json")
+            os.environ["AIOSH_COMPLIANCE_MAP_PATH"] = env_store
+            r = cc.resolve()
+            assert r["config"]["store_path"] == env_store, r
+            assert r["source"]["store_path"] == "env"
+
+            # Level 1: argument beats env.
+            arg_store = os.path.join(td, "from_arg.json")
+            r = cc.resolve(arg_path=arg_store)
+            assert r["config"]["store_path"] == arg_store, r
+            assert r["source"]["store_path"] == "argument"
+            # Argument only moves store_path, not unrelated keys.
+            assert r["config"]["max_entries"] == 7
+            assert r["source"]["max_entries"] == "file"
+
+            # REGRESSION (T-02906): an explicit argument is NOT run
+            # through the env hygiene gate. A bad operator-supplied path
+            # must be passed through so validate_path() can reject it
+            # loudly — silently substituting the default would turn a
+            # refusal into a success. The hygiene gate is for env only.
+            r = cc.resolve(arg_path="../evil.json")
+            assert r["config"]["store_path"] == "../evil.json", r
+            assert r["source"]["store_path"] == "argument"
+            try:
+                compliance.validate_path(r["config"]["store_path"])
+            except Exception as e:
+                assert compliance.COMPLIANCESVC_ERR_PATH_TRAVERSAL in str(e), str(e)
+            else:
+                raise AssertionError("bad explicit path must be rejected downstream")
+        finally:
+            for key, old in (("AIOSH_COMPLIANCE_MAP_PATH", old_env),
+                             ("AIOSH_COMPLIANCE_CONFIG", old_cfg)):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+
+def test_config_env_hygiene_rejected_not_applied():
+    """T-02906: a traversal/control-char env value is REJECTED and
+    reported as env_invalid (CWE-15, spec §4.3) — never applied."""
+    from aiosh_mcp import compliance_config as cc
+
+    old_env = os.environ.get("AIOSH_COMPLIANCE_MAP_PATH")
+    try:
+        for bad in ("../etc/passwd.json", "docs/\u0001x.json", "", " " * 4,
+                    "a" * (cc.MAX_CONFIG_PATH_LEN + 1)):
+            os.environ["AIOSH_COMPLIANCE_MAP_PATH"] = bad
+            r = cc.resolve()
+            assert r["config"]["store_path"] == "docs/compliance_map.json", (bad, r)
+            assert r["source"]["store_path"] == "env_invalid", (bad, r)
+
+        # hygiene_ok is the shared predicate and is total (never raises).
+        assert cc.hygiene_ok("docs/compliance_map.json") is True
+        assert cc.hygiene_ok("../x.json") is False
+        assert cc.hygiene_ok("docs/\u0001x.json") is False
+        assert cc.hygiene_ok("") is False
+        assert cc.hygiene_ok("a" * (cc.MAX_CONFIG_PATH_LEN + 1)) is False
+    finally:
+        if old_env is None:
+            os.environ.pop("AIOSH_COMPLIANCE_MAP_PATH", None)
         else:
-            raise AssertionError(f"{name} must fail loudly in scaffold")
+            os.environ["AIOSH_COMPLIANCE_MAP_PATH"] = old_env
+
+
+def test_config_malformed_file_fails_closed():
+    """T-02906: malformed config JSON fails CLOSED with the spec §4.2
+    code; oversized config is rejected before parsing (CWE-400)."""
+    from aiosh_mcp import compliance_config as cc
+
+    with tempfile.TemporaryDirectory(prefix="cfg-bad-") as td:
+        bad = os.path.join(td, "bad.json")
+        with open(bad, "w", encoding="utf-8") as f:
+            f.write("{not valid json")
+        try:
+            cc.load_config(bad)
+        except Exception as e:
+            assert cc.COMPLIANCECONF_ERR_PARSE in str(e), str(e)
+        else:
+            raise AssertionError("malformed config must fail closed")
+
+        big = os.path.join(td, "big.json")
+        with open(big, "w", encoding="utf-8") as f:
+            f.write(" " * (cc.MAX_CONFIG_FILE_BYTES + 1))
+        try:
+            cc.load_config(big)
+        except Exception as e:
+            assert cc.COMPLIANCECONF_ERR_FILE_SIZE in str(e), str(e)
+        else:
+            raise AssertionError("oversized config must fail closed")
+
+        # Missing config file is NOT an error (spec §4.2 last row).
+        d = cc.load_config(os.path.join(td, "absent.json"))
+        assert d == cc.default_config()
+
+
+def test_config_bounds_clamp_and_mutations_audit_forced_true():
+    """T-02906: inert fields clamp to bounds (spec §4.2);
+    audit_all_mutations can never load as False (spec §5.4)."""
+    from aiosh_mcp import compliance_config as cc
+
+    assert cc.validate({"max_entries": 999999})["max_entries"] == cc.MAX_MAX_ENTRIES
+    assert cc.validate({"max_entries": 0})["max_entries"] == cc.MIN_MAX_ENTRIES
+    assert (cc.validate({"max_store_file_bytes": 999_999_999})
+            ["max_store_file_bytes"]) == cc.MAX_MAX_STORE_FILE_BYTES
+    assert cc.validate({"audit_all_mutations": False})["audit_all_mutations"] is True
+    # Valid input passes through unchanged.
+    ok = cc.validate({"max_entries": 500})
+    assert ok["max_entries"] == 500
 
 
 # ---------------------------------------------------------------------------

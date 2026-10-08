@@ -14,6 +14,7 @@ resolved config on both substrates).
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -57,8 +58,6 @@ COMPLIANCECONF_ERR_VALIDATION = "COMPLIANCECONF_ERR_VALIDATION"
 CONFIG_SOURCES = ("argument", "env", "file", "default", "env_invalid",
                   "config_invalid")
 
-_NOT_IMPLEMENTED = "T-02906: aiosh_mcp.compliance_config.{}"
-
 
 # --- Defaults (spec §3.1) ---------------------------------------------------
 
@@ -83,42 +82,185 @@ def default_config() -> dict[str, Any]:
     }
 
 
-# --- Scaffolding: behavioral bodies fail loudly (T-02906) -------------------
+def hygiene_ok(value: str) -> bool:
+    """CWE-15 gate for env-supplied paths (spec §4.3): non-empty, no
+    ``..``, no control characters, ``len <= MAX_CONFIG_PATH_LEN``.
+
+    Total predicate — returns ``bool`` for any input, never raises.
+    """
+    if not isinstance(value, str):
+        return False
+    v = value.strip()
+    if not v:
+        return False
+    if len(v) > MAX_CONFIG_PATH_LEN:
+        return False
+    if ".." in v:
+        return False
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in v):
+        return False
+    return True
+
+
+def validate(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Bounds + hygiene validation (spec §3.1, §4.2).
+
+    Inert fields (``max_entries``, ``max_store_file_bytes``) clamp to their
+    declared bounds; security-relevant fields fail closed downstream via
+    ``validate_path`` (T-02903 decision D-5). Missing keys fall back to
+    the spec §3.1 defaults.
+    """
+    if config is not None and not isinstance(config, dict):
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_VALIDATION}: config must be an object")
+    merged = default_config()
+    for key, value in (config or {}).items():
+        if key in merged and value is not None:
+            merged[key] = value
+
+    # version / store_path: non-empty strings or defaults.
+    version = merged.get("version")
+    if not isinstance(version, str) or not version.strip():
+        merged["version"] = default_config()["version"]
+    store = merged.get("store_path")
+    if not isinstance(store, str) or not store.strip():
+        merged["store_path"] = default_config()["store_path"]
+
+    # Inert numeric fields clamp (spec §4.2 row: "out of bounds -> clamp").
+    try:
+        entries = int(merged.get("max_entries"))
+    except (TypeError, ValueError):
+        entries = DEFAULT_MAX_ENTRIES
+    merged["max_entries"] = max(MIN_MAX_ENTRIES,
+                                min(entries, MAX_MAX_ENTRIES))
+
+    try:
+        size = int(merged.get("max_store_file_bytes"))
+    except (TypeError, ValueError):
+        size = DEFAULT_MAX_STORE_FILE_BYTES
+    merged["max_store_file_bytes"] = max(MIN_MAX_STORE_FILE_BYTES,
+                                         min(size, MAX_MAX_STORE_FILE_BYTES))
+
+    merged["audit_all_queries"] = bool(merged.get("audit_all_queries", False))
+    # spec §5.4: mutation auditing can never be disabled by config.
+    merged["audit_all_mutations"] = True
+    return merged
+
+
+def _read_raw(path: str) -> dict[str, Any]:
+    """Read a config file with the 64 KiB cap applied *before* parsing
+    (CWE-400), raising the spec §4.2 error codes. Missing file -> ``{}``.
+    """
+    if not isinstance(path, str) or not path:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_PATH_TRAVERSAL}: path cannot be empty")
+    if not os.path.exists(path):
+        return {}
+    size = os.path.getsize(path)
+    if size > MAX_CONFIG_FILE_BYTES:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_FILE_SIZE}: config file {path} is {size} "
+            f"bytes, limit {MAX_CONFIG_FILE_BYTES}")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = f.read(MAX_CONFIG_FILE_BYTES + 1)
+    if len(raw.encode("utf-8")) > MAX_CONFIG_FILE_BYTES:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_FILE_SIZE}: config file {path} exceeds "
+            f"{MAX_CONFIG_FILE_BYTES} bytes")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_PARSE}: malformed config at {path}: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_PARSE}: config root must be an object: {path}")
+    return data
+
 
 def load_config(path: str | None = None) -> dict[str, Any]:
-    """Read a config file with the 64 KiB cap applied before parsing."""
-    raise NotImplementedError(_NOT_IMPLEMENTED.format("load_config"))
+    """Read a config file with the 64 KiB cap applied before parsing.
+
+    A **missing** file is not an error (spec §4.2 last row): defaults are
+    returned. Malformed / oversized files fail closed with
+    ``COMPLIANCECONF_ERR_PARSE`` / ``COMPLIANCECONF_ERR_FILE_SIZE``.
+    """
+    if path is None:
+        path = os.environ.get(ENV_COMPLIANCE_CONFIG) or DEFAULT_CONFIG_PATH
+    return validate(_read_raw(path))
 
 
 def from_env() -> dict[str, Any]:
     """Levels 3-4 of the precedence ladder (spec §3.2): env path if it
     passes the hygiene predicate, else default path if present, else
     defaults. Never raises on bad input (T-02903 F-7 precedent)."""
-    raise NotImplementedError(_NOT_IMPLEMENTED.format("from_env"))
+    env_path = os.environ.get(ENV_COMPLIANCE_CONFIG)
+    if env_path is not None:
+        if hygiene_ok(env_path) and os.path.exists(env_path):
+            try:
+                return load_config(env_path)
+            except ValueError:
+                pass
+        return default_config()
+    if os.path.exists(DEFAULT_CONFIG_PATH):
+        try:
+            return load_config(DEFAULT_CONFIG_PATH)
+        except ValueError:
+            return default_config()
+    return default_config()
 
 
 def resolve(arg_path: str | None = None,
             arg_config: str | None = None) -> dict[str, Any]:
     """Full 4-level resolution: argument → env → file → default.
 
-    Returns ``{"config": {...}, "source": {key: origin}}`` per spec §4.1.
+    Returns ``{"config": {...}, "source": {key: origin}}`` per spec §4.1,
+    where origin is one of ``CONFIG_SOURCES``. An env value that fails the
+    hygiene predicate is **rejected** (reported as ``env_invalid``) rather
+    than applied (CWE-15, spec §4.3).
     """
-    raise NotImplementedError(_NOT_IMPLEMENTED.format("resolve"))
+    known = default_config()
 
+    # --- Level 3: config file -------------------------------------------
+    raw: dict[str, Any] = {}
+    if arg_config is not None:
+        if hygiene_ok(arg_config):
+            raw = _read_raw(arg_config)
+    else:
+        env_cfg = os.environ.get(ENV_COMPLIANCE_CONFIG)
+        if env_cfg is not None:
+            if hygiene_ok(env_cfg):
+                raw = _read_raw(env_cfg)
+        elif os.path.exists(DEFAULT_CONFIG_PATH):
+            raw = _read_raw(DEFAULT_CONFIG_PATH)
 
-def validate(config: dict[str, Any]) -> dict[str, Any]:
-    """Bounds + hygiene validation (spec §3.1, §4.2).
+    cfg = dict(known)
+    source = {key: "default" for key in known}
+    for key, value in raw.items():
+        if key in known:
+            cfg[key] = value
+            source[key] = "file"
 
-    Inert fields clamp; security-relevant fields fail closed
-    (T-02903 decision D-5).
-    """
-    raise NotImplementedError(_NOT_IMPLEMENTED.format("validate"))
+    # --- Level 2: env store-path override --------------------------------
+    raw_store = os.environ.get(ENV_COMPLIANCE_MAP_PATH)
+    if raw_store is not None:
+        if hygiene_ok(raw_store):
+            cfg["store_path"] = raw_store
+            source["store_path"] = "env"
+        else:
+            # Rejected, NOT applied — source records the rejection.
+            source["store_path"] = "env_invalid"
 
+    # --- Level 1: explicit argument (strongest) --------------------------
+    # Applied unconditionally: an operator-supplied path must not be
+    # silently replaced by the default when invalid — it flows to
+    # ``validate_path``, which rejects it loudly. The hygiene gate is for
+    # *env* values (CWE-15, spec §4.3), not explicit operator intent.
+    if arg_path is not None:
+        cfg["store_path"] = arg_path
+        source["store_path"] = "argument"
 
-def hygiene_ok(value: str) -> bool:
-    """CWE-15 gate for env-supplied paths (spec §4.3): non-empty, no
-    ``..``, no control characters, ``len <= MAX_CONFIG_PATH_LEN``."""
-    raise NotImplementedError(_NOT_IMPLEMENTED.format("hygiene_ok"))
+    return {"config": validate(cfg), "source": source}
 
 
 __all__ = [

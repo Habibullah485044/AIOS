@@ -26,7 +26,15 @@ echo "== [rust_smoke] cargo test =="
 (cd "$ROOT" && cargo test 2>&1 | grep -E "test result" )
 
 echo "== [rust_smoke] MCP stdio wire contract =="
-python3 - "$ROOT/target/debug/aiosh-mcp" << 'EOF'
+# Isolate the wire contract on a scratch ring (same pattern as the CLI
+# step below): the server defaults to $AIOSH_HOME/audit.db, and asserting
+# verify-ok against a developer's long-lived shared ring couples this gate
+# to whatever state that DB happens to be in (T-02900 found a historical
+# concurrent-write fork at row 55 of the real ~/.aios/audit.db from
+# 2026-09-16 — detected honestly by aios.audit.verify, but it makes this
+# smoke fail for reasons unrelated to the code under test).
+WIRE_HOME="$(mktemp -d /tmp/aiosh-rust-smoke-wire-XXXX)"
+AIOSH_HOME="$WIRE_HOME" python3 - "$ROOT/target/debug/aiosh-mcp" << 'EOF'
 import json, subprocess, sys
 
 bin = sys.argv[1]
@@ -63,7 +71,13 @@ for want in ["aios.fs.read", "aios.audit.tail", "aios.audit.verify",
              "aios.audit.rotate", "aios.pentest.nmap", "aios.pentest.sqlmap",
              "aios.task"]:
     assert want in names, f"missing tool {want}"
-assert len(names) == 13, f"expected 13 tools, got {len(names)}"
+# Count canary: re-frozen at 205 on 2026-10-08 (T-02900) — the original
+# ==13 froze at T-190 (2026-08-26) while tool_manifest() legitimately grew
+# to 205 unique tools (verified: 0 duplicates, all 7 contract members
+# above present). Update ONLY when a task intentionally adds/removes a
+# manifest tool — every other change to the count is a registration bug.
+assert len(names) == 205, f"expected 205 tools, got {len(names)}"
+assert len(names) == len(set(names)), "duplicate tool names in tools/list"
 m3 = out[3]
 text = m3["result"]["content"][0]["text"]
 d = json.loads(text)
@@ -82,11 +96,14 @@ assert d5["reason"] == "tool 'aios.task' requires explicit PEP grant", d5
 assert d5["audit_id"] > 0, d5
 print(f"wire ok: server={m1['result']['serverInfo']['name']} tools={len(names)} verify_audit_id={d['audit_id']} task_status_next={d4['data']['next_task']} task_refusal_audit={d5['audit_id']}")
 EOF
+rm -rf "$WIRE_HOME"
 
 echo "== [rust_smoke] CLI status smoke =="
-DB="$(mktemp /tmp/aiosh-rust-smoke-XXXX.db)"
-rm -f "$DB"
-(cd "$ROOT" && AIOSH_DB="$DB" ./target/debug/aiosh status 2>&1 | python3 -c "
+# Scratch ring via AIOSH_HOME (T-02900): the previous AIOSH_DB="$DB" was
+# a silent no-op — nothing reads AIOSH_DB — so this step verified the
+# machine's shared ~/.aios/audit.db instead of a fresh ring.
+CLI_HOME="$(mktemp -d /tmp/aiosh-rust-smoke-home-XXXX)"
+(cd "$ROOT" && AIOSH_HOME="$CLI_HOME" ./target/debug/aiosh status 2>&1 | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
 assert d['ok'] is True, d
@@ -94,7 +111,7 @@ assert d['data']['rust'] == 'aiosh-rust/0.1.0', d
 assert d['data']['audit_ring']['verify_ok'] is True, d
 print('cli ok: version', d['data']['aiosh_version'])
 ")
-rm -f "$DB"
+rm -rf "$CLI_HOME"
 
 echo "== [rust_smoke] TS CLI run via Rust sandbox (pip-free) =="
 CLI_DIR="$ROOT/../aiosh-cli"
@@ -102,14 +119,21 @@ if [ -f "$CLI_DIR/dist/cli.js" ]; then
   HOME_TMP="$(mktemp -d /tmp/aiosh-ts-sandbox-XXXX)"
   (cd "$CLI_DIR" && AIOSH_HOME="$HOME_TMP" node dist/cli.js run echo hi-from-rust-sandbox \
     | python3 -c "
-import json, sys
+import json, platform, sys
 d = json.load(sys.stdin)
 assert d['ok'] is True, d
 sb = d.get('data', {}).get('sandbox') or {}
 assert sb.get('event') == 'sandbox_applied', d
 comps = dict(sb.get('components', []))
-assert comps.get('no_new_privs') == 'ok', comps
-assert comps.get('seccomp') == 'ok', comps
+if platform.system() == 'Linux':
+    assert comps.get('no_new_privs') == 'ok', comps
+    assert comps.get('seccomp') == 'ok', comps
+else:
+    # T-02900: on non-Linux the Rust sandbox runs the command and
+    # honestly records each kernel primitive as 'FAIL: ...unsupported
+    # on non-Linux' — degradation must be explicit, never a silent ok.
+    for _n, _st in comps.items():
+        assert _st == 'ok' or str(_st).startswith('FAIL:'), comps
 print('ts-cli run ok: sandbox via', comps)
 ")
   rm -rf "$HOME_TMP"

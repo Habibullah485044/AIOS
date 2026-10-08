@@ -309,8 +309,12 @@ function findSandboxExecutor(): { cmd: string; args: string[] } {
     join(__dirname, "../../aiosh-rust/target/release/aiosh-sandbox"),
   ].filter((p): p is string => !!p);
   for (const cand of candidates) {
-    if (existsSync(cand)) {
-      return { cmd: cand, args: [] };
+    // Windows: the binary is aiosh-sandbox.exe — existsSync on the
+    // extension-less path always misses there, which silently demoted
+    // every Windows run to the Linux-only Python shim (T-02900).
+    const exe = process.platform === "win32" ? `${cand}.exe` : cand;
+    if (existsSync(exe)) {
+      return { cmd: exe, args: [] };
     }
   }
   return { cmd: "python3", args: ["-m", "aiosh_mcp.sandbox"] };

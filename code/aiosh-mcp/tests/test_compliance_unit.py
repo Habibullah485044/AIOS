@@ -399,6 +399,81 @@ def test_load_store_missing_file_is_io_error():
         expect_error(compliance.COMPLIANCESVC_ERR_IO, compliance.load_store, path)
 
 
+# ---------------------------------------------------------------------------
+# Hardening (T-02900) — bounded read, payload cap, tmp cleanup, envelopes
+# ---------------------------------------------------------------------------
+
+
+def test_load_bounded_read_covers_size_race():
+    """File grows between getsize and read (TOCTOU): the bounded read must
+    stop at cap+1 and refuse FILE_SIZE instead of loading unbounded."""
+    old_cap = compliance.MAX_COMPLIANCE_STORE_SIZE
+    compliance.MAX_COMPLIANCE_STORE_SIZE = 64
+    try:
+        with temp_store() as path:
+            with open(path, "wb") as fh:
+                fh.write(b"x" * 200)          # 200 bytes > 64-byte cap
+            real_getsize = os.path.getsize
+            os.path.getsize = lambda _p: 0    # race: size observed small
+            try:
+                expect_error(compliance.COMPLIANCESVC_ERR_FILE_SIZE,
+                             compliance.load_store, path)
+            finally:
+                os.path.getsize = real_getsize
+    finally:
+        compliance.MAX_COMPLIANCE_STORE_SIZE = old_cap
+
+
+def test_save_payload_over_cap_refused_no_file_no_tmp():
+    """save_store refuses a payload above the read cap BEFORE any file
+    handle exists: FILE_SIZE raised, no store file, no tmp leak — a store
+    can never be written that load_store (or the Rust CLI) would reject."""
+    old_cap = compliance.MAX_COMPLIANCE_STORE_SIZE
+    compliance.MAX_COMPLIANCE_STORE_SIZE = 64
+    try:
+        with temp_store() as path:
+            snap = compliance.canonical_baseline()   # payload far above 64 B
+            expect_error(compliance.COMPLIANCESVC_ERR_FILE_SIZE,
+                         compliance.save_store, path, snap)
+            assert not os.path.exists(path)
+            td = os.path.dirname(path)
+            assert [n for n in os.listdir(td) if ".tmp." in n] == []
+    finally:
+        compliance.MAX_COMPLIANCE_STORE_SIZE = old_cap
+
+
+def test_save_replace_failure_unlinks_tmp_and_raises_io():
+    """Mid-write failure (os.replace raises): explicit FILE_ERR_IO, tmp
+    file cleaned up, no partial store at the target path."""
+    with temp_store() as path:
+        real_replace = os.replace
+
+        def _boom(_src, _dst):
+            raise OSError("simulated replace failure")
+
+        os.replace = _boom
+        try:
+            expect_error(compliance.COMPLIANCESVC_ERR_IO,
+                         compliance.save_store, path,
+                         compliance.canonical_baseline())
+        finally:
+            os.replace = real_replace
+        assert not os.path.exists(path)
+        td = os.path.dirname(path)
+        assert [n for n in os.listdir(td) if ".tmp." in n] == []
+
+
+def test_load_invalid_utf8_is_parse_envelope():
+    """Invalid UTF-8 bytes surface as an explicit PARSE error from
+    load_store — never a raw UnicodeDecodeError escape (regression guard
+    for the bytes-mode bounded read)."""
+    with temp_store() as path:
+        with open(path, "wb") as fh:
+            fh.write(b"{\xff\xfe not utf8")
+        expect_error(compliance.COMPLIANCESVC_ERR_PARSE,
+                     compliance.load_store, path)
+
+
 def test_status_transitions_follow_rust_fallback():
     """Rust parity: enumerated arms are documentation; `_ => true` means every
     transition is legal — including pairs absent from STATUS_TRANSITIONS."""

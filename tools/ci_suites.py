@@ -176,6 +176,14 @@ SUITES: list[SuiteDef] = [
                  "-p", "no:cacheprovider",
                  "code/aiosh-mcp/tests/test_compliance_integration.py"],
      "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-02907: Compliance Mapping configuration unit tests (precedence
+    # ladder, CWE-15 hygiene, bounds, fail-closed) — tail append keeps
+    # every pre-existing index stable.
+    {"name": "compliance_config_unit",
+     "command": ["python3", "-m", "pytest", "-q", "--no-header",
+                 "-p", "no:cacheprovider",
+                 "code/aiosh-mcp/tests/test_compliance_config.py"],
+     "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

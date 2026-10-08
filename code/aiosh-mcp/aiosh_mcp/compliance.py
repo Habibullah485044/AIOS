@@ -274,10 +274,18 @@ def load_store(path: str | None = None) -> ComplianceCatalogSnapshot:
         raise _err(COMPLIANCESVC_ERR_FILE_SIZE,
                    f"File size {size} exceeds maximum allowed {MAX_COMPLIANCE_STORE_SIZE}")
     try:
+        # Bounded read (hardening T-02900): even if the file grows between
+        # getsize and read (TOCTOU), never load more than cap+1 bytes —
+        # an oversized store fails FILE_SIZE loudly instead of loading
+        # unbounded.
         with open(p, "rb") as f:
-            raw = f.read()
+            raw = f.read(MAX_COMPLIANCE_STORE_SIZE + 1)
     except OSError as exc:
         raise _err(COMPLIANCESVC_ERR_IO, f"Failed reading file: {exc}") from exc
+    if len(raw) > MAX_COMPLIANCE_STORE_SIZE:
+        raise _err(COMPLIANCESVC_ERR_FILE_SIZE,
+                   f"File size {len(raw)} exceeds maximum allowed "
+                   f"{MAX_COMPLIANCE_STORE_SIZE}")
     try:
         obj = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as exc:
@@ -298,6 +306,14 @@ def save_store(path: str | None, snapshot: ComplianceCatalogSnapshot) -> str:
         parent, f".{os.path.basename(p)}.tmp.{os.getpid()}.{time.time_ns()}")
     payload = json.dumps(_snapshot_to_obj(snapshot), indent=2, ensure_ascii=False,
                          separators=(",", ": "))
+    # Fail loud before creating any file handle: a store above the read cap
+    # could be registered but never loaded again (Python or Rust) — refuse
+    # the write with an explicit FILE_SIZE envelope (T-02900).
+    payload_len = len(payload.encode("utf-8"))
+    if payload_len > MAX_COMPLIANCE_STORE_SIZE:
+        raise _err(COMPLIANCESVC_ERR_FILE_SIZE,
+                   f"Payload size {payload_len} exceeds maximum allowed "
+                   f"{MAX_COMPLIANCE_STORE_SIZE}")
     try:
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             f.write(payload)

@@ -128,6 +128,17 @@ impl ComplianceService {
         let json_str = serde_json::to_string_pretty(&self.snapshot)
             .map_err(|e| format!("{}: Serialization error: {}", COMPLIANCESVC_ERR_IO, e))?;
 
+        // Hardening (T-02900): never write a store larger than the load
+        // cap — a bigger file could be registered but never re-loaded.
+        // Parity with the Python save_store payload check; no file handle
+        // is created yet, so nothing to clean up on refusal.
+        if (json_str.len() as u64) > MAX_COMPLIANCE_STORE_SIZE {
+            return Err(format!(
+                "{}: Serialized store size {} exceeds maximum allowed {}",
+                COMPLIANCESVC_ERR_FILE_SIZE, json_str.len(), MAX_COMPLIANCE_STORE_SIZE
+            ));
+        }
+
         if let Err(e) = fs::write(&tmp_path, json_str) {
             let _ = fs::remove_file(&tmp_path);
             return Err(format!("{}: Failed writing tmp file: {}", COMPLIANCESVC_ERR_IO, e));

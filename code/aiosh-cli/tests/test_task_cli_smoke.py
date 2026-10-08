@@ -25,12 +25,26 @@ import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]                 # code/aiosh-cli/tests -> repo root
-BIN = REPO / "code" / "aiosh-rust" / "target" / "debug" / "aiosh"
+def _rust_bin(name: str) -> Path:
+    """Resolve a debug binary, tolerating the Windows .exe suffix (T-02902)."""
+    base = REPO / "code" / "aiosh-rust" / "target" / "debug" / name
+    exe = base.with_name(base.name + ".exe")
+    return exe if os.name == "nt" and exe.exists() else base
+
+BIN = _rust_bin("aiosh")
 
 PASS, FAIL = "[✓]", "[✗]"
 MAX_NOTE = 4096

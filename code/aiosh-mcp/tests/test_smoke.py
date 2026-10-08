@@ -19,6 +19,14 @@ import subprocess
 import sys
 import tempfile
 import time
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers ([✓], →) that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -41,13 +49,13 @@ def step_1_cli_emits_rows() -> Path:
         cwd=str(AIOSH_CLI), check=True,
         env={**os.environ, "AIOSH_HOME": str(home),
              "AIOSH_CONSTITUTION": str(PROJ.parent.parent / "mostimportanAIfolder/AI_CONSTITUTION.md")},
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8")
     subprocess.run(
         ["node", "dist/cli.js", "run", "echo", "hello-from-mcp-smoke"],
         cwd=str(AIOSH_CLI), check=True,
         env={**os.environ, "AIOSH_HOME": str(home),
              "AIOSH_CONSTITUTION": str(PROJ.parent.parent / "mostimportanAIfolder/AI_CONSTITUTION.md")},
-        capture_output=True, text=True)
+        capture_output=True, text=True, encoding="utf-8")
     return home / "audit.db"
 
 
@@ -138,9 +146,14 @@ def main() -> int:
     print("== aiosh-mcp cross-process smoke ==")
 
     # Pre-step: rebuild the aiosh-cli so dist/ is fresh.
-    subprocess.run(["npm", "run", "build"],
-                   cwd=str(AIOSH_CLI), check=True,
-                   capture_output=True, text=True)
+    # T-02902: `npm` is a .cmd shim on Windows that CreateProcess cannot
+    # spawn; run the same build (tsc -p tsconfig.json) via node directly,
+    # matching test_classifier_smoke.py.
+    subprocess.run(
+        ["node", str(AIOSH_CLI / "node_modules" / "typescript" / "bin" / "tsc"),
+         "-p", "tsconfig.json"],
+        cwd=str(AIOSH_CLI), check=True,
+        capture_output=True, text=True, encoding="utf-8")
 
     db = step_1_cli_emits_rows()
     print(f"{PASS} aiosh-cli emitted rows → {db}")

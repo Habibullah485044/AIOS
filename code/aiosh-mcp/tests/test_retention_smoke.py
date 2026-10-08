@@ -28,6 +28,14 @@ import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from pathlib import Path
 
@@ -48,9 +56,12 @@ FAIL = "[✗]"
 
 def step_0_precheck() -> bool:
     subprocess.run(["node", "--version"], check=True, capture_output=True)
+    # T-02902: `npx` is a .cmd shim on Windows that CreateProcess cannot
+    # spawn; run the same tsc via node directly.
     r = subprocess.run(
-        ["npx", "tsc", "-p", "tsconfig.json"],
-        cwd=str(AIOSH_CLI), capture_output=True, text=True)
+        ["node", str(AIOSH_CLI / "node_modules" / "typescript" / "bin" / "tsc"),
+         "-p", "tsconfig.json"],
+        cwd=str(AIOSH_CLI), capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         print(f"{FAIL} tsc: {r.stderr}")
         return False

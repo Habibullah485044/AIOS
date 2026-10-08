@@ -40,8 +40,17 @@ gap is visible, never silent.
 from __future__ import annotations
 import json
 import os
+import platform
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from pathlib import Path
 
@@ -60,13 +69,31 @@ INFO = "[i]"
 
 
 def _ensure_tsc() -> None:
-    subprocess.run(["npx", "tsc", "-p", "tsconfig.json"],
-                    cwd=str(PROJ), check=True,
-                    capture_output=True, text=True)
+    # T-02902: `npx` is a .cmd shim on Windows that CreateProcess cannot
+    # spawn; run the same tsc via node directly.
+    subprocess.run(
+        ["node", str(PROJ / "node_modules" / "typescript" / "bin" / "tsc"),
+         "-p", "tsconfig.json"],
+        cwd=str(PROJ), check=True,
+        capture_output=True, text=True, encoding="utf-8")
 
 
 def _make_home() -> Path:
     return Path(tempfile.mkdtemp(prefix="aiosh-sandbox-smoke-"))
+
+
+IS_LINUX = platform.system() == "Linux"
+# T-02902: the sandbox subject commands must exist on the host. The
+# asserted contract (sandbox event recorded, components honestly report
+# application-or-refusal, chain intact) is identical on every platform;
+# only the subject binary differs.
+S1_CMD = (["/bin/ls", "/tmp"] if IS_LINUX
+           else ["cmd", "/c", "echo", "sandbox-smoke-ok"])
+S2_CMD = (["/bin/cat", "/etc/shadow"] if IS_LINUX
+           else ["cmd", "/c", "type",
+                 os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
+                              "System32", "drivers", "etc", "hosts")])
+S2_TOKEN = "cat" if IS_LINUX else "type"
 
 
 def _run_aiosh(home: Path, *args: str,
@@ -109,8 +136,8 @@ def sandbox_1_happy_path(home: Path) -> bool:
     """S1: aiosh run /bin/ls /tmp — completes, audit row carries
     sandbox components, no_new_privs applied."""
     print()
-    print("--- S1: aiosh run /bin/ls /tmp ---")
-    res = _run_aiosh(home, "run", "/bin/ls", "/tmp")
+    print(f"--- S1: aiosh run {' '.join(S1_CMD)} ---")
+    res = _run_aiosh(home, "run", *S1_CMD)
     if not res.get("ok"):
         print(f"{FAIL} run returned non-ok: {res}")
         return False
@@ -123,8 +150,10 @@ def sandbox_1_happy_path(home: Path) -> bool:
         print(f"{FAIL} sandbox.components missing no_new_privs: "
               f"{components}")
         return False
-    if not components["no_new_privs"].startswith("ok"):
-        print(f"{FAIL} no_new_privs not ok: {components['no_new_privs']}")
+    nnp = components["no_new_privs"]
+    nnp_good = (nnp.startswith("ok") if IS_LINUX else nnp.startswith("FAIL:"))
+    if not nnp_good:
+        print(f"{FAIL} no_new_privs neither ok nor honestly-FAIL: {nnp}")
         return False
     # Audit row carries the sandbox event.
     rows = _audit_rows(home)
@@ -140,7 +169,7 @@ def sandbox_1_happy_path(home: Path) -> bool:
     if not v["ok"]:
         print(f"{FAIL} chain verify failed: {v}")
         return False
-    print(f"{PASS} S1: aiosh run /bin/ls /tmp completed; "
+    print(f"{PASS} S1: aiosh run {' '.join(S1_CMD)} completed; "
           f"audit_id={last.id} chain_ok=True "
           f"components={list(components.keys())}")
     return True
@@ -152,8 +181,8 @@ def sandbox_2_default_policy_keeps_etc(home: Path) -> bool:
     Without Landlock, the subprocess completes — we assert the
     audit row honestly records Landlock's status either way."""
     print()
-    print("--- S2: aiosh run /bin/cat /etc/shadow ---")
-    res = _run_aiosh(home, "run", "/bin/cat", "/etc/shadow")
+    print(f"--- S2: aiosh run {' '.join(S2_CMD)} ---")
+    res = _run_aiosh(home, "run", *S2_CMD)
     sandbox = (res.get("data") or {}).get("sandbox")
     components = dict((sandbox or {}).get("components") or [])
     landlock_status = components.get("landlock", "")
@@ -162,7 +191,7 @@ def sandbox_2_default_policy_keeps_etc(home: Path) -> bool:
     rows = _audit_rows(home)
     run_rows = [r for r in rows if r.tool == "process.run"
                 and r.outcome == "ok"
-                and "cat" in (r.args.get("bin") or "")]
+                and S2_TOKEN in json.dumps(r.args)]
     last_audit = run_rows[-1] if run_rows else None
     if "landlock ok" in landlock_status:
         # Landlock enforced the policy. cat /etc/shadow must have

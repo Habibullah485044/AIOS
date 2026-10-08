@@ -1424,3 +1424,11 @@ Proof of Restraint (ADR-0037, Invariants I-1..I-5) is shipped and maintained by 
 - **Surfaces**: `restraint.generate_restraint_proof`, `verifier.verify_restraint_proof`, `python -m aiosh_mcp.verifier <proof.json> --pubkey <hex>`, `python3 tools/test_por_conformance_suites.py` (CI suite `por_conformance`), milestone demo `python3 tools/demo_por.py`.
 - **Live demo (T-02892)**: honest proof verifies 7/7 checks; post-anchor tamper (delete row + re-chain) rejected with HEAD_HASH_MISMATCH (docs/tasks/evidence/T-02892-demo.md).
 - **Docs**: docs/proof-of-restraint/PLAN.md (status: Shipped - maintained by standing rules), docs/SPEC-RESTRAINT-PROOF-GENERATOR.md, docs/SPEC-RESTRAINT-PROOF-VERIFIER.md, docs/SPEC-RESTRAINT-CONFORMANCE-GATE.md.
+
+### 2026-10-08 - MILESTONE: Compliance Mapping MCP/API surface SHIPPED (T-02894..T-02902)
+
+Compliance Mapping's operator/agent surface is shipped end to end:
+- **Surface**: `aios_compliance` MCP tool (Python server) + `aiosh compliance` CLI (Rust) over ONE canonical-JSON store (`AIOSH_COMPLIANCE_MAP_PATH`, default `$AIOSH_HOME/compliance_map.json`); PEP-gated writes, one honest audit row per call (ADR-0035 §F-2), 1 MiB cap on load AND save (TOCTOU-safe bounded read; payload refused before any file handle — both substrates, T-02900).
+- **Quality**: 50 Python tests (11 surface + 33 unit + 6 wire integration) + cross-substrate parity integration-proven (T-02898); registered rust_smoke all steps green (205-tool wire contract, CLI status, TS CLI via Rust sandbox, task-ledger parity).
+- **Docs**: README section with live-verified copy-pasteable examples and honest limitations; SPEC-COMPLIANCE-SERVICE updated (COMPLYSVC4 load+save cap); evidence lineage T-02894..T-02902 linked.
+- **Surfaces**: `python -m aiosh_mcp.server` (tool `aios_compliance`: list|show|register|status|assess|check-pep|init), `aiosh compliance <subcommand> [--path P] [--json]`.

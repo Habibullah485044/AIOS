@@ -7,8 +7,22 @@ import subprocess
 import sys
 import tempfile
 
+def _aiosh_bin():
+    """Native-separator path to the debug aiosh binary.
+
+    Windows CreateProcess rejects a forward-slash relative path
+    (FileNotFoundError WinError 2), so normalize before spawning.
+    """
+    p = os.path.join("code", "aiosh-rust", "target", "debug",
+                     "aiosh.exe" if os.name == "nt" else "aiosh")
+    if not os.path.exists(p):
+        p = os.path.join("target", "debug",
+                         "aiosh.exe" if os.name == "nt" else "aiosh")
+    return p
+
+
 def run_aiosh(*args):
-    cmd = ["code/aiosh-rust/target/debug/aiosh.exe", *args]
+    cmd = [_aiosh_bin(), *args]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     return res
 

@@ -28,6 +28,14 @@ import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,9 +57,13 @@ FAIL = "[✗]"
 
 def _ensure_tsc() -> None:
     """Compile aiosh-cli so dist/cli.js exists."""
-    subprocess.run(["npx", "tsc", "-p", "tsconfig.json"],
-                    cwd=str(PROJ), check=True,
-                    capture_output=True, text=True)
+    # T-02902: `npx` is a .cmd shim on Windows that CreateProcess cannot
+    # spawn; run the same tsc via node directly.
+    subprocess.run(
+        ["node", str(PROJ / "node_modules" / "typescript" / "bin" / "tsc"),
+         "-p", "tsconfig.json"],
+        cwd=str(PROJ), check=True,
+        capture_output=True, text=True, encoding="utf-8")
 
 
 def _make_home() -> Path:
@@ -74,11 +86,13 @@ def _run_agent(home: Path, prompt: str, *,
     }
     if extra_env:
         env.update(extra_env)
-    args = [_tsc(), "agent", prompt, "--max-steps", str(max_steps)]
+    # T-02902: run cli.js THROUGH node — executing the .js directly only
+    # works via the Unix shebang; Windows CreateProcess raises WinError 193.
+    args = ["node", _tsc(), "agent", prompt, "--max-steps", str(max_steps)]
     if grant:
         args.extend(["--grant", grant])
     out = subprocess.run(args, cwd=str(PROJ), env=env,
-                          check=True, capture_output=True, text=True)
+                          check=True, capture_output=True, text=True, encoding="utf-8")
     return json.loads(out.stdout)
 
 
@@ -91,7 +105,7 @@ def _create_grant(home: Path, tools: list[str], paths: dict | None,
     env = {**os.environ, "AIOSH_HOME": str(home),
            "AIOSH_CONSTITUTION": str(CONSTITUTION)}
     args = [
-        _tsc(), "grant", "create",
+        "node", _tsc(), "grant", "create",
         "--to", "agent:demo@aiosh-cli",
         "--tools", ",".join(tools),
     ]
@@ -103,7 +117,7 @@ def _create_grant(home: Path, tools: list[str], paths: dict | None,
         if paths.get("deny"):
             args.extend(["--deny", ",".join(paths["deny"])])
     out = subprocess.run(args, cwd=str(PROJ), env=env,
-                          check=True, capture_output=True, text=True)
+                          check=True, capture_output=True, text=True, encoding="utf-8")
     j = json.loads(out.stdout)
     if not j.get("ok"):
         raise RuntimeError(f"grant create failed: {j}")

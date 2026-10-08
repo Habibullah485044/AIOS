@@ -787,10 +787,11 @@ def aios_task(
 
 
 # -----------------------------------------------------------------------
-# Compliance Mapping: MCP/API surface (Component 7) — T-02895 SCAFFOLD
+# Compliance Mapping: MCP/API surface (Component 7) — T-02896 IMPLEMENTATION
 # Contract: docs/tasks/evidence/T-02894-spec.md (normative).
-# The tool body delegates to compliance_mod.execute, which fails loudly
-# until T-02896 (Implementation) wires PEP gating + the audit envelope.
+# Every call runs behind _recorded_call: exactly one audit row per call
+# (§7); register/status/init are grant-gated (§8). Domain errors surface
+# as the §4 envelope {ok:false, action, error, audit_id} — never silent.
 # -----------------------------------------------------------------------
 
 
@@ -814,11 +815,43 @@ def aios_compliance(
     over the compliance catalog. Actions: list | show | register | status |
     assess | check-pep | init. Read actions need no grant; register/status/init
     are state-changing and require a capability grant via grant_id."""
-    return compliance_mod.execute(
-        action=action, id=id, framework=framework, status=status,
-        control_id=control_id, target_type=target_type, target_ref=target_ref,
-        threat_ids=threat_ids, mitigation_summary=mitigation_summary,
-        tags=tags, reason=reason, gate_id=gate_id, grant_id=grant_id,
+    tool = "aios.compliance"
+    command = f"compliance {action}"
+    # Bounded audit args (spec §7): drop Nones, truncate strings/lists at the
+    # standard 8192-byte limit — never persist unbounded raw input.
+    _raw = {"action": action, "id": id, "framework": framework, "status": status,
+            "control_id": control_id, "target_type": target_type,
+            "target_ref": target_ref, "threat_ids": threat_ids,
+            "mitigation_summary": mitigation_summary, "tags": tags,
+            "reason": reason, "gate_id": gate_id}
+
+    def _clip(v):
+        if isinstance(v, str):
+            return v if len(v) <= 8192 else v[:8192] + "…(truncated)"
+        if isinstance(v, list):
+            return [_clip(x) for x in v[:32]]
+        return v
+
+    args = {k: _clip(v) for k, v in _raw.items() if v is not None}
+
+    def run() -> dict:
+        try:
+            return compliance_mod.execute(
+                action=action, id=id, framework=framework, status=status,
+                control_id=control_id, target_type=target_type,
+                target_ref=target_ref, threat_ids=threat_ids,
+                mitigation_summary=mitigation_summary, tags=tags,
+                reason=reason, gate_id=gate_id, grant_id=grant_id,
+            )
+        except ValueError as exc:
+            # Spec §4 envelope; _recorded_call turns ok=false into the single
+            # outcome="error" audit row.
+            return {"ok": False, "action": action, "error": str(exc)}
+
+    return _recorded_call(
+        tool=tool, command=command, args=args, target=None,
+        grant_id=grant_id, fn=run,
+        require_grant=action in compliance_mod.WRITE_ACTIONS,
     )
 
 

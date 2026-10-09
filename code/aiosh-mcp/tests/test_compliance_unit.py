@@ -544,6 +544,60 @@ def test_primary_ungranted_write_refused_store_untouched():
 
 
 # ---------------------------------------------------------------------------
+# T-02905 scaffold stub: configuration interfaces are wired and loud
+# ---------------------------------------------------------------------------
+
+def test_config_scaffold_constants_match_spec():
+    """T-02905: the configuration module imports, its constants and
+    defaults match T-02904 spec §3.1/§5, and every behavioral body
+    fails loudly until T-02906 implements it."""
+    from aiosh_mcp import compliance_config as cc
+
+    # Spec §5.1 — 64 KiB config cap, independent of the 1 MiB store cap.
+    assert cc.MAX_CONFIG_FILE_BYTES == 64 * 1024
+    # T-02903 decision D-2 — config sits beside the store in docs/.
+    assert cc.DEFAULT_CONFIG_PATH == "docs/compliance_config.json"
+    assert cc.ENV_COMPLIANCE_MAP_PATH == "AIOSH_COMPLIANCE_MAP_PATH"
+    assert cc.ENV_COMPLIANCE_CONFIG == "AIOSH_COMPLIANCE_CONFIG"
+    # Spec §3.1 bounds.
+    assert cc.DEFAULT_MAX_ENTRIES == 1024
+    assert cc.MAX_MAX_ENTRIES == 4096
+    assert cc.DEFAULT_MAX_STORE_FILE_BYTES == 1024 * 1024
+    assert cc.MAX_CONFIG_PATH_LEN == 1024
+
+    # Spec §3.1 defaults are real data, not stubs.
+    defaults = cc.default_config()
+    assert defaults["version"] == "1.0.0"
+    assert defaults["store_path"] == "docs/compliance_map.json"
+    assert defaults["max_entries"] == 1024
+    assert defaults["audit_all_queries"] is False
+    # Spec §5.4 — mutation auditing must default to True, never False.
+    assert defaults["audit_all_mutations"] is True
+
+    # Spec §4.2 error-code family is present and distinct.
+    codes = {cc.COMPLIANCECONF_ERR_PATH_TRAVERSAL,
+             cc.COMPLIANCECONF_ERR_FILE_SIZE, cc.COMPLIANCECONF_ERR_PARSE,
+             cc.COMPLIANCECONF_ERR_BOUNDS, cc.COMPLIANCECONF_ERR_IO,
+             cc.COMPLIANCECONF_ERR_VALIDATION}
+    assert len(codes) == 6
+
+    # Scaffold contract: behavioral bodies raise NotImplementedError
+    # loudly (T-02906 implements them).
+    loud = (("load_config", lambda: cc.load_config()),
+            ("from_env", lambda: cc.from_env()),
+            ("resolve", lambda: cc.resolve()),
+            ("validate", lambda: cc.validate(defaults)),
+            ("hygiene_ok", lambda: cc.hygiene_ok("docs/x.json")))
+    for name, call in loud:
+        try:
+            call()
+        except NotImplementedError as e:
+            assert "T-02906" in str(e), str(e)
+        else:
+            raise AssertionError(f"{name} must fail loudly in scaffold")
+
+
+# ---------------------------------------------------------------------------
 # Standalone runner (pytest collects the same functions)
 # ---------------------------------------------------------------------------
 

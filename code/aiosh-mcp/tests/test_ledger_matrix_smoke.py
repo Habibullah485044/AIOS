@@ -20,13 +20,27 @@ import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-RUST_BIN = REPO / "code" / "aiosh-rust" / "target" / "debug" / "aiosh"
-RUST_MCP = REPO / "code" / "aiosh-rust" / "target" / "debug" / "aiosh-mcp"
+def _rust_bin(name: str) -> Path:
+    """Resolve a debug binary, tolerating the Windows .exe suffix (T-02902)."""
+    base = REPO / "code" / "aiosh-rust" / "target" / "debug" / name
+    exe = base.with_name(base.name + ".exe")
+    return exe if os.name == "nt" and exe.exists() else base
+
+RUST_BIN = _rust_bin("aiosh")
+RUST_MCP = _rust_bin("aiosh-mcp")
 
 PASS, FAIL = "[✓]", "[✗]"
 
@@ -136,16 +150,49 @@ def m5_concurrent_writers_lock_busy(sb) -> None:
     loudly within its bounded wait, then succeed after release.
     (rebuild is lock-free BY DESIGN — recovery tool, spec T-00012 §4.)"""
     holder_env = dict(sb.env, AIOSH_LEDGER_LOCK_TIMEOUT_SECS="30")
-    holder_code = "\n".join([
-        "import os,time,fcntl",
-        "fd=os.open(os.path.join(os.environ['AIOSH_TASKS_DIR'],'.TASK_STATE.lock'),os.O_WRONLY|os.O_CREAT,0o644)",
-        "fcntl.flock(fd,fcntl.LOCK_EX)",
-        "time.sleep(6)",
-        "fcntl.flock(fd,fcntl.LOCK_UN)",
-    ])
+    # T-02902: the writer must observe a lock the holder REALLY holds.
+    # A fixed sleep is a race (the holder is a cold Python start under
+    # AV scanning and can take >0.4s), so the holder drops a marker file
+    # only AFTER acquiring; we wait for it with a hard deadline.
+    marker = Path(tempfile.mkdtemp(prefix="m5-marker-")) / "locked"
+    holder_env["AIOSH_M5_MARKER"] = str(marker)
+    marker_line = (
+        "open(os.environ['AIOSH_M5_MARKER'],'w').close()"
+    )
+    if os.name == "nt":
+        # The Rust ledger locks via LockFileEx on Windows (a MANDATORY
+        # byte-range lock over bytes 0..1), so the holder must take the
+        # same primitive — msvcrt.locking — not Unix advisory flock.
+        holder_code = "\n".join([
+            "import os,time,msvcrt",
+            "fd=os.open(os.path.join(os.environ['AIOSH_TASKS_DIR'],'.TASK_STATE.lock'),os.O_RDWR|os.O_CREAT,0o644)",
+            "msvcrt.locking(fd,msvcrt.LK_LOCK,1)",
+            marker_line,
+            "time.sleep(6)",
+            "msvcrt.locking(fd,msvcrt.LK_UNLCK,1)",
+        ])
+    else:
+        holder_code = "\n".join([
+            "import os,time,fcntl",
+            "fd=os.open(os.path.join(os.environ['AIOSH_TASKS_DIR'],'.TASK_STATE.lock'),os.O_WRONLY|os.O_CREAT,0o644)",
+            "fcntl.flock(fd,fcntl.LOCK_EX)",
+            marker_line,
+            "time.sleep(6)",
+            "fcntl.flock(fd,fcntl.LOCK_UN)",
+        ])
     holder = subprocess.Popen([sys.executable, "-c", holder_code],
                               env=holder_env, text=True)
-    time.sleep(0.4)  # let the holder take the lock
+    deadline = time.monotonic() + 20
+    while not marker.exists():
+        if holder.poll() is not None:
+            raise AssertionError(
+                f"M5 holder exited rc={holder.returncode} before "
+                f"acquiring the ledger lock")
+        if time.monotonic() >= deadline:
+            holder.kill()
+            holder.wait(timeout=5)
+            raise AssertionError("M5 holder never acquired the lock (20s)")
+        time.sleep(0.05)
     short = dict(sb.env, AIOSH_LEDGER_LOCK_TIMEOUT_SECS="1")
     p = subprocess.run([str(RUST_BIN), "task", "done", "3", "--note", "m5"],
                        capture_output=True, text=True, env=short, timeout=30)
@@ -226,8 +273,6 @@ def m8_block_unblock_pointer_python(sb) -> None:
     assert r.get("ok") and r["next_task"] == 2, r
     st = json.loads((sb.tasks_dir / "TASK_STATE.json").read_text())
     assert st["blocked"] == []
-
-
 
 
 def m9_metrics_parity(sb) -> None:

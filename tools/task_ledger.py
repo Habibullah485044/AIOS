@@ -424,7 +424,34 @@ def acquire_lock(lock_path: str = LOCK_PATH):
     """
     import time
     if fcntl is None:
-        yield
+        # T-02902: Windows now gets the same single-writer guard the Rust
+        # ledger enforces there (ledger.rs win_lock: LockFileEx) — a
+        # MANDATORY 1-byte range lock via msvcrt, polled until the same
+        # bounded deadline with the same loud `ledger lock busy` error.
+        # Previously this branch was a silent no-op, losing the
+        # single-writer invariant on Windows entirely.
+        import msvcrt
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+        deadline = time.monotonic() + LOCK_TIMEOUT_SECS
+        try:
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise PermissionError(
+                            f"ledger lock busy after "
+                            f"{int(LOCK_TIMEOUT_SECS * 1000)}ms "
+                            "(another writer holds .TASK_STATE.lock?)")
+                    time.sleep(_LOCK_POLL_SECS)
+            yield
+        finally:
+            try:
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+            os.close(fd)
         return
     fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
     deadline = time.monotonic() + LOCK_TIMEOUT_SECS

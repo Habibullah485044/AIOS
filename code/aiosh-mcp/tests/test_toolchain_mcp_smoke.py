@@ -6,9 +6,22 @@ import subprocess
 import sys
 import os
 
+def _mcp_bin():
+    """Native-separator path to the debug aiosh-mcp binary.
+
+    Windows CreateProcess rejects a forward-slash relative path
+    (FileNotFoundError WinError 2), so build argv[0] with os.path.join.
+    """
+    name = "aiosh-mcp.exe" if os.name == "nt" else "aiosh-mcp"
+    p = os.path.join("code", "aiosh-rust", "target", "debug", name)
+    if not os.path.exists(p):
+        p = os.path.join("target", "debug", name)
+    return p
+
+
 def run_mcp(payload, timeout_s=30):
     p = subprocess.Popen(
-        ["code/aiosh-rust/target/debug/aiosh-mcp.exe"],
+        [_mcp_bin()],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True
@@ -84,7 +97,7 @@ def test_mcp_unknown_tool_fails():
     print("PASS: aios.toolchain unknown tool negative test")
 
 if __name__ == "__main__":
-    if not os.path.exists("code/aiosh-rust/target/debug/aiosh-mcp.exe"):
+    if not os.path.exists(_mcp_bin()):
         subprocess.run(["cargo", "build", "--bin", "aiosh-mcp"], cwd="code/aiosh-rust", check=True)
     test_mcp_config()
     test_mcp_check()

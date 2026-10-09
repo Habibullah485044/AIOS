@@ -20,12 +20,26 @@ import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-BIN = REPO / "code" / "aiosh-rust" / "target" / "debug" / "aiosh"
+def _rust_bin(name: str) -> Path:
+    """Resolve a debug binary, tolerating the Windows .exe suffix (T-02902)."""
+    base = REPO / "code" / "aiosh-rust" / "target" / "debug" / name
+    exe = base.with_name(base.name + ".exe")
+    return exe if os.name == "nt" and exe.exists() else base
+
+BIN = _rust_bin("aiosh")
 
 PASS, FAIL = "[✓]", "[✗]"
 MAX_NOTE = 4096
@@ -117,22 +131,33 @@ def main() -> int:
           and state_path.read_text(encoding="utf-8") == before)
     if not check("P6 no-grant mutation refused at gate", ok, r): return 1
 
+    # T-02902: invariant I-2 (redeem-before-act) makes grants single-shot;
+    # the P2 grant was consumed by its successful `done`, so every later
+    # mutation must mint a FRESH grant — reusing the consumed one is
+    # (correctly) refused at the PEP gate before the tool body runs.
+    def _fresh_grant() -> str:
+        g = subprocess.run([str(BIN), "grant", "create", "--to", "pysmoke",
+                            "--tools", "aios.task", "--ttl", "600"],
+                           capture_output=True, text=True)
+        return json.loads(g.stdout)["data"]["grant_id"]
+
     # P7
     before = state_path.read_text(encoding="utf-8")
     n_ev = len(events(tasks_dir))
-    r = aios_task(action="done", task_id=4, note="jump", grant_id=grant_id)
+    r = aios_task(action="done", task_id=4, note="jump", grant_id=_fresh_grant())
     ok = (r.get("ok") is False and "NO-SKIP" in r.get("error", "")
           and state_path.read_text(encoding="utf-8") == before
           and len(events(tasks_dir)) == n_ev)
     if not check("P7 NO-SKIP refusal, zero change", ok, r): return 1
 
     # P8 — skip then rebuild through the SAME surface
-    r = aios_task(action="done", task_id=2, note="b", grant_id=grant_id)
+    # (each mutation consumes its own single-shot grant — T-02902/I-2)
+    r = aios_task(action="done", task_id=2, note="b", grant_id=_fresh_grant())
     ok0 = r.get("ok") and r.get("next_task") == 3      # mutation envelope: top-level fields
-    r = aios_task(action="skip", task_id=3, reason="scope", grant_id=grant_id)
+    r = aios_task(action="skip", task_id=3, reason="scope", grant_id=_fresh_grant())
     ok0 = ok0 and r.get("ok") and r.get("next_task") == 4
     state_path.write_text("{}", encoding="utf-8")
-    r = aios_task(action="rebuild", grant_id=grant_id)
+    r = aios_task(action="rebuild", grant_id=_fresh_grant())
     d = r.get("data", {})
     ok = ok0 and r.get("ok") and d.get("next_task") == 4 \
          and d.get("skipped") == [3] and d.get("completed") == [1, 2]

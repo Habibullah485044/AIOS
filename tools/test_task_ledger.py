@@ -25,12 +25,23 @@ Coverage:
 
 from __future__ import annotations
 
-import fcntl
+try:
+    import fcntl
+except ImportError:  # T-02902: Windows has no fcntl — the holder below
+    fcntl = None    # uses msvcrt (the same primitive the ledger uses)
 import importlib.util
 import json
 import os
 import subprocess
 import sys
+
+# T-02902: pin stdout/stderr to UTF-8 — this suite prints non-ASCII
+# markers that the Windows ANSI codepage (cp1252) cannot encode.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 import time
 import tempfile
 from pathlib import Path
@@ -305,8 +316,13 @@ def main() -> int:
     make_ledger(tmp4 / "MASTER_TASK_LEDGER.jsonl", n=3)
     make_v1_state(tmp4 / "TASK_STATE.json", total=3, next_task=1)
     tl4.LOCK_TIMEOUT_SECS = 0.2
-    holder_fd = os.open(tl4.LOCK_PATH, os.O_WRONLY | os.O_CREAT, 0o644)
-    fcntl.flock(holder_fd, fcntl.LOCK_EX)
+    if os.name == "nt":
+        import msvcrt
+        holder_fd = os.open(tl4.LOCK_PATH, os.O_RDWR | os.O_CREAT, 0o644)
+        msvcrt.locking(holder_fd, msvcrt.LK_LOCK, 1)
+    else:
+        holder_fd = os.open(tl4.LOCK_PATH, os.O_WRONLY | os.O_CREAT, 0o644)
+        fcntl.flock(holder_fd, fcntl.LOCK_EX)
     try:
         started = time.monotonic()
         try:
@@ -321,7 +337,10 @@ def main() -> int:
                 print("   ", e)
                 return 1
     finally:
-        fcntl.flock(holder_fd, fcntl.LOCK_UN)
+        if os.name == "nt":
+            msvcrt.locking(holder_fd, msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(holder_fd, fcntl.LOCK_UN)
         os.close(holder_fd)
     # Lock free again -> mutation proceeds normally.
     r = tl4.complete_task(1, note="after release")

@@ -958,3 +958,8 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Created aiosh_mcp/compliance.py (typed interfaces, NotImplementedError bodies, Rust-parity constants/vocabularies/dataclasses); wired aios.compliance MCP tool in server.py; 10 test stubs (S1-S5 green, B1-B5 loud-fail for T-02896). Imports/build clean.
 - Incidental fix: conformance fixture grant expiry time-bomb detonated at UTC midnight 2026-10-08 (expires_at 2026-10-07T23:59:59Z -> grant_check refused redeem, 4 tests failed). Fixed to 2199-12-31T23:59:59Z; battery restored 77 passed / 1 skipped; CONFORMANT C1..C6 PASS.
 - Evidence: docs/tasks/evidence/T-02895-*.md
+
+## T-02902 - Compliance Mapping / MCP-API surface: Verification & Evidence (2026-10-08)
+- Epic close (T-02894..T-02902): full registered baseline battery green via tools/ci_run.py (31 suites incl. por_conformance + compliance_integration); PoR conformance C1..C6 PASS (incl. C6 anchor chain + window bounding); demo_por.py: unused grant proved PROVABLY_RESTRAINED, post-anchor tamper (delete row + re-chain) REJECTED with HEAD_HASH_MISMATCH.
+- Dispatch/PEP/audit semantics on this surface unchanged since T-02898: one honest audit row per call (refusals included), grants redeemed at most once (invariant I-2); T-02900 hardening added persistence size caps only (no gate changes).
+- Evidence: docs/tasks/evidence/T-02902-verify.md

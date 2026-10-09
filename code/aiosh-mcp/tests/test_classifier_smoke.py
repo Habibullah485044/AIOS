@@ -36,6 +36,16 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aiosh_mcp import classifier as cls_py
 
+# T-02902: this suite prints non-ASCII markers ([✓]) and parses UTF-8
+# subprocess output; pin our streams to UTF-8 so the registered gate runs
+# on any host regardless of the Windows ANSI codepage (cp1252 cannot
+# encode U+2713 and crashed the suite before its first check).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # exotic streams: leave as-is
+        pass
+
 
 WORKDIR = Path(__file__).resolve().parent
 PROJ = WORKDIR.parent
@@ -106,9 +116,12 @@ def run_ts(fix: dict) -> dict:
     # We pre-compile a small adapter script in /tmp that imports the
     # TS module and returns JSON of the result. To keep semantics
     # exact, we round-trip through dist/ of aiosh-cli.
+    # T-02902: resolve the built module by real path (file:// URI) — the
+    # old hardcoded '/content/AIOS_MERGED/...' exists only in the container
+    # layout and made node fail on any other host.
+    _const_js = (AIOSH_CLI / "dist" / "constitution.js").resolve()
     script = (
-        "import { classify } from '/content/AIOS_MERGED/code/aiosh-cli/"
-        "dist/constitution.js';\n"
+        f"import {{ classify }} from '{_const_js.as_uri()}';\n"
         f"const tool = {json.dumps(fix['tool'])};\n"
         f"const target = {json.dumps(fix['target'])};\n"
         f"const args = {json.dumps(fix['args'])};\n"
@@ -124,7 +137,7 @@ def run_ts(fix: dict) -> dict:
         proc = subprocess.run(
             ["node", tmp.name],
             cwd=str(AIOSH_CLI),
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
             env={**os.environ},
             check=True,
         )
@@ -182,9 +195,10 @@ def section_b_policy_revision() -> bool:
 
 def _read_ts_const_module_lists() -> dict[str, list[str]]:
     """Read the TS lists via node. We re-export them as a JSON literal."""
+    # T-02902: real-path file:// import (same rationale as run_ts).
+    _const_js = (AIOSH_CLI / "dist" / "constitution.js").resolve()
     script = (
-        "import { _lists } from '/content/AIOS_MERGED/code/aiosh-cli/"
-        "dist/constitution.js';\n"
+        f"import {{ _lists }} from '{_const_js.as_uri()}';\n"
         "process.stdout.write(JSON.stringify(_lists));\n"
     )
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".mjs",
@@ -193,7 +207,8 @@ def _read_ts_const_module_lists() -> dict[str, list[str]]:
     tmp.close()
     try:
         proc = subprocess.run(["node", tmp.name], cwd=str(AIOSH_CLI),
-                               capture_output=True, text=True, check=True)
+                               capture_output=True, text=True, encoding="utf-8",
+                               check=True)
         return json.loads(proc.stdout)
     finally:
         os.unlink(tmp.name)
@@ -267,9 +282,14 @@ def section_d_cross_language_invariant() -> bool:
 
 def main() -> int:
     # Ensure aiosh-cli is compiled so dist/constitution.js exists.
-    subprocess.run(["npx", "tsc", "-p", "tsconfig.json"],
-                    cwd=str(AIOSH_CLI), check=True,
-                    capture_output=True, text=True)
+    # T-02902: invoke tsc.js via node directly — `npx` is a .cmd shim on
+    # Windows that CreateProcess cannot spawn (FileNotFoundError), and the
+    # rest of this file already spawns `node` for exactly that reason.
+    subprocess.run(
+        ["node", str(AIOSH_CLI / "node_modules" / "typescript" / "bin" / "tsc"),
+         "-p", "tsconfig.json"],
+        cwd=str(AIOSH_CLI), check=True,
+        capture_output=True, text=True, encoding="utf-8")
 
     print("== Sprint 1.5 Constitution classifier smoke ==")
     print()

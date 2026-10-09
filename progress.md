@@ -2032,3 +2032,10 @@ All edits are docs / control-plane only.
 - Validation: headless and GUI RISC-V `cargo check` passed; AIOS-0039 transport smoke passed; all three control-plane JSON files parsed with explicit UTF-8 decoding.
 - Full `ci/smoke.sh` reaches AIOS-0039, then stops at the unrelated scheduler FIFO assertion (`kernel/src/main.rs:2443`) before AIOS-0072-T1 and the dashboard. No scheduler repair was attempted in this slice.
 - AIOS-0039 remains `IMPLEMENTING`; interactive scheduling, a real user-buffer ABI, syscall-backed filesystem access, and `enter_user()` launch remain follow-up work.
+
+## 2026-10-08 — Compliance Mapping MCP/API surface epic closed (T-02894..T-02902)
+
+- Shipped the `aios_compliance` MCP/API surface end-to-end (spec → scaffold → implementation → unit/integration → security review → hardening → documentation → verification), each task as one merged PR (#7..#11).
+- Hardening fixed two real gaps found by review: TOCTOU unbounded store read, and writes above the read cap that could produce a store neither substrate could reload (both substrates fixed, 4 new tests).
+- Verification: full registered baseline battery green (tools/ci_run.py, 31 suites), PoR C1..C6 + demo (anchor tamper rejected), evidence + security-policy checkers PASS.
+- Also repaired five pre-existing registered-gate breakages (stale 13→205 tool canary, shared-ring coupling in wire step, AIOSH_DB no-op isolation, Linux ELF native addon, TS CLI resolver missing `.exe`) — rust_smoke now EXIT=0 on every step.

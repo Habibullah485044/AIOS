@@ -15,6 +15,11 @@ Verifies the feature end-to-end through its production surfaces:
      init baseline, id listing, show, status transition and assess all agree,
      and each substrate loads the other's store bytes (regression guard for
      the serde/as_str framework-name split fixed in T-02898).
+  5. Configuration ladder (T-02908) — `AIOSH_COMPLIANCE_CONFIG` selects the
+     store for BOTH production surfaces end-to-end: an MCP write over the
+     wire lands in the config-file store, the Rust CLI (no `--path`) reads
+     that same store, and `AIOSH_COMPLIANCE_MAP_PATH` overrides the file
+     tier on both substrates.
 
 Contract: docs/tasks/evidence/T-02894-spec.md (normative).
 Run: python3 -m pytest code/aiosh-mcp/tests/test_compliance_integration.py -q
@@ -379,3 +384,82 @@ def test_cross_substrate_register_show_status_assess():
             assert py_rep["compliance_percentage"] == rs_rep["compliance_percentage"]
         finally:
             os.environ.pop("AIOSH_COMPLIANCE_MAP_PATH", None)
+
+
+# ---------------------------------------------------------------------------
+# 5. Configuration ladder end-to-end through both production surfaces
+# ---------------------------------------------------------------------------
+
+def test_config_ladder_end_to_end_cross_substrate():
+    """`AIOSH_COMPLIANCE_CONFIG` selects the store on BOTH substrates:
+    an MCP write over the stdio wire lands in the config-file store, the
+    Rust CLI without `--path` resolves that same file, and the env tier
+    (`AIOSH_COMPLIANCE_MAP_PATH`) beats the file tier everywhere.
+
+    T-02908 integration guard for the 4-level ladder shipped in
+    T-02905..T-02907 (spec: docs/tasks/evidence/T-02904-spec.md §3.2).
+    """
+    if _rust_bin() is None:
+        pytest.skip("aiosh Rust binary not built")
+
+    with tempfile.TemporaryDirectory(prefix="compliance-ladder-") as td:
+        tdp = Path(td)
+        home = tdp / ".aios"
+        home.mkdir(parents=True, exist_ok=True)
+        cfg_store = tdp / "from_config.json"
+        env_store = tdp / "from_env.json"
+        cfg_path = tdp / "compliance_config.json"
+        cfg_path.write_text(
+            json.dumps({"store_path": str(cfg_store)}, indent=2) + "\n",
+            encoding="utf-8")
+
+        keys = ("AIOSH_HOME", "AIOSH_COMPLIANCE_CONFIG",
+                "AIOSH_COMPLIANCE_MAP_PATH")
+        saved = {k: os.environ.get(k) for k in keys}
+        os.environ["AIOSH_HOME"] = str(home)
+        os.environ["AIOSH_COMPLIANCE_CONFIG"] = str(cfg_path)
+        os.environ.pop("AIOSH_COMPLIANCE_MAP_PATH", None)  # file tier must win
+        try:
+            grant_id = mint_grant(["aios.compliance"],
+                                  grant_id="gr_ladder_001")
+            out = wire([
+                init_req(1),
+                call_req(2, "aios_compliance", {
+                    "action": "register", "id": "MAP-LADDER-001",
+                    "control_id": "AC-9", "framework": "nist",
+                    "target_type": "pep_gate", "target_ref": "gate.ladder",
+                    "status": "non_compliant", "grant_id": grant_id}),
+            ])
+            r = wire_result(out[2])
+            assert out[2]["result"]["isError"] is False
+            assert r["ok"] is True, r
+
+            # Python surface followed the CONFIG-FILE tier, not the default
+            assert cfg_store.exists(), \
+                "MCP write did not follow AIOSH_COMPLIANCE_CONFIG"
+            py_ids = [m["id"] for m in json.loads(
+                cfg_store.read_text(encoding="utf-8"))["mappings"]]
+            assert "MAP-LADDER-001" in py_ids and len(py_ids) == 5
+
+            # Rust CLI without --path resolves the SAME config file (F-3:
+            # this is exactly the cross-substrate gap T-02906 closed)
+            p = rust("list", "--json")
+            assert p.returncode == 0, p.stderr or p.stdout
+            rs_ids = [m["id"] for m in json.loads(p.stdout)["mappings"]]
+            assert rs_ids == py_ids, (rs_ids, py_ids)
+
+            # ENV tier beats FILE tier on both substrates: env store holds
+            # the 4-entry baseline, config store holds 5 — a wrong tier
+            # read is distinguishable by count.
+            assert rust("init", "--path", str(env_store)).returncode == 0
+            os.environ["AIOSH_COMPLIANCE_MAP_PATH"] = str(env_store)
+            p = rust("list", "--json")
+            assert p.returncode == 0, p.stdout
+            assert json.loads(p.stdout)["count"] == 4
+            assert compliance.execute(action="list")["count"] == 4
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v

@@ -227,8 +227,16 @@ def validate_path(path: str) -> str:
 
 
 def store_path() -> str:
-    """Active store path: AIOSH_COMPLIANCE_MAP_PATH override or the Rust default."""
-    return os.environ.get("AIOSH_COMPLIANCE_MAP_PATH") or DEFAULT_STORE_PATH
+    """Active store path via the 4-level ladder (T-02906, spec §3.2):
+    argument (never available here) → ``AIOSH_COMPLIANCE_MAP_PATH`` →
+    config file → the Rust default.
+
+    An env value that fails the hygiene predicate is rejected and the
+    default applies (spec §4.3); the result still passes through
+    ``validate_path`` at every load/save site.
+    """
+    from . import compliance_config
+    return compliance_config.resolve()["config"]["store_path"]
 
 
 # --- Persistence (spec §5: canonical byte-stable form) ----------------------

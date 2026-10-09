@@ -107,53 +107,233 @@ pub struct ResolvedConfig {
 impl ComplianceConfig {
     /// Parse from a JSON document, then validate. (spec §4.2 —
     /// malformed JSON is `COMPLIANCECONF_ERR_PARSE` and fails closed.)
-    pub fn from_json(_json_str: &str) -> Result<Self, String> {
-        unimplemented!("T-02906: ComplianceConfig::from_json")
+    pub fn from_json(json_str: &str) -> Result<Self, String> {
+        let config: ComplianceConfig = serde_json::from_str(json_str)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_PARSE, e))?;
+        let config = config.clamped();
+        config.validate()?;
+        Ok(config)
     }
 
     /// Serialize to pretty JSON after validation.
     pub fn to_json(&self) -> Result<String, String> {
-        unimplemented!("T-02906: ComplianceConfig::to_json")
+        self.validate()?;
+        serde_json::to_string_pretty(self)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_IO, e))
     }
 
     /// Read from a path with the 64 KiB cap (spec §5.1) applied *before*
-    /// parsing (CWE-400).
-    pub fn from_path(_path: &PathBuf) -> Result<Self, String> {
-        unimplemented!("T-02906: ComplianceConfig::from_path")
+    /// parsing (CWE-400). A missing file yields the defaults (spec §4.2
+    /// last row — not an error).
+    pub fn from_path(path: &PathBuf) -> Result<Self, String> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let meta = std::fs::metadata(path)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_IO, e))?;
+        if meta.len() > MAX_CONFIG_FILE_BYTES {
+            return Err(format!(
+                "{}: config file {} is {} bytes, limit {}",
+                COMPLIANCECONF_ERR_FILE_SIZE,
+                path.display(),
+                meta.len(),
+                MAX_CONFIG_FILE_BYTES
+            ));
+        }
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_IO, e))?;
+        use std::io::Read;
+        let mut content = String::new();
+        file.by_ref()
+            .take(MAX_CONFIG_FILE_BYTES)
+            .read_to_string(&mut content)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_IO, e))?;
+        let config: ComplianceConfig = serde_json::from_str(&content)
+            .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_PARSE, e))?;
+        let config = config.clamped();
+        config.validate()?;
+        Ok(config)
     }
 
     /// Precedence ladder level 3→4 (spec §3.2): env path if it passes the
     /// hygiene predicate, else default path if it exists, else defaults.
     /// Never panics on bad input (T-02903 F-7 precedent).
     pub fn from_env() -> Result<Self, String> {
-        unimplemented!("T-02906: ComplianceConfig::from_env")
+        if let Ok(env_path) = std::env::var(ENV_COMPLIANCE_CONFIG) {
+            if Self::hygiene_ok(&env_path) && std::path::Path::new(&env_path).exists() {
+                if let Ok(c) = Self::from_path(&PathBuf::from(&env_path)) {
+                    return Ok(c);
+                }
+            }
+            return Ok(Self::default());
+        }
+        let default_p = PathBuf::from(DEFAULT_CONFIG_PATH);
+        if default_p.exists() {
+            if let Ok(c) = Self::from_path(&default_p) {
+                return Ok(c);
+            }
+        }
+        Ok(Self::default())
     }
 
     /// Full 4-level resolution: argument → env → file → default
     /// (spec §3.2), reporting a per-key `source` map (spec §3.3, §4.1).
-    ///
-    /// `arg_path` is the CLI `--path` value (strongest override);
-    /// `arg_config` is the CLI `--config` value.
     pub fn resolve(
-        _arg_path: Option<&str>,
-        _arg_config: Option<&str>,
+        arg_path: Option<&str>,
+        arg_config: Option<&str>,
     ) -> Result<ResolvedConfig, String> {
-        unimplemented!("T-02906: ComplianceConfig::resolve")
+        let mut config = ComplianceConfig::default();
+        let mut source: std::collections::BTreeMap<String, ConfigSource> =
+            ComplianceConfig::default()
+                .field_names()
+                .iter()
+                .map(|f| (f.to_string(), ConfigSource::Default))
+                .collect();
+
+        // Level 3: config file. Explicit --config beats the env var; a
+        // file present but unusable fails closed (spec §4.2).
+        let file_config = match arg_config {
+            Some(p) => {
+                if Self::hygiene_ok(p) {
+                    Some(Self::from_path(&PathBuf::from(p))?)
+                } else {
+                    None
+                }
+            }
+            None => match std::env::var(ENV_COMPLIANCE_CONFIG) {
+                Ok(env_cfg) if Self::hygiene_ok(&env_cfg) => {
+                    Some(Self::from_path(&PathBuf::from(env_cfg))?)
+                }
+                _ => {
+                    let default_p = PathBuf::from(DEFAULT_CONFIG_PATH);
+                    if default_p.exists() {
+                        Some(Self::from_path(&default_p)?)
+                    } else {
+                        None
+                    }
+                }
+            },
+        };
+        if let Some(f) = file_config {
+            let defaults = ComplianceConfig::default();
+            if f.store_path != defaults.store_path {
+                config.store_path = f.store_path.clone();
+                source.insert("store_path".into(), ConfigSource::File);
+            }
+            if f.max_store_file_bytes != defaults.max_store_file_bytes {
+                config.max_store_file_bytes = f.max_store_file_bytes;
+                source.insert("max_store_file_bytes".into(), ConfigSource::File);
+            }
+            if f.max_entries != defaults.max_entries {
+                config.max_entries = f.max_entries;
+                source.insert("max_entries".into(), ConfigSource::File);
+            }
+            if f.audit_all_queries != defaults.audit_all_queries {
+                config.audit_all_queries = f.audit_all_queries;
+                source.insert("audit_all_queries".into(), ConfigSource::File);
+            }
+            if f.audit_all_mutations != defaults.audit_all_mutations {
+                config.audit_all_mutations = f.audit_all_mutations;
+                source.insert("audit_all_mutations".into(), ConfigSource::File);
+            }
+            if f.version != defaults.version {
+                config.version = f.version.clone();
+                source.insert("version".into(), ConfigSource::File);
+            }
+        }
+
+        // Level 2: env store-path override (CWE-15 hygiene gate).
+        if let Ok(raw_store) = std::env::var(ENV_COMPLIANCE_MAP_PATH) {
+            if Self::hygiene_ok(&raw_store) {
+                config.store_path = PathBuf::from(&raw_store);
+                source.insert("store_path".into(), ConfigSource::Env);
+            } else {
+                source.insert("store_path".into(), ConfigSource::EnvInvalid);
+            }
+        }
+
+        // Level 1: explicit argument (strongest). Applied unconditionally:
+        // an operator-supplied `--path` must NOT be silently replaced by the
+        // default when it is invalid — it flows to `validate_path`, which
+        // rejects it loudly (exit 2). The hygiene gate exists for *env*
+        // values (CWE-15, spec §4.3), not for explicit operator intent.
+        if let Some(p) = arg_path {
+            config.store_path = PathBuf::from(p);
+            source.insert("store_path".into(), ConfigSource::Argument);
+        }
+
+        config = config.clamped();
+        config.validate()?;
+        Ok(ResolvedConfig { config, source })
+    }
+
+    /// Field names, for building the default `source` map.
+    fn field_names(&self) -> [&'static str; 6] {
+        [
+            "version",
+            "store_path",
+            "max_store_file_bytes",
+            "max_entries",
+            "audit_all_queries",
+            "audit_all_mutations",
+        ]
+    }
+
+    /// Clamp inert numeric fields to their declared bounds (spec §4.2:
+    /// "out of bounds -> clamp"). `audit_all_mutations` is forced `true`
+    /// (spec §5.4) — config can never disable mutation auditing.
+    pub fn clamped(&self) -> Self {
+        let mut c = self.clone();
+        c.max_entries = c.max_entries.clamp(MIN_MAX_ENTRIES, MAX_MAX_ENTRIES);
+        c.max_store_file_bytes =
+            c.max_store_file_bytes.clamp(MIN_MAX_STORE_FILE_BYTES, MAX_MAX_STORE_FILE_BYTES);
+        c.audit_all_mutations = true;
+        if c.version.trim().is_empty() {
+            c.version = ComplianceConfig::default().version;
+        }
+        if c.store_path.as_os_str().is_empty() {
+            c.store_path = ComplianceConfig::default().store_path;
+        }
+        c
     }
 
     /// Bounds + hygiene validation (spec §3.1 bounds, §5 constraints).
     ///
-    /// Inert fields clamp, security-relevant fields fail closed
-    /// (spec §4.2 — T-02903 decision D-5).
+    /// Fail-closed checks only — inert fields are clamped by `clamped()`.
     pub fn validate(&self) -> Result<(), String> {
-        unimplemented!("T-02906: ComplianceConfig::validate")
+        if self.version.trim().is_empty() {
+            return Err(format!(
+                "{}: 'version' must not be empty",
+                COMPLIANCECONF_ERR_VALIDATION
+            ));
+        }
+        if self.store_path.as_os_str().is_empty() {
+            return Err(format!(
+                "{}: 'store_path' must not be empty",
+                COMPLIANCECONF_ERR_VALIDATION
+            ));
+        }
+        Ok(())
     }
 
     /// Apply the hygiene predicate from spec §4.3 (non-empty, no `..`,
     /// no control chars, `len <= MAX_CONFIG_PATH_LEN`) — the CWE-15 gate
     /// for env-supplied paths.
-    pub fn hygiene_ok(_value: &str) -> bool {
-        unimplemented!("T-02906: ComplianceConfig::hygiene_ok")
+    pub fn hygiene_ok(value: &str) -> bool {
+        let v = value.trim();
+        if v.is_empty() {
+            return false;
+        }
+        if v.chars().count() > MAX_CONFIG_PATH_LEN {
+            return false;
+        }
+        if v.contains("..") {
+            return false;
+        }
+        if v.chars().any(|c| c.is_control()) {
+            return false;
+        }
+        true
     }
 }
 
@@ -189,10 +369,67 @@ mod tests {
         assert_eq!(MAX_CONFIG_PATH_LEN, 1024);
     }
 
-    // Scaffold: behavioral bodies must fail loudly until T-02906.
+    // T-02906: hygiene predicate is the CWE-15 gate (spec §4.3) and is
+    // total — never panics.
     #[test]
-    #[should_panic(expected = "T-02906")]
-    fn test_scaffold_unimplemented_fails_loudly() {
-        let _ = ComplianceConfig::from_env();
+    fn test_hygiene_predicate_matches_spec_4_3() {
+        assert!(ComplianceConfig::hygiene_ok("docs/compliance_map.json"));
+        assert!(!ComplianceConfig::hygiene_ok(""));
+        assert!(!ComplianceConfig::hygiene_ok("   "));
+        assert!(!ComplianceConfig::hygiene_ok("../etc/x.json"));
+        assert!(!ComplianceConfig::hygiene_ok("docs/\u{1}x.json"));
+        assert!(!ComplianceConfig::hygiene_ok(&"a".repeat(MAX_CONFIG_PATH_LEN + 1)));
+    }
+
+    // T-02906: inert fields clamp; audit_all_mutations forced true
+    // (spec §4.2 / §5.4).
+    #[test]
+    fn test_clamped_bounds_and_audit_forced_true() {
+        let mut c = ComplianceConfig::default();
+        c.max_entries = 999_999;
+        c.max_store_file_bytes = 999_999_999;
+        c.audit_all_mutations = false;
+        let c = c.clamped();
+        assert_eq!(c.max_entries, MAX_MAX_ENTRIES);
+        assert_eq!(c.max_store_file_bytes, MAX_MAX_STORE_FILE_BYTES);
+        assert!(c.audit_all_mutations);
+
+        let mut c = ComplianceConfig::default();
+        c.max_entries = 0;
+        assert_eq!(c.clamped().max_entries, MIN_MAX_ENTRIES);
+    }
+
+    // T-02906: malformed config fails closed with the spec §4.2 code;
+    // missing file is not an error (returns defaults).
+    #[test]
+    fn test_malformed_and_missing_config_paths() {
+        let dir = std::env::temp_dir().join("aios_compliance_cfg_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let bad = dir.join("bad.json");
+        std::fs::write(&bad, "{not valid json").unwrap();
+        let err = ComplianceConfig::from_path(&bad).unwrap_err();
+        assert!(err.contains(COMPLIANCECONF_ERR_PARSE), "{}", err);
+
+        let big = dir.join("big.json");
+        std::fs::write(&big, vec![b' '; (MAX_CONFIG_FILE_BYTES + 1) as usize]).unwrap();
+        let err = ComplianceConfig::from_path(&big).unwrap_err();
+        assert!(err.contains(COMPLIANCECONF_ERR_FILE_SIZE), "{}", err);
+
+        let missing = dir.join("absent.json");
+        let cfg = ComplianceConfig::from_path(&missing).unwrap();
+        assert_eq!(cfg, ComplianceConfig::default());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // T-02906: round-trip through JSON with defaults.
+    #[test]
+    fn test_json_roundtrip_happy() {
+        let original = ComplianceConfig::default();
+        let json = original.to_json().unwrap();
+        let decoded = ComplianceConfig::from_json(&json).unwrap();
+        assert_eq!(original, decoded);
     }
 }

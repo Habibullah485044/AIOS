@@ -156,13 +156,27 @@ def _read_raw(path: str) -> dict[str, Any]:
             f"{COMPLIANCECONF_ERR_PATH_TRAVERSAL}: path cannot be empty")
     if not os.path.exists(path):
         return {}
-    size = os.path.getsize(path)
+    if os.path.isdir(path):
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_IO}: config path is a directory: {path}")
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_IO}: cannot stat config file {path}: {e}") from e
     if size > MAX_CONFIG_FILE_BYTES:
         raise ValueError(
             f"{COMPLIANCECONF_ERR_FILE_SIZE}: config file {path} is {size} "
             f"bytes, limit {MAX_CONFIG_FILE_BYTES}")
-    with open(path, "r", encoding="utf-8") as f:
-        raw = f.read(MAX_CONFIG_FILE_BYTES + 1)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read(MAX_CONFIG_FILE_BYTES + 1)
+    except UnicodeDecodeError as e:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_PARSE}: non-UTF-8 config at {path}: {e}") from e
+    except OSError as e:
+        raise ValueError(
+            f"{COMPLIANCECONF_ERR_IO}: cannot read config file {path}: {e}") from e
     if len(raw.encode("utf-8")) > MAX_CONFIG_FILE_BYTES:
         raise ValueError(
             f"{COMPLIANCECONF_ERR_FILE_SIZE}: config file {path} exceeds "

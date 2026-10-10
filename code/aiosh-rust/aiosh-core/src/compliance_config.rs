@@ -131,6 +131,13 @@ impl ComplianceConfig {
         }
         let meta = std::fs::metadata(path)
             .map_err(|e| format!("{}: {}", COMPLIANCECONF_ERR_IO, e))?;
+        if meta.is_dir() {
+            return Err(format!(
+                "{}: path is a directory: {}",
+                COMPLIANCECONF_ERR_IO,
+                path.display()
+            ));
+        }
         if meta.len() > MAX_CONFIG_FILE_BYTES {
             return Err(format!(
                 "{}: config file {} is {} bytes, limit {}",

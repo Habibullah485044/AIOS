@@ -396,6 +396,32 @@ def test_store_path_resolver_agrees_with_load_store_default():
 # Standalone runner (pytest collects the same functions)
 # ---------------------------------------------------------------------------
 
+def test_config_directory_path_fails_closed():
+    """A directory path provided as config file must fail closed with COMPLIANCECONF_ERR_IO."""
+    with clean_env(), temp_dir() as td:
+        dir_path = td / "subfolder"
+        dir_path.mkdir()
+        try:
+            cc.load_config(str(dir_path))
+        except Exception as e:
+            assert cc.COMPLIANCECONF_ERR_IO in str(e), str(e)
+        else:
+            raise AssertionError("directory path must fail closed")
+
+
+def test_config_non_utf8_fails_closed():
+    """Non-UTF-8 bytes in config file must fail closed with COMPLIANCECONF_ERR_PARSE."""
+    with clean_env(), temp_dir() as td:
+        bad_utf8 = td / "bad_utf8.json"
+        bad_utf8.write_bytes(b"\xff\xfe\x00\x00")
+        try:
+            cc.load_config(str(bad_utf8))
+        except Exception as e:
+            assert cc.COMPLIANCECONF_ERR_PARSE in str(e), str(e)
+        else:
+            raise AssertionError("non-UTF-8 config must fail closed")
+
+
 def main() -> int:
     tests = [(name, fn) for name, fn in list(globals().items())
              if name.startswith("test_") and callable(fn)]

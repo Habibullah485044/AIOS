@@ -40,5 +40,7 @@ scratch/
 .aios/
 .freebuff/
 
-# Model weights
+# Model weights and training
 *.gguf
+*.safetensors
+training/

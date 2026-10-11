@@ -20,10 +20,12 @@ MAX_OUTCOME_DISTRIBUTION_ENTRIES = 128
 MAX_AUDIT_LOG_TAIL_ITEMS = 1000
 MAX_COMPLIANCE_ENTRIES_CAPACITY = 1024
 
+_FORBIDDEN_CHARS = {"\u200b", "\u200c", "\u200d", "\ufeff"}
+
 
 def sanitize_telemetry_text(s: str) -> str:
-    """Sanitizes telemetry text by filtering control characters and enforcing bounds."""
-    filtered = "".join(c for c in s if not ord(c) < 32 and ord(c) != 127)
+    """Sanitizes telemetry text by filtering control characters, zero-width chars, and enforcing bounds."""
+    filtered = "".join(c for c in s if not (ord(c) < 32 or ord(c) == 127 or c in _FORBIDDEN_CHARS))
     return filtered[:MAX_TELEMETRY_TEXT_LEN].strip()
 
 
@@ -57,26 +59,40 @@ class ComplianceObservabilityReport:
         if len(self.mappings_by_target_type) > MAX_OUTCOME_DISTRIBUTION_ENTRIES:
             raise ValueError(f"{COMPOBS_ERR_VALIDATION}: mappings_by_target_type exceeds maximum entries")
 
-        if not (0.0 <= self.compliance_percentage <= 100.0) or math.isnan(self.compliance_percentage):
-            raise ValueError(f"{COMPOBS_ERR_VALIDATION}: compliance_percentage must be between 0.0 and 100.0")
+        if not math.isfinite(self.compliance_percentage) or math.isnan(self.compliance_percentage) or not (0.0 <= self.compliance_percentage <= 100.0):
+            raise ValueError(f"{COMPOBS_ERR_VALIDATION}: compliance_percentage must be a finite float between 0.0 and 100.0")
 
         if not (0 <= self.capacity_utilization_percent <= 100):
             raise ValueError(f"{COMPOBS_ERR_VALIDATION}: capacity_utilization_percent cannot exceed 100")
+
+        if self.recent_audit_events_count > MAX_AUDIT_LOG_TAIL_ITEMS:
+            raise ValueError(f"{COMPOBS_ERR_VALIDATION}: recent_audit_events_count exceeds max audit log tail items")
 
         all_keys = list(self.mappings_by_framework.keys()) + list(self.mappings_by_status.keys()) + list(self.mappings_by_target_type.keys())
         for k in all_keys:
             if len(k) > MAX_TELEMETRY_TEXT_LEN:
                 raise ValueError(f"{COMPOBS_ERR_VALIDATION}: distribution key exceeds max length")
-            if any(ord(c) < 32 or ord(c) == 127 for c in k):
-                raise ValueError(f"{COMPOBS_ERR_VALIDATION}: distribution key contains control characters")
+            if any(ord(c) < 32 or ord(c) == 127 or c in _FORBIDDEN_CHARS for c in k):
+                raise ValueError(f"{COMPOBS_ERR_VALIDATION}: distribution key contains forbidden/control characters")
 
 
 def generate_compliance_observability_report(
     snapshot: Any,
     policy: Any = None,
     ring: Any = None,
+    timestamp: str | None = None,
 ) -> ComplianceObservabilityReport:
     """Generates a point-in-time observability report."""
+    if timestamp is not None:
+        sanitized_ts = sanitize_telemetry_text(timestamp)
+        try:
+            datetime.fromisoformat(sanitized_ts.replace("Z", "+00:00"))
+        except Exception as e:
+            raise ValueError(f"{COMPOBS_ERR_VALIDATION}: provided timestamp is not valid RFC3339: {e}")
+        now_iso = sanitized_ts
+    else:
+        now_iso = datetime.now(timezone.utc).isoformat()
+
     mappings = snapshot.mappings if hasattr(snapshot, "mappings") else []
     total = len(mappings)
 
@@ -121,9 +137,8 @@ def generate_compliance_observability_report(
         policy_mode = m.value if hasattr(m, "value") else str(m).lower()
 
     capacity_utilization_percent = min(100, int((min(total, MAX_COMPLIANCE_ENTRIES_CAPACITY) * 100) / MAX_COMPLIANCE_ENTRIES_CAPACITY))
-    is_healthy = total <= MAX_COMPLIANCE_ENTRIES_CAPACITY and not math.isnan(compliance_percentage)
+    is_healthy = total <= MAX_COMPLIANCE_ENTRIES_CAPACITY and math.isfinite(compliance_percentage) and not math.isnan(compliance_percentage)
 
-    now_iso = datetime.now(timezone.utc).isoformat()
     report = ComplianceObservabilityReport(
         generated_at_utc=now_iso,
         total_mappings=total,

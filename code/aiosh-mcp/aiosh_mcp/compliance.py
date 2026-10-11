@@ -441,8 +441,16 @@ def build_entry(
 
 
 def register_mapping(snapshot: ComplianceCatalogSnapshot,
-                     entry: ComplianceMappingEntry) -> ComplianceCatalogSnapshot:
+                     entry: ComplianceMappingEntry,
+                     policy: Any | None = None) -> ComplianceCatalogSnapshot:
     """Parity with add_mapping: capacity, then duplicate id, then push."""
+    if policy is not None:
+        v = policy.evaluate_registration(entry)
+        if v.verdict == "deny":
+            raise _err(v.code or "COMPLIANCEPOL_ERR_DENIED", v.reason or "Denied by security policy")
+        v_cap = policy.evaluate_capacity(len(snapshot.mappings))
+        if v_cap.verdict == "deny":
+            raise _err(v_cap.code or "COMPLIANCEPOL_ERR_CAPACITY_EXCEEDED", v_cap.reason or "Capacity exceeded")
     if len(snapshot.mappings) >= MAX_COMPLIANCE_ENTRIES_CAPACITY:
         raise _err(COMPLIANCE_ERR_BOUNDS_EXCEEDED, "Catalog capacity exceeded")
     if any(m.id == entry.id for m in snapshot.mappings):
@@ -459,7 +467,8 @@ def can_transition(current: str, nxt: str) -> bool:
 
 
 def update_status(snapshot: ComplianceCatalogSnapshot, id: str,
-                  status: str, reason: str | None = None) -> ComplianceMappingEntry:
+                  status: str, reason: str | None = None,
+                  policy: Any | None = None) -> ComplianceMappingEntry:
     """Parity with update_status/transition_to (incl. the compliant-without-
     summary guard). Raises COMPLIANCESVC_ERR_NOT_FOUND / *_INVALID_STATUS_TRANSITION."""
     entry = get_mapping(snapshot, id)
@@ -468,6 +477,10 @@ def update_status(snapshot: ComplianceCatalogSnapshot, id: str,
     if not can_transition(entry.status, status):
         raise _err(COMPLIANCE_ERR_INVALID_STATUS_TRANSITION,
                    f"Cannot transition from {entry.status} to {status}")
+    if policy is not None:
+        v = policy.evaluate_status_transition(id, status, reason or "")
+        if v.verdict == "deny":
+            raise _err(v.code or "COMPLIANCEPOL_ERR_DENIED", v.reason or "Denied by security policy")
     if (status == "compliant" and not entry.mitigation_summary.strip()
             and not (reason or "").strip()):
         raise _err(COMPLIANCE_ERR_BOUNDS_EXCEEDED,

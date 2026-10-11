@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::canonical::utcnow_iso;
 use crate::compliance_data_model::*;
+use crate::compliance_policy::{ComplianceSecurityPolicy, CompliancePolicyVerdict};
 
 pub const DEFAULT_COMPLIANCE_MAP_PATH: &str = "docs/compliance_map.json";
 pub const MAX_COMPLIANCE_STORE_SIZE: u64 = 1024 * 1024; // 1 MiB
@@ -32,9 +33,10 @@ pub struct ComplianceAssessmentReport {
     pub evaluated_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ComplianceService {
     pub snapshot: ComplianceCatalogSnapshot,
+    pub policy: Option<ComplianceSecurityPolicy>,
 }
 
 impl Default for ComplianceService {
@@ -47,13 +49,32 @@ impl ComplianceService {
     pub fn new() -> Self {
         Self {
             snapshot: ComplianceCatalogSnapshot::new("1.0.0"),
+            policy: None,
         }
     }
 
     pub fn with_canonical_baseline() -> Self {
         Self {
             snapshot: ComplianceCatalogSnapshot::canonical_baseline(),
+            policy: None,
         }
+    }
+
+    pub fn with_policy(mut self, policy: ComplianceSecurityPolicy) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
+    pub fn set_policy(&mut self, policy: ComplianceSecurityPolicy) {
+        self.policy = Some(policy);
+    }
+
+    pub fn policy(&self) -> Option<&ComplianceSecurityPolicy> {
+        self.policy.as_ref()
+    }
+
+    pub fn policy_mut(&mut self) -> Option<&mut ComplianceSecurityPolicy> {
+        self.policy.as_mut()
     }
 
     pub fn validate_path(path: &Path) -> Result<PathBuf, String> {
@@ -106,7 +127,7 @@ impl ComplianceService {
         let snapshot: ComplianceCatalogSnapshot = serde_json::from_str(&content)
             .map_err(|e| format!("{}: Failed deserializing JSON: {}", COMPLIANCESVC_ERR_PARSE, e))?;
 
-        Ok(Self { snapshot })
+        Ok(Self { snapshot, policy: None })
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
@@ -153,6 +174,20 @@ impl ComplianceService {
     }
 
     pub fn register_mapping(&mut self, entry: ComplianceMappingEntry) -> Result<(), String> {
+        if let Some(ref pol) = self.policy {
+            match pol.evaluate_registration(&entry) {
+                CompliancePolicyVerdict::Deny { reason, code } => {
+                    return Err(format!("{}: {}", code, reason));
+                }
+                _ => {}
+            }
+            match pol.evaluate_capacity(self.snapshot.mappings.len()) {
+                CompliancePolicyVerdict::Deny { reason, code } => {
+                    return Err(format!("{}: {}", code, reason));
+                }
+                _ => {}
+            }
+        }
         self.snapshot.add_mapping(entry)
     }
 
@@ -163,7 +198,25 @@ impl ComplianceService {
     pub fn update_status(&mut self, id: &str, status: ComplianceStatus, reason: &str) -> Result<(), String> {
         let entry = self.snapshot.get_mapping_mut(id)
             .ok_or_else(|| format!("{}: Mapping ID '{}' not found", COMPLIANCESVC_ERR_NOT_FOUND, id))?;
+        if let Some(ref pol) = self.policy {
+            match pol.evaluate_status_transition(entry, status, reason) {
+                CompliancePolicyVerdict::Deny { reason: r, code } => {
+                    return Err(format!("{}: {}", code, r));
+                }
+                _ => {}
+            }
+        }
         entry.transition_to(status, reason)
+    }
+
+    pub fn assess_framework_with_policy(&self, framework: Option<ComplianceFramework>) -> (ComplianceAssessmentReport, CompliancePolicyVerdict) {
+        let report = self.assess_framework(framework);
+        let verdict = if let Some(ref pol) = self.policy {
+            pol.evaluate_assessment(&report)
+        } else {
+            CompliancePolicyVerdict::Permit
+        };
+        (report, verdict)
     }
 
     pub fn assess_framework(&self, framework: Option<ComplianceFramework>) -> ComplianceAssessmentReport {

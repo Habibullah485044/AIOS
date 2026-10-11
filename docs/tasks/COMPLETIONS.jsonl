@@ -2925,3 +2925,4 @@
 {"seq":2925,"ts":"2026-10-11T08:08:23Z","event":"completed","task_id":2925,"note":"Scaffold security policy types and skeletons for compliance mapping","evidence":["docs/tasks/evidence/T-02925-security-policy-scaffold.md"]}
 {"seq":2926,"ts":"2026-10-11T08:13:54Z","event":"completed","task_id":2926,"note":"Implement compliance security policy across Rust and Python","evidence":["docs/tasks/evidence/T-02926-security-policy-implementation.md"]}
 {"seq":2927,"ts":"2026-10-11T08:18:42Z","event":"completed","task_id":2927,"note":"Author unit tests for compliance mapping security policy in Rust and Python","evidence":["docs/tasks/evidence/T-02927-security-policy-unit-test.md"]}
+{"seq":2928,"ts":"2026-10-11T08:28:35Z","event":"completed","task_id":2928,"note":"Integrate compliance security policy into service layers and persistence","evidence":["docs/tasks/evidence/T-02928-security-policy-integration.md"]}

@@ -973,3 +973,15 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
 - Evidence: docs/tasks/evidence/T-02922-verify.md.
 
+## T-02932 - Compliance Mapping / security policy: Verification & Evidence (2026-10-11)
+- Milestone closeout for Compliance Mapping security policy subsystem (T-02923..T-02932).
+- Verification battery:
+  - Python security policy suite (test_compliance_policy_unit.py, test_compliance_policy_integration.py): 13/13 tests PASSED.
+  - Rust security policy suite (test_compliance_policy_unit.rs, test_compliance_policy_integration.rs): 13/13 tests PASSED.
+  - Proof of Restraint conformance battery (test_por_*.py): 80/80 tests PASSED.
+  - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
+  - Full Python compliance test battery: 117 tests PASSED.
+  - Rust core compliance test battery: 35 tests PASSED.
+- Evidence: docs/tasks/evidence/T-02932-verify.md, docs/tasks/evidence/T-02932-security-policy-verification-evidenc.md.
+
+

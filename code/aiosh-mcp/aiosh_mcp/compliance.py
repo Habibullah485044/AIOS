@@ -24,8 +24,8 @@ from .audit_client import utcnow_iso
 # --- Tool surface (spec §2) -------------------------------------------------
 
 TOOL_NAME = "aios.compliance"
-ACTIONS = ("list", "show", "register", "status", "assess", "check-pep", "init", "stats")
-READ_ACTIONS = ("list", "show", "assess", "check-pep", "stats")
+ACTIONS = ("list", "show", "register", "status", "assess", "check-pep", "init", "stats", "doc-list", "doc-get", "doc-search")
+READ_ACTIONS = ("list", "show", "assess", "check-pep", "stats", "doc-list", "doc-get", "doc-search")
 WRITE_ACTIONS = ("register", "status", "init")
 
 # --- Constants (parity with compliance_data_model.rs) -----------------------
@@ -626,6 +626,9 @@ def execute(
         snap = _load_or_baseline(path)
         report = generate_compliance_observability_report(snap, policy=None, ring=None)
         return {"ok": True, "action": "stats", "report": asdict(report)}
+
+    if action in ("doc-list", "doc-get", "doc-search"):
+        raise NotImplementedError(f"compliance action '{action}' scaffolded for T-02945")
 
     # action == "init"
     snap = init_store(path)

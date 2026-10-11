@@ -2965,3 +2965,4 @@
 {"seq":2965,"ts":"2026-10-11T15:08:35Z","event":"completed","task_id":2965,"note":"Scaffold Incident Response Runbooks data model across Rust and Python","evidence":["docs/tasks/evidence/T-02965-scaffold.md"]}
 {"seq":2966,"ts":"2026-10-11T15:15:22Z","event":"completed","task_id":2966,"note":"Implement Incident Response Runbooks data model methods and canonical serialization","evidence":["docs/tasks/evidence/T-02966-implementation.md"]}
 {"seq":2967,"ts":"2026-10-11T15:19:30Z","event":"completed","task_id":2967,"note":"Add comprehensive unit tests for Incident Response Runbooks data model in Rust and Python","evidence":["docs/tasks/evidence/T-02967-unit-test.md"]}
+{"seq":2968,"ts":"2026-10-11T15:21:49Z","event":"completed","task_id":2968,"note":"Add cross-substrate integration tests for Incident Response Runbooks data model","evidence":["docs/tasks/evidence/T-02968-integration.md"]}

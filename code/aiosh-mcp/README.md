@@ -648,7 +648,48 @@ PYTHONPATH=code/aiosh-mcp AIOSH_COMPLIANCE_MAP_PATH=/tmp/compliance_map.json \
 #  "gap_control_ids":[],...},"code":0}
 ```
 
-Subcommands: `list|show|register|status|assess|check-pep|init`
+#### 5. Observability & Metrics (`stats`) — read-only telemetry (no grant needed)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_compliance",
+    "arguments": { "action": "stats" }
+  }
+}
+```
+
+Response payload (`content[0].text`, pretty-printed):
+
+```json
+{
+  "ok": true,
+  "action": "stats",
+  "report": {
+    "generated_at_utc": "2026-10-11T09:30:00+00:00",
+    "total_mappings": 4,
+    "mappings_by_framework": {
+      "nist_sp_800_53_rev5": 2,
+      "soc2_type2": 1,
+      "cis_controls_v8": 1
+    },
+    "mappings_by_status": { "compliant": 4 },
+    "mappings_by_target_type": { "pep_gate": 3, "audit_ring": 1 },
+    "compliance_percentage": 100.0,
+    "gap_control_count": 0,
+    "policy_mode": "unconfigured",
+    "capacity_utilization_percent": 0,
+    "is_healthy": true,
+    "recent_audit_events_count": 0
+  },
+  "audit_id": 5
+}
+```
+
+Subcommands: `list|show|register|status|assess|check-pep|init|stats`
 (`--framework F`, `--status S`, `--json`, `--path P`; `register`
 additionally `--id --control --target-type --target-ref --mitigation`).
 

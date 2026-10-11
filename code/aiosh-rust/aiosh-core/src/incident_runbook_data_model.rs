@@ -13,6 +13,7 @@ pub const MAX_RUNBOOK_DESC_LEN: usize = 2048;
 pub const MAX_RUNBOOK_STEPS_COUNT: usize = 32;
 pub const MAX_RUNBOOK_TAGS_COUNT: usize = 16;
 pub const MAX_RUNBOOK_CATALOG_CAPACITY: usize = 256;
+pub const MAX_RUNBOOK_STEP_TIMEOUT_SECONDS: u64 = 3600;
 
 pub const RUNBOOK_ERR_INVALID_ID: &str = "RUNBOOK_ERR_INVALID_ID";
 pub const RUNBOOK_ERR_INVALID_TITLE: &str = "RUNBOOK_ERR_INVALID_TITLE";
@@ -20,6 +21,7 @@ pub const RUNBOOK_ERR_BOUNDS_EXCEEDED: &str = "RUNBOOK_ERR_BOUNDS_EXCEEDED";
 pub const RUNBOOK_ERR_CONTROL_CHARS: &str = "RUNBOOK_ERR_CONTROL_CHARS";
 pub const RUNBOOK_ERR_DUPLICATE_ID: &str = "RUNBOOK_ERR_DUPLICATE_ID";
 pub const RUNBOOK_ERR_EMPTY_STEPS: &str = "RUNBOOK_ERR_EMPTY_STEPS";
+pub const RUNBOOK_ERR_INVALID_TEMPLATE: &str = "RUNBOOK_ERR_INVALID_TEMPLATE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -206,6 +208,11 @@ impl RunbookStep {
         validate_identifier(id, "Step ID")?;
         validate_title(title, "Step title")?;
         validate_text_length(action_template, MAX_RUNBOOK_DESC_LEN, "Action template")?;
+        validate_action_template(action_template)?;
+
+        if timeout_seconds > MAX_RUNBOOK_STEP_TIMEOUT_SECONDS {
+            return Err(format!("{}: Step timeout {}s exceeds maximum allowed {}s", RUNBOOK_ERR_BOUNDS_EXCEEDED, timeout_seconds, MAX_RUNBOOK_STEP_TIMEOUT_SECONDS));
+        }
 
         Ok(Self {
             id: id.to_string(),
@@ -217,6 +224,12 @@ impl RunbookStep {
             requires_confirmation,
             timeout_seconds: if timeout_seconds == 0 { 30 } else { timeout_seconds },
         })
+    }
+
+    pub fn is_high_risk(&self) -> bool {
+        self.phase == RunbookPhase::Eradication
+            || self.target == RunbookTargetSubstrate::Storage
+            || self.requires_confirmation
     }
 }
 
@@ -296,6 +309,10 @@ impl RunbookSpec {
 
     pub fn manual_steps(&self) -> Vec<&RunbookStep> {
         self.steps.iter().filter(|s| !s.automated || s.requires_confirmation).collect()
+    }
+
+    pub fn high_risk_steps(&self) -> Vec<&RunbookStep> {
+        self.steps.iter().filter(|s| s.is_high_risk()).collect()
     }
 
     pub fn total_timeout_seconds(&self) -> u64 {
@@ -524,3 +541,32 @@ pub fn validate_text_length(text: &str, max_len: usize, field_name: &str) -> Res
     }
     Ok(())
 }
+
+pub fn validate_action_template(template: &str) -> Result<(), String> {
+    let mut chars = template.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '{' {
+            let mut param = String::new();
+            let mut closed = false;
+            for inner in chars.by_ref() {
+                if inner == '}' {
+                    closed = true;
+                    break;
+                }
+                param.push(inner);
+            }
+            if !closed {
+                return Err(format!("{}: Unclosed parameter placeholder in action template", RUNBOOK_ERR_INVALID_TEMPLATE));
+            }
+            let trimmed = param.trim();
+            if trimmed.is_empty() {
+                return Err(format!("{}: Empty parameter placeholder in action template", RUNBOOK_ERR_INVALID_TEMPLATE));
+            }
+            if !trimmed.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+                return Err(format!("{}: Invalid parameter placeholder '{}' (allowed: alphanumeric, '_')", RUNBOOK_ERR_INVALID_TEMPLATE, trimmed));
+            }
+        }
+    }
+    Ok(())
+}
+

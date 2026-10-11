@@ -18,6 +18,7 @@ MAX_RUNBOOK_DESC_LEN = 2048
 MAX_RUNBOOK_STEPS_COUNT = 32
 MAX_RUNBOOK_TAGS_COUNT = 16
 MAX_RUNBOOK_CATALOG_CAPACITY = 256
+MAX_RUNBOOK_STEP_TIMEOUT_SECONDS = 3600
 
 RUNBOOK_ERR_INVALID_ID = "RUNBOOK_ERR_INVALID_ID"
 RUNBOOK_ERR_INVALID_TITLE = "RUNBOOK_ERR_INVALID_TITLE"
@@ -25,6 +26,7 @@ RUNBOOK_ERR_BOUNDS_EXCEEDED = "RUNBOOK_ERR_BOUNDS_EXCEEDED"
 RUNBOOK_ERR_CONTROL_CHARS = "RUNBOOK_ERR_CONTROL_CHARS"
 RUNBOOK_ERR_DUPLICATE_ID = "RUNBOOK_ERR_DUPLICATE_ID"
 RUNBOOK_ERR_EMPTY_STEPS = "RUNBOOK_ERR_EMPTY_STEPS"
+RUNBOOK_ERR_INVALID_TEMPLATE = "RUNBOOK_ERR_INVALID_TEMPLATE"
 
 
 class IncidentSeverity(str, Enum):
@@ -166,6 +168,24 @@ def validate_text_length(val: str, max_len: usize if 'usize' in globals() else i
         raise ValueError(f"{RUNBOOK_ERR_CONTROL_CHARS}: {field_name} contains control characters")
 
 
+def validate_action_template(template: str) -> None:
+    if "{" in template or "}" in template:
+        idx = 0
+        while idx < len(template):
+            if template[idx] == "{":
+                end = template.find("}", idx + 1)
+                if end == -1:
+                    raise ValueError(f"{RUNBOOK_ERR_INVALID_TEMPLATE}: Unclosed parameter placeholder in action template")
+                param = template[idx + 1:end].strip()
+                if not param:
+                    raise ValueError(f"{RUNBOOK_ERR_INVALID_TEMPLATE}: Empty parameter placeholder in action template")
+                if not re.match(r"^[a-zA-Z0-9_]+$", param):
+                    raise ValueError(f"{RUNBOOK_ERR_INVALID_TEMPLATE}: Invalid parameter placeholder '{param}'")
+                idx = end + 1
+            else:
+                idx += 1
+
+
 @dataclass
 class RunbookStep:
     id: str
@@ -181,12 +201,22 @@ class RunbookStep:
         validate_identifier(self.id, "Step ID")
         validate_title(self.title, "Step title")
         validate_text_length(self.action_template, MAX_RUNBOOK_DESC_LEN, "Action template")
+        validate_action_template(self.action_template)
         if isinstance(self.phase, str):
             self.phase = RunbookPhase.parse_phase(self.phase)
         if isinstance(self.target, str):
             self.target = RunbookTargetSubstrate.parse_target(self.target)
         if self.timeout_seconds <= 0:
             self.timeout_seconds = 30
+        if self.timeout_seconds > MAX_RUNBOOK_STEP_TIMEOUT_SECONDS:
+            raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Step timeout {self.timeout_seconds}s exceeds maximum {MAX_RUNBOOK_STEP_TIMEOUT_SECONDS}s")
+
+    def is_high_risk(self) -> bool:
+        return (
+            self.phase == RunbookPhase.ERADICATION
+            or self.target == RunbookTargetSubstrate.STORAGE
+            or self.requires_confirmation
+        )
 
 
 @dataclass
@@ -241,6 +271,9 @@ class RunbookSpec:
 
     def manual_steps(self) -> list[RunbookStep]:
         return [s for s in self.steps if not s.automated or s.requires_confirmation]
+
+    def high_risk_steps(self) -> list[RunbookStep]:
+        return [s for s in self.steps if s.is_high_risk()]
 
     def total_timeout_seconds(self) -> int:
         return sum(s.timeout_seconds for s in self.steps)

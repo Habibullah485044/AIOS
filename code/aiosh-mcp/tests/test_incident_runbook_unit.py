@@ -17,12 +17,15 @@ from aiosh_mcp.incident_runbook_data_model import (
     validate_identifier,
     validate_title,
     validate_text_length,
+    validate_action_template,
     RUNBOOK_ERR_INVALID_ID,
     RUNBOOK_ERR_INVALID_TITLE,
     RUNBOOK_ERR_BOUNDS_EXCEEDED,
     RUNBOOK_ERR_CONTROL_CHARS,
     RUNBOOK_ERR_DUPLICATE_ID,
     RUNBOOK_ERR_EMPTY_STEPS,
+    RUNBOOK_ERR_INVALID_TEMPLATE,
+    MAX_RUNBOOK_STEP_TIMEOUT_SECONDS,
 )
 
 
@@ -284,3 +287,82 @@ def test_json_roundtrip_serialization():
     assert len(baseline.runbooks) == len(deserialized.runbooks)
     assert baseline.runbooks[0].id == deserialized.runbooks[0].id
     assert len(baseline.runbooks[0].steps) == len(deserialized.runbooks[0].steps)
+
+
+def test_action_template_hardening():
+    validate_action_template("aiosh run kill {pid}")
+    validate_action_template("aiosh run {cmd_01} --user {target_user}")
+
+    # Unclosed placeholder
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_TEMPLATE):
+        validate_action_template("aiosh run {pid")
+
+    # Empty placeholder
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_TEMPLATE):
+        validate_action_template("aiosh run {}")
+
+    # Metacharacters or injection in placeholder
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_TEMPLATE):
+        validate_action_template("aiosh run {$(rm -rf)}")
+
+
+def test_timeout_bounds_hardening():
+    ok_step = RunbookStep(
+        id="S-OK",
+        title="Valid timeout",
+        phase=RunbookPhase.CONTAINMENT,
+        target=RunbookTargetSubstrate.PROCESS,
+        action_template="echo test",
+        timeout_seconds=3600,
+    )
+    assert ok_step.timeout_seconds == 3600
+
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_BOUNDS_EXCEEDED):
+        RunbookStep(
+            id="S-BAD",
+            title="Too long timeout",
+            phase=RunbookPhase.CONTAINMENT,
+            target=RunbookTargetSubstrate.PROCESS,
+            action_template="echo test",
+            timeout_seconds=3601,
+        )
+
+
+def test_high_risk_classification():
+    s_erad = RunbookStep(
+        id="S-ERAD",
+        title="Eradicate rootkit",
+        phase=RunbookPhase.ERADICATION,
+        target=RunbookTargetSubstrate.PROCESS,
+        action_template="rm evil",
+    )
+    assert s_erad.is_high_risk() is True
+
+    s_storage = RunbookStep(
+        id="S-STOR",
+        title="Wipe disk slice",
+        phase=RunbookPhase.CONTAINMENT,
+        target=RunbookTargetSubstrate.STORAGE,
+        action_template="unmount /data",
+    )
+    assert s_storage.is_high_risk() is True
+
+    s_normal = RunbookStep(
+        id="S-NORM",
+        title="Inspect logs",
+        phase=RunbookPhase.DETECTION,
+        target=RunbookTargetSubstrate.AUDIT_RING,
+        action_template="cat logs",
+    )
+    assert s_normal.is_high_risk() is False
+
+    rb = RunbookSpec(
+        id="RB-RISK",
+        title="High Risk Spec",
+        category=IncidentCategory.INTEGRITY_VIOLATION,
+        severity=IncidentSeverity.CRITICAL,
+        description="Desc",
+        steps=[s_erad, s_storage, s_normal],
+    )
+    assert len(rb.high_risk_steps()) == 2
+

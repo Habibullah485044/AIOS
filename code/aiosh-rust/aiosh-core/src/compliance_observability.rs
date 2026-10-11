@@ -19,10 +19,10 @@ pub const MAX_TELEMETRY_TEXT_LEN: usize = 256;
 pub const MAX_OUTCOME_DISTRIBUTION_ENTRIES: usize = 128;
 pub const MAX_AUDIT_LOG_TAIL_ITEMS: i64 = 1000;
 
-/// Sanitizes telemetry text by removing control characters, trimming, and bounding length.
+/// Sanitizes telemetry text by removing control characters, zero-width chars, trimming, and bounding length.
 pub fn sanitize_telemetry_text(s: &str) -> String {
     s.chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && *c != '\u{200b}' && *c != '\u{200c}' && *c != '\u{200d}' && *c != '\u{feff}')
         .take(MAX_TELEMETRY_TEXT_LEN)
         .collect::<String>()
         .trim()
@@ -48,6 +48,26 @@ pub struct ComplianceObservabilityReport {
 impl ComplianceObservabilityReport {
     /// Generates a point-in-time observability report from ComplianceService and optional AuditRing.
     pub fn generate(service: &ComplianceService, ring: Option<&AuditRing>) -> Result<Self, String> {
+        Self::generate_with_timestamp(service, ring, None)
+    }
+
+    /// Generates a report with an optional custom timestamp (RFC3339).
+    pub fn generate_with_timestamp(
+        service: &ComplianceService,
+        ring: Option<&AuditRing>,
+        timestamp: Option<&str>,
+    ) -> Result<Self, String> {
+        let generated_at_utc = match timestamp {
+            Some(ts) => {
+                let sanitized = sanitize_telemetry_text(ts);
+                if chrono::DateTime::parse_from_rfc3339(&sanitized).is_err() {
+                    return Err(format!("{}: provided timestamp is not valid RFC3339: {}", COMPOBS_ERR_VALIDATION, sanitized));
+                }
+                sanitized
+            }
+            None => Utc::now().to_rfc3339(),
+        };
+
         let mappings = &service.snapshot.mappings;
         let total = mappings.len();
 
@@ -97,10 +117,12 @@ impl ComplianceObservabilityReport {
             ((total.min(MAX_COMPLIANCE_ENTRIES_CAPACITY) * 100) / MAX_COMPLIANCE_ENTRIES_CAPACITY) as u8
         };
 
-        let is_healthy = total <= MAX_COMPLIANCE_ENTRIES_CAPACITY && !assessment.compliance_percentage.is_nan();
+        let is_healthy = total <= MAX_COMPLIANCE_ENTRIES_CAPACITY
+            && assessment.compliance_percentage.is_finite()
+            && !assessment.compliance_percentage.is_nan();
 
         let report = Self {
-            generated_at_utc: Utc::now().to_rfc3339(),
+            generated_at_utc,
             total_mappings: total,
             mappings_by_framework,
             mappings_by_status,
@@ -137,20 +159,28 @@ impl ComplianceObservabilityReport {
             return Err(format!("{}: mappings_by_target_type exceeds maximum entries", COMPOBS_ERR_VALIDATION));
         }
 
-        if self.compliance_percentage < 0.0 || self.compliance_percentage > 100.0 || self.compliance_percentage.is_nan() {
-            return Err(format!("{}: compliance_percentage must be between 0.0 and 100.0 and not NaN", COMPOBS_ERR_VALIDATION));
+        if !self.compliance_percentage.is_finite()
+            || self.compliance_percentage < 0.0
+            || self.compliance_percentage > 100.0
+            || self.compliance_percentage.is_nan()
+        {
+            return Err(format!("{}: compliance_percentage must be a finite float between 0.0 and 100.0", COMPOBS_ERR_VALIDATION));
         }
 
         if self.capacity_utilization_percent > 100 {
             return Err(format!("{}: capacity_utilization_percent cannot exceed 100", COMPOBS_ERR_VALIDATION));
         }
 
+        if self.recent_audit_events_count > (MAX_AUDIT_LOG_TAIL_ITEMS as usize) {
+            return Err(format!("{}: recent_audit_events_count exceeds max audit log tail items", COMPOBS_ERR_VALIDATION));
+        }
+
         for k in self.mappings_by_framework.keys().chain(self.mappings_by_status.keys()).chain(self.mappings_by_target_type.keys()) {
             if k.len() > MAX_TELEMETRY_TEXT_LEN {
                 return Err(format!("{}: distribution key exceeds max length", COMPOBS_ERR_VALIDATION));
             }
-            if k.chars().any(|c| c.is_control()) {
-                return Err(format!("{}: distribution key contains control characters", COMPOBS_ERR_VALIDATION));
+            if k.chars().any(|c| c.is_control() || c == '\u{200b}' || c == '\u{feff}') {
+                return Err(format!("{}: distribution key contains forbidden/control characters", COMPOBS_ERR_VALIDATION));
             }
         }
 

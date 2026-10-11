@@ -2951,3 +2951,4 @@
 {"seq":2951,"ts":"2026-10-11T10:28:15Z","event":"completed","task_id":2951,"note":"Documentation of Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02951-documentation.md"]}
 {"seq":2952,"ts":"2026-10-11T10:37:13Z","event":"completed","task_id":2952,"note":"Verification & evidence for Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02952-verify.md"]}
 {"seq":2953,"ts":"2026-10-11T10:41:38Z","event":"completed","task_id":2953,"note":"Research Compliance Mapping Recovery & Validation subsystem (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02953-research.md"]}
+{"seq":2954,"ts":"2026-10-11T10:44:04Z","event":"completed","task_id":2954,"note":"Specification of Compliance Mapping Recovery & Validation subsystem (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02954-spec.md"]}

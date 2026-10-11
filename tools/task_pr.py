@@ -197,12 +197,12 @@ def main() -> int:
     print(f"[+] merged PR #{pr['number']} ({merged.get('sha', '')[:7]})")
 
     git("checkout", DEFAULT_BRANCH)
-    try:
-        git("pull", "--ff-only", "origin", DEFAULT_BRANCH)
-    except Exception:
+    p = subprocess.run(["git", "pull", "--ff-only", "origin", DEFAULT_BRANCH],
+                       cwd=ROOT, capture_output=True, text=True)
+    if p.returncode != 0:
         time.sleep(1)
-        git("fetch", "origin", DEFAULT_BRANCH)
-        git("reset", "--hard", f"origin/{DEFAULT_BRANCH}")
+        git("fetch", "origin", DEFAULT_BRANCH, check=False)
+        git("reset", "--hard", f"origin/{DEFAULT_BRANCH}", check=False)
     if not args.keep_branch:
         git("branch", "-D", branch, check=False)
         subprocess.run(["git", "push", "origin", "--delete", branch],

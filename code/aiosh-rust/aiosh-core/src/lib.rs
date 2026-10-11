@@ -50,6 +50,7 @@ pub mod compliance_policy;
 pub mod compliance_service;
 pub mod compliance_observability;
 pub mod compliance_doc;
+pub mod compliance_recovery;
 pub mod dispatch;
 pub mod distro;
 pub mod distro_config;

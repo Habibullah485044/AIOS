@@ -1,6 +1,6 @@
 # Specification: Incident Response Runbooks Data Model (SPEC-INCIDENT-RUNBOOKS)
 
-- **Status**: SPECIFIED
+- **Status**: IMPLEMENTED & HARDENED
 - **Date**: 2026-10-11
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Incident Response Runbooks
 - **Binding**: NIST SP 800-61 Rev. 2, CISA Playbooks, ADR-0035 §I-1, ADR-0037 §D-1, PoR Invariant I-2
@@ -92,3 +92,46 @@ pub struct RunbookCatalogSnapshot {
 - `IR-INV3` (**Capacity & Size Bounds**): Maximum 32 steps per runbook, maximum 256 runbooks per catalog (`MAX_RUNBOOK_CATALOG_CAPACITY`), maximum 16 tags.
 - `IR-INV4` (**Step Completeness**): Every runbook must specify at least one valid step (`RUNBOOK_ERR_EMPTY_STEPS`).
 - `IR-INV5` (**Canonical Baseline**): Must provide a hardened baseline covering standard NIST SP 800-61 containment scenarios.
+
+---
+
+## 4. Hardening & Security Controls
+
+- **Action Template Sanitization (`validate_action_template`)**: Placeholders must match `\{([a-zA-Z0-9_]+)\}`. Unclosed braces, empty `{}` placeholders, and command injection characters are strictly rejected with `RUNBOOK_ERR_INVALID_TEMPLATE`.
+- **Bounded Step Timeout (`MAX_RUNBOOK_STEP_TIMEOUT_SECONDS`)**: Clamped at 3,600 seconds (1 hour). Exceeding values trigger `RUNBOOK_ERR_BOUNDS_EXCEEDED`.
+- **High-Risk Step Classification**: Steps marked as `RunbookPhase::Eradication`, targeting `RunbookTargetSubstrate::Storage`, or having `requires_confirmation: true` are categorized as high-risk, requiring operator confirmation and PEP auditing before execution.
+
+---
+
+## 5. API & Query Methods
+
+### 5.1 RunbookSpec
+- `steps_for_phase(phase)`: Filter steps within a specific incident phase.
+- `steps_for_target(target)`: Filter steps targeting a specific substrate.
+- `automated_steps()`: Retrieve unattended automated execution steps.
+- `manual_steps()`: Retrieve steps requiring human confirmation.
+- `high_risk_steps()`: Retrieve high-risk eradication or storage steps.
+- `total_timeout_seconds()`: Sum duration of all steps.
+
+### 5.2 RunbookCatalogSnapshot
+- `find_by_category(cat)`: Filter runbooks by incident category.
+- `find_by_severity(sev)`: Filter runbooks by severity level.
+- `filter_by_phase(phase)`: Retrieve runbooks containing steps in the given phase.
+- `filter_by_target(target)`: Retrieve runbooks with actions for the specified target substrate.
+- `filter_by_tag(tag)`: Case-insensitive search by tag.
+- `to_json()` / `from_json()`: Deterministic JSON serialization and deserialization.
+
+---
+
+## 6. Verification & Evidence Artifacts
+
+- Research: `docs/tasks/evidence/T-02963-research.md`
+- Specification: `docs/tasks/evidence/T-02964-specification.md`
+- Scaffold: `docs/tasks/evidence/T-02965-scaffold.md`
+- Implementation: `docs/tasks/evidence/T-02966-implementation.md`
+- Unit Test: `docs/tasks/evidence/T-02967-unit-test.md`
+- Integration: `docs/tasks/evidence/T-02968-integration.md`
+- Security Review: `docs/tasks/evidence/T-02969-security-review.md`
+- Hardening: `docs/tasks/evidence/T-02970-hardening.md`
+- Documentation: `docs/tasks/evidence/T-02971-documentation.md`
+

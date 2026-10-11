@@ -17,6 +17,7 @@ pub const COMPLYREC_ERR_PATH_TRAVERSAL: &str = "COMPLYREC_ERR_PATH_TRAVERSAL";
 pub const COMPLYREC_ERR_FILE_SIZE: &str = "COMPLYREC_ERR_FILE_SIZE";
 pub const COMPLYREC_ERR_VALIDATION: &str = "COMPLYREC_ERR_VALIDATION";
 pub const COMPLYREC_ERR_NO_BACKUP: &str = "COMPLYREC_ERR_NO_BACKUP";
+pub const MAX_QUARANTINE_FILES: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -133,8 +134,12 @@ impl ComplianceRecoveryService {
         PathBuf::from(p)
     }
 
-    /// Derives quarantine path `<path>.corrupt.<pid>.<nanos>`.
+    /// Derives quarantine path `<path>.corrupt.<pid>.<nanos>` and prunes oldest if exceeding MAX_QUARANTINE_FILES.
     pub fn quarantine_path_for(path: &Path) -> PathBuf {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("compliance_map.json");
+        Self::prune_old_quarantine_files(parent, fname);
+
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -145,7 +150,41 @@ impl ComplianceRecoveryService {
         PathBuf::from(p)
     }
 
-    /// Creates a `.bak` snapshot backup of the current compliance catalog.
+    /// Prunes older quarantine files exceeding MAX_QUARANTINE_FILES to prevent disk exhaustion (CWE-400).
+    pub fn prune_old_quarantine_files(parent: &Path, base_fname: &str) -> usize {
+        let pattern_prefix = format!("{}.corrupt.", base_fname);
+        let mut entries: Vec<PathBuf> = match fs::read_dir(parent) {
+            Ok(read_dir) => read_dir
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.starts_with(&pattern_prefix))
+                        .unwrap_or(false)
+                })
+                .collect(),
+            Err(_) => return 0,
+        };
+
+        if entries.len() <= MAX_QUARANTINE_FILES {
+            return 0;
+        }
+
+        // Sort by metadata modified time (oldest first)
+        entries.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok());
+
+        let to_remove = entries.len().saturating_sub(MAX_QUARANTINE_FILES);
+        let mut removed = 0;
+        for path in entries.iter().take(to_remove) {
+            if fs::remove_file(path).is_ok() {
+                removed += 1;
+            }
+        }
+        removed
+    }
+
+    /// Creates a `.bak` snapshot backup of the current compliance catalog with atomic write.
     pub fn create_backup(path: &Path) -> Result<PathBuf, String> {
         let valid_path = Self::validate_path(path)?;
         if !valid_path.exists() {
@@ -164,8 +203,23 @@ impl ComplianceRecoveryService {
 
         let content = fs::read(&valid_path)
             .map_err(|e| format!("{}: Failed reading source: {}", COMPLYREC_ERR_IO, e))?;
-        fs::write(&backup_path, content)
-            .map_err(|e| format!("{}: Failed writing backup: {}", COMPLYREC_ERR_IO, e))?;
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let pid = std::process::id();
+        let fname = backup_path.file_name().and_then(|n| n.to_str()).unwrap_or("backup");
+        let tmp_path = parent.join(format!(".{}.tmp.{}.{}", fname, pid, nanos));
+
+        if let Err(e) = fs::write(&tmp_path, content) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed writing backup tmp file: {}", COMPLYREC_ERR_IO, e));
+        }
+        if let Err(e) = fs::rename(&tmp_path, &backup_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed atomic rename to backup: {}", COMPLYREC_ERR_IO, e));
+        }
         Ok(backup_path)
     }
 
@@ -511,8 +565,24 @@ impl ComplianceRecoveryService {
 
         let content = fs::read(&backup_path)
             .map_err(|e| format!("{}: Failed reading backup file: {}", COMPLYREC_ERR_IO, e))?;
-        fs::write(&valid_path, content)
-            .map_err(|e| format!("{}: Failed writing restored catalog: {}", COMPLYREC_ERR_IO, e))?;
+
+        let parent = valid_path.parent().unwrap_or_else(|| Path::new("."));
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let pid = std::process::id();
+        let fname = valid_path.file_name().and_then(|n| n.to_str()).unwrap_or("store");
+        let tmp_path = parent.join(format!(".{}.tmp.{}.{}", fname, pid, nanos));
+
+        if let Err(e) = fs::write(&tmp_path, content) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed writing restored tmp file: {}", COMPLYREC_ERR_IO, e));
+        }
+        if let Err(e) = fs::rename(&tmp_path, &valid_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: Failed atomic rename to restored target: {}", COMPLYREC_ERR_IO, e));
+        }
 
         let restored_report = Self::verify_integrity(&valid_path);
 

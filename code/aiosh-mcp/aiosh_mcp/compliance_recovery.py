@@ -25,6 +25,7 @@ COMPLYREC_ERR_VALIDATION = "COMPLYREC_ERR_VALIDATION"
 COMPLYREC_ERR_NO_BACKUP = "COMPLYREC_ERR_NO_BACKUP"
 
 MAX_COMPLIANCE_STORE_SIZE = 1024 * 1024  # 1 MiB
+MAX_QUARANTINE_FILES = 10
 
 
 class ComplianceCatalogStatus(str, Enum):
@@ -112,9 +113,31 @@ class ComplianceRecoveryService:
 
     @classmethod
     def quarantine_path_for(cls, path: Path) -> Path:
+        parent = path.parent
+        cls.prune_old_quarantine_files(parent, path.name)
         nanos = int(time.time() * 1_000_000_000)
         pid = os.getpid()
         return path.with_name(f"{path.name}.corrupt.{pid}.{nanos}")
+
+    @classmethod
+    def prune_old_quarantine_files(cls, parent: Path, base_name: str) -> int:
+        prefix = f"{base_name}.corrupt."
+        try:
+            entries = [p for p in parent.iterdir() if p.name.startswith(prefix) and p.is_file()]
+        except OSError:
+            return 0
+        if len(entries) <= MAX_QUARANTINE_FILES:
+            return 0
+        entries.sort(key=lambda p: p.stat().st_mtime)
+        to_remove = len(entries) - MAX_QUARANTINE_FILES
+        removed = 0
+        for p in entries[:to_remove]:
+            try:
+                p.unlink()
+                removed += 1
+            except OSError:
+                pass
+        return removed
 
     @classmethod
     def create_backup(cls, path: Path | str) -> Path:
@@ -123,7 +146,16 @@ class ComplianceRecoveryService:
             raise ValueError(f"{COMPLYREC_ERR_IO}: Target file does not exist: {valid_path}")
         backup_path = cls.backup_path_for(valid_path)
         backup_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(valid_path, backup_path)
+        nanos = int(time.time() * 1_000_000_000)
+        pid = os.getpid()
+        tmp_path = backup_path.parent / f".{backup_path.name}.tmp.{pid}.{nanos}"
+        try:
+            shutil.copy2(valid_path, tmp_path)
+            tmp_path.replace(backup_path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
         return backup_path
 
     @classmethod
@@ -469,8 +501,16 @@ class ComplianceRecoveryService:
             q_path = cls.quarantine_path_for(valid_path)
             shutil.copy2(valid_path, q_path)
             quarantined = str(q_path)
-
-        shutil.copy2(backup_path, valid_path)
+        nanos = int(time.time() * 1_000_000_000)
+        pid = os.getpid()
+        tmp_path = valid_path.parent / f".{valid_path.name}.tmp.{pid}.{nanos}"
+        try:
+            shutil.copy2(backup_path, tmp_path)
+            tmp_path.replace(valid_path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
         restored_report = cls.verify_integrity(valid_path)
 
         return ComplianceRecoveryReport(

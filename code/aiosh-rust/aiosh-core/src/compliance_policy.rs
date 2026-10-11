@@ -53,6 +53,16 @@ pub enum CompliancePolicyVerdict {
     Deny { reason: String, code: String },
 }
 
+impl CompliancePolicyVerdict {
+    pub fn is_permitted(&self) -> bool {
+        matches!(self, Self::Permit | Self::PermitWithWarning { .. })
+    }
+
+    pub fn is_denied(&self) -> bool {
+        matches!(self, Self::Deny { .. })
+    }
+}
+
 /// Declarative security policy for Compliance Mapping.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComplianceSecurityPolicy {
@@ -82,6 +92,20 @@ impl Default for ComplianceSecurityPolicy {
 }
 
 impl ComplianceSecurityPolicy {
+    pub fn permissive() -> Self {
+        Self {
+            mode: CompliancePolicyMode::Permissive,
+            ..Self::default()
+        }
+    }
+
+    pub fn disabled() -> Self {
+        Self {
+            mode: CompliancePolicyMode::Disabled,
+            ..Self::default()
+        }
+    }
+
     /// Validates structural invariants and boundaries of the policy itself.
     pub fn validate(&self) -> Result<(), String> {
         if self.version.trim().is_empty() || !self.version.starts_with("1.") {
@@ -202,6 +226,30 @@ impl ComplianceSecurityPolicy {
         CompliancePolicyVerdict::Permit
     }
 
+    /// Evaluates capacity constraints.
+    pub fn evaluate_capacity(&self, current_count: usize) -> CompliancePolicyVerdict {
+        if self.mode == CompliancePolicyMode::Disabled {
+            return CompliancePolicyVerdict::Permit;
+        }
+
+        if current_count >= self.max_catalog_mappings {
+            let reason = format!(
+                "Compliance catalog entry count {} reaches policy maximum {}",
+                current_count, self.max_catalog_mappings
+            );
+            return match self.mode {
+                CompliancePolicyMode::Enforcing => CompliancePolicyVerdict::Deny {
+                    reason,
+                    code: COMPLIANCEPOL_ERR_CAPACITY_EXCEEDED.into(),
+                },
+                CompliancePolicyMode::Permissive => CompliancePolicyVerdict::PermitWithWarning { warning: reason },
+                CompliancePolicyMode::Disabled => CompliancePolicyVerdict::Permit,
+            };
+        }
+
+        CompliancePolicyVerdict::Permit
+    }
+
     /// Evaluates override capability against policy.
     pub fn evaluate_override(&self, _caller: &str) -> CompliancePolicyVerdict {
         if self.mode == CompliancePolicyMode::Disabled {
@@ -224,8 +272,9 @@ impl ComplianceSecurityPolicy {
     }
 
     /// Loads policy from JSON file with file size and symlink protections.
-    pub fn load_from_file(path: &Path) -> Result<Self, String> {
-        let meta = fs::symlink_metadata(path)
+    pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Self, String> {
+        let p = path.as_ref();
+        let meta = fs::symlink_metadata(p)
             .map_err(|e| format!("{}: cannot stat policy path: {}", COMPLIANCEPOL_ERR_IO, e))?;
 
         if meta.file_type().is_symlink() {
@@ -239,7 +288,7 @@ impl ComplianceSecurityPolicy {
             ));
         }
 
-        let content = fs::read_to_string(path)
+        let content = fs::read_to_string(p)
             .map_err(|e| format!("{}: read failed: {}", COMPLIANCEPOL_ERR_IO, e))?;
 
         let policy: Self = serde_json::from_str(&content)
@@ -250,8 +299,16 @@ impl ComplianceSecurityPolicy {
     }
 
     /// Saves policy atomically to file.
-    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
+    pub fn save_to_path<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
         self.validate()?;
+        let p = path.as_ref();
+        if let Some(parent) = p.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("{}: cannot create directory {:?}: {}", COMPLIANCEPOL_ERR_IO, parent, e))?;
+            }
+        }
+
         let serialized = serde_json::to_string_pretty(self)
             .map_err(|e| format!("{}: serialize failed: {}", COMPLIANCEPOL_ERR_PARSE, e))?;
 
@@ -262,13 +319,116 @@ impl ComplianceSecurityPolicy {
             ));
         }
 
-        let tmp = path.with_extension("tmp");
-        fs::write(&tmp, serialized)
-            .map_err(|e| format!("{}: write failed: {}", COMPLIANCEPOL_ERR_IO, e))?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_path = p.with_extension(format!("tmp.{}.{}", std::process::id(), nanos));
 
-        fs::rename(&tmp, path)
-            .map_err(|e| format!("{}: atomic rename failed: {}", COMPLIANCEPOL_ERR_IO, e))?;
+        if let Err(e) = fs::write(&temp_path, &serialized) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("{}: write failed: {}", COMPLIANCEPOL_ERR_IO, e));
+        }
+
+        fs::rename(&temp_path, p).map_err(|e| {
+            let _ = fs::remove_file(&temp_path);
+            format!("{}: atomic rename failed: {}", COMPLIANCEPOL_ERR_IO, e)
+        })?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compliance_data_model::SubstrateTargetType;
+
+    fn sample_entry(status: ComplianceStatus, mitigation: &str, threats: Vec<&str>) -> ComplianceMappingEntry {
+        ComplianceMappingEntry {
+            id: "map-test-01".into(),
+            control_id: "AC-1".into(),
+            framework: ComplianceFramework::NistSp80053Rev5,
+            target_type: SubstrateTargetType::PepGate,
+            target_ref: "pep:gate:test".into(),
+            threat_ids: threats.into_iter().map(String::from).collect(),
+            status,
+            mitigation_summary: mitigation.into(),
+            tags: vec!["test".into()],
+            created_at: "2026-10-11T00:00:00Z".into(),
+            updated_at: "2026-10-11T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn test_policy_validation_invariants() {
+        let mut policy = ComplianceSecurityPolicy::default();
+        assert!(policy.validate().is_ok());
+
+        policy.version = "2.0.0".into();
+        assert!(policy.validate().is_err());
+
+        policy.version = "1.0.0".into();
+        policy.max_catalog_mappings = 0;
+        assert!(policy.validate().is_err());
+
+        policy.max_catalog_mappings = 5000;
+        assert!(policy.validate().is_err());
+
+        policy.max_catalog_mappings = 1024;
+        policy.min_compliant_percentage = 105.0;
+        assert!(policy.validate().is_err());
+    }
+
+    #[test]
+    fn test_registration_evaluation() {
+        let policy = ComplianceSecurityPolicy::default();
+
+        // Happy path
+        let ok_entry = sample_entry(ComplianceStatus::Compliant, "Mitigated with PEP gate", vec!["THREAT-1"]);
+        assert_eq!(policy.evaluate_registration(&ok_entry), CompliancePolicyVerdict::Permit);
+
+        // Missing threat
+        let no_threat = sample_entry(ComplianceStatus::NonCompliant, "", vec![]);
+        assert!(matches!(
+            policy.evaluate_registration(&no_threat),
+            CompliancePolicyVerdict::Deny { ref code, .. } if code == COMPLIANCEPOL_ERR_THREAT_REQUIRED
+        ));
+
+        // Compliant without mitigation
+        let no_mitigation = sample_entry(ComplianceStatus::Compliant, "", vec!["THREAT-1"]);
+        assert!(matches!(
+            policy.evaluate_registration(&no_mitigation),
+            CompliancePolicyVerdict::Deny { ref code, .. } if code == COMPLIANCEPOL_ERR_MITIGATION_REQUIRED
+        ));
+    }
+
+    #[test]
+    fn test_framework_whitelist() {
+        let mut policy = ComplianceSecurityPolicy::default();
+        policy.permitted_frameworks = vec![ComplianceFramework::Soc2Type2];
+
+        let nist_entry = sample_entry(ComplianceStatus::NonCompliant, "", vec!["THREAT-1"]);
+        assert!(matches!(
+            policy.evaluate_registration(&nist_entry),
+            CompliancePolicyVerdict::Deny { ref code, .. } if code == COMPLIANCEPOL_ERR_FRAMEWORK_PROHIBITED
+        ));
+    }
+
+    #[test]
+    fn test_permissive_mode() {
+        let policy = ComplianceSecurityPolicy::permissive();
+        let no_threat = sample_entry(ComplianceStatus::NonCompliant, "", vec![]);
+        assert!(matches!(
+            policy.evaluate_registration(&no_threat),
+            CompliancePolicyVerdict::PermitWithWarning { .. }
+        ));
+    }
+
+    #[test]
+    fn test_disabled_mode() {
+        let policy = ComplianceSecurityPolicy::disabled();
+        let no_threat = sample_entry(ComplianceStatus::NonCompliant, "", vec![]);
+        assert_eq!(policy.evaluate_registration(&no_threat), CompliancePolicyVerdict::Permit);
     }
 }

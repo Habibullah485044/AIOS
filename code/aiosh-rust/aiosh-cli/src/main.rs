@@ -20057,8 +20057,137 @@ fn cmd_compliance(args: &[String]) -> i32 {
             }
             0
         }
+        Some("verify") | Some("recovery-verify") => {
+            let report = aiosh_core::compliance_recovery::ComplianceRecoveryService::verify_integrity(path);
+            let code = match report.status {
+                aiosh_core::compliance_recovery::ComplianceCatalogStatus::Healthy => 0,
+                aiosh_core::compliance_recovery::ComplianceCatalogStatus::Degraded => 0,
+                _ => 1,
+            };
+            classify_and_emit(
+                &mut ctx, "compliance", "verify", json!({
+                    "path": path_str,
+                    "status": format!("{:?}", report.status).to_lowercase(),
+                    "valid_mappings": report.valid_mappings,
+                    "corrupted_mappings": report.corrupted_mappings,
+                }),
+                if code == 0 { "success" } else { "failure" },
+                None, Some("Verified compliance catalog integrity"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": code, "report": report }));
+            } else {
+                println!("Compliance Catalog Status: {:?}", report.status);
+                println!("Valid entries: {}, Corrupted entries: {}", report.valid_mappings, report.corrupted_mappings);
+                if !report.issues.is_empty() {
+                    println!("Issues detected: {}", report.issues.len());
+                    for issue in &report.issues {
+                        println!(" - [{:?}] {}: {}", issue.severity, format!("{:?}", issue.issue_type), issue.details);
+                    }
+                }
+            }
+            code
+        }
+        Some("backup") | Some("recovery-backup") => {
+            match aiosh_core::compliance_recovery::ComplianceRecoveryService::create_backup(path) {
+                Ok(backup_path) => {
+                    classify_and_emit(
+                        &mut ctx, "compliance", "backup", json!({ "path": path_str, "backup_path": backup_path.display().to_string() }),
+                        "success", None, Some("Created compliance catalog backup"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "backup_path": backup_path.display().to_string() }));
+                    } else {
+                        println!("Backup created at: {}", backup_path.display());
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("Failed to create backup: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "compliance", "backup", json!({ "error": &msg }),
+                        "failure", None, Some("Backup creation failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "BACKUP_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("repair") | Some("recovery-repair") => {
+            match aiosh_core::compliance_recovery::ComplianceRecoveryService::repair_catalog(path) {
+                Ok(report) => {
+                    classify_and_emit(
+                        &mut ctx, "compliance", "repair", json!({
+                            "path": path_str,
+                            "success": report.success,
+                            "recovered": report.mappings_recovered,
+                            "dropped": report.mappings_dropped,
+                        }),
+                        if report.success { "success" } else { "failure" },
+                        None, Some("Repaired compliance catalog"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "report": report }));
+                    } else {
+                        println!("Repair completed. Recovered: {}, Dropped: {}", report.mappings_recovered, report.mappings_dropped);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("Failed to repair catalog: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "compliance", "repair", json!({ "error": &msg }),
+                        "failure", None, Some("Catalog repair failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "REPAIR_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("restore") | Some("recovery-restore") => {
+            match aiosh_core::compliance_recovery::ComplianceRecoveryService::restore_from_backup(path) {
+                Ok(report) => {
+                    classify_and_emit(
+                        &mut ctx, "compliance", "restore", json!({
+                            "path": path_str,
+                            "success": report.success,
+                            "recovered": report.mappings_recovered,
+                        }),
+                        if report.success { "success" } else { "failure" },
+                        None, Some("Restored compliance catalog from backup"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "report": report }));
+                    } else {
+                        println!("Restored catalog from backup with {} entries.", report.mappings_recovered);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("Failed to restore catalog from backup: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "compliance", "restore", json!({ "error": &msg }),
+                        "failure", None, Some("Catalog restoration failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "error": { "code": "RESTORE_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh compliance — Compliance Mapping & Control Frameworks\n\nUsage: aiosh compliance <list|show|register|status|assess|check-pep|init> [OPTIONS]\n\nStore selection (highest wins, T-02904-spec §3.2):\n  --path P > AIOSH_COMPLIANCE_MAP_PATH > config file (--config P or\n  AIOSH_COMPLIANCE_CONFIG, default docs/compliance_config.json) >\n  default store docs/compliance_map.json\n\nSubcommands:\n  list       [--framework F] [--status S] [--json] [--path P]\n  show       <ID> [--json] [--path P]\n  register   --id <ID> --control <C> --framework <F> --target-type <T> --target-ref <R> --mitigation <M> [--path P]\n  status     <ID> <STATUS> [--reason R] [--path P]\n  assess     [--framework F] [--json] [--path P]\n  check-pep  <GATES...> [--json] [--path P]\n  init       [--force] [--path P]");
+            println!("aiosh compliance — Compliance Mapping & Control Frameworks\n\nUsage: aiosh compliance <list|show|register|status|assess|check-pep|init|verify|backup|repair|restore> [OPTIONS]\n\nStore selection (highest wins, T-02904-spec §3.2):\n  --path P > AIOSH_COMPLIANCE_MAP_PATH > config file (--config P or\n  AIOSH_COMPLIANCE_CONFIG, default docs/compliance_config.json) >\n  default store docs/compliance_map.json\n\nSubcommands:\n  list       [--framework F] [--status S] [--json] [--path P]\n  show       <ID> [--json] [--path P]\n  register   --id <ID> --control <C> --framework <F> --target-type <T> --target-ref <R> --mitigation <M> [--path P]\n  status     <ID> <STATUS> [--reason R] [--path P]\n  assess     [--framework F] [--json] [--path P]\n  check-pep  <GATES...> [--json] [--path P]\n  init       [--force] [--path P]\n  verify     [--json] [--path P]\n  backup     [--json] [--path P]\n  repair     [--json] [--path P]\n  restore    [--json] [--path P]");
             0
         }
         Some(unknown) => {
@@ -21075,6 +21204,39 @@ mod compliance_cli_tests {
 
         // 6. Check PEP coverage
         assert_eq!(cmd_compliance(&s(&["check-pep", "pep_enforce_gate", "--path", &store])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_compliance_cli_recovery_lifecycle() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_comp_rec_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("compliance_map.json").to_string_lossy().to_string();
+
+        // 1. Verify before creation -> Missing (exit code 1)
+        assert_eq!(cmd_compliance(&s(&["verify", "--path", &store])), 1);
+
+        // 2. Init canonical store -> success
+        assert_eq!(cmd_compliance(&s(&["init", "--path", &store])), 0);
+
+        // 3. Verify healthy catalog -> exit code 0
+        assert_eq!(cmd_compliance(&s(&["verify", "--path", &store, "--json"])), 0);
+
+        // 4. Create backup -> success
+        assert_eq!(cmd_compliance(&s(&["backup", "--path", &store, "--json"])), 0);
+
+        // 5. Corrupt file -> verify returns code 1
+        std::fs::write(&store, "{ corrupted json").unwrap();
+        assert_eq!(cmd_compliance(&s(&["verify", "--path", &store])), 1);
+
+        // 6. Restore from backup -> success
+        assert_eq!(cmd_compliance(&s(&["restore", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_compliance(&s(&["verify", "--path", &store])), 0);
+
+        // 7. Repair -> success
+        assert_eq!(cmd_compliance(&s(&["repair", "--path", &store, "--json"])), 0);
+        assert_eq!(cmd_compliance(&s(&["verify", "--path", &store])), 0);
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

@@ -594,6 +594,14 @@ pub use compliance_policy::{
     COMPLIANCEPOL_ERR_IO, COMPLIANCEPOL_ERR_PARSE,
 };
 
+pub use compliance_recovery::{
+    ComplianceCatalogStatus, ComplianceIntegrityIssue, ComplianceIntegrityReport,
+    ComplianceIssueSeverity, ComplianceIssueType, ComplianceRecoveryAction,
+    ComplianceRecoveryReport, ComplianceRecoveryService, COMPLYREC_ERR_FILE_SIZE,
+    COMPLYREC_ERR_IO, COMPLYREC_ERR_NO_BACKUP, COMPLYREC_ERR_PARSE,
+    COMPLYREC_ERR_PATH_TRAVERSAL, COMPLYREC_ERR_VALIDATION,
+};
+
 
 
 

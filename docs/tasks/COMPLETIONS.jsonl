@@ -2948,3 +2948,4 @@
 {"seq":2948,"ts":"2026-10-11T10:17:45Z","event":"completed","task_id":2948,"note":"Add cross-substrate and MCP integration tests for Compliance Mapping Documentation","evidence":["docs/tasks/evidence/T-02948-integration.md"]}
 {"seq":2949,"ts":"2026-10-11T10:20:49Z","event":"completed","task_id":2949,"note":"Security review for Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02949-security.md"]}
 {"seq":2950,"ts":"2026-10-11T10:24:54Z","event":"completed","task_id":2950,"note":"Hardening of Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02950-hardening.md"]}
+{"seq":2951,"ts":"2026-10-11T10:28:15Z","event":"completed","task_id":2951,"note":"Documentation of Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02951-documentation.md"]}

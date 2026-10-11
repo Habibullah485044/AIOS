@@ -74,6 +74,10 @@ class ComplianceSecurityPolicy:
     def validate(self) -> None:
         if not self.version.strip() or not self.version.startswith("1."):
             raise ValueError(f"{COMPLIANCEPOL_ERR_VALIDATION}: version must begin with '1.'")
+        if len(self.version) > 32:
+            raise ValueError(f"{COMPLIANCEPOL_ERR_VALIDATION}: version length exceeds maximum 32")
+        if len(self.permitted_frameworks) > 16:
+            raise ValueError(f"{COMPLIANCEPOL_ERR_VALIDATION}: permitted_frameworks count exceeds maximum 16")
         if self.max_catalog_mappings <= 0 or self.max_catalog_mappings > 4096:
             raise ValueError(f"{COMPLIANCEPOL_ERR_VALIDATION}: max_catalog_mappings out of bounds [1, 4096]")
         if self.min_compliant_percentage < 0.0 or self.min_compliant_percentage > 100.0:
@@ -185,8 +189,14 @@ class ComplianceSecurityPolicy:
             raise ValueError(f"{COMPLIANCEPOL_ERR_IO}: symlinks rejected for security policy")
         if p.stat().st_size > MAX_COMPLIANCE_SECURITY_POLICY_BYTES:
             raise ValueError(f"{COMPLIANCEPOL_ERR_IO}: policy file exceeds {MAX_COMPLIANCE_SECURITY_POLICY_BYTES} bytes")
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        with open(p, "rb") as f:
+            raw = f.read(MAX_COMPLIANCE_SECURITY_POLICY_BYTES + 1)
+        if len(raw) > MAX_COMPLIANCE_SECURITY_POLICY_BYTES:
+            raise ValueError(f"{COMPLIANCEPOL_ERR_IO}: policy file exceeds {MAX_COMPLIANCE_SECURITY_POLICY_BYTES} bytes")
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError(f"{COMPLIANCEPOL_ERR_PARSE}: invalid policy JSON: {exc}") from exc
         mode = CompliancePolicyMode(data.get("mode", "enforcing"))
         policy = cls(
             version=data.get("version", "1.0.0"),
@@ -217,10 +227,17 @@ class ComplianceSecurityPolicy:
         encoded = json.dumps(data, indent=2)
         if len(encoded.encode("utf-8")) > MAX_COMPLIANCE_SECURITY_POLICY_BYTES:
             raise ValueError(f"{COMPLIANCEPOL_ERR_IO}: serialized policy exceeds cap")
-        tmp = p.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(encoded)
-        tmp.replace(p)
+        tmp = p.with_suffix(f".tmp.{os.getpid()}")
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(encoded)
+            tmp.replace(p)
+        finally:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
 
     def save_to_path(self, path: str | Path) -> None:
         self.save_to_file(path)

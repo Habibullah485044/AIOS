@@ -1,12 +1,22 @@
 # Specification: Compliance Mapping Documentation (SPEC-COMPLIANCE-DOCUMENTATION)
 
-- **Status**: SPECIFIED
+- **Status**: IMPLEMENTED & VERIFIED
 - **Date**: 2026-10-11
 - **Subsystem**: Phase 2 Security Kernel & PEP Fabric / Compliance Mapping Documentation
 - **Binding**: ADR-0035 §H-1, ADR-0037 §D-1
-- **Source Code**: [`code/aiosh-rust/aiosh-core/src/compliance_doc.rs`](../code/aiosh-rust/aiosh-core/src/compliance_doc.rs)
-- **Unit Tests**: [`code/aiosh-rust/aiosh-core/tests/test_compliance_doc.rs`](../code/aiosh-rust/aiosh-core/tests/test_compliance_doc.rs)
-- **Integration Tests**: [`code/aiosh-rust/aiosh-core/tests/test_compliance_doc_integration.rs`](../code/aiosh-rust/aiosh-core/tests/test_compliance_doc_integration.rs)
+- **Source Code**:
+  - Rust: [`code/aiosh-rust/aiosh-core/src/compliance_doc.rs`](../code/aiosh-rust/aiosh-core/src/compliance_doc.rs)
+  - Python: [`code/aiosh-mcp/aiosh_mcp/compliance_doc.py`](../code/aiosh-mcp/aiosh_mcp/compliance_doc.py)
+  - MCP Tool: [`code/aiosh-mcp/aiosh_mcp/compliance.py`](../code/aiosh-mcp/aiosh_mcp/compliance.py), [`code/aiosh-mcp/aiosh_mcp/server.py`](../code/aiosh-mcp/aiosh_mcp/server.py)
+- **Unit Tests**:
+  - Rust: [`code/aiosh-rust/aiosh-core/tests/test_compliance_doc_unit.rs`](../code/aiosh-rust/aiosh-core/tests/test_compliance_doc_unit.rs)
+  - Python: [`code/aiosh-mcp/tests/test_compliance_doc_unit.py`](../code/aiosh-mcp/tests/test_compliance_doc_unit.py)
+- **Integration Tests**:
+  - Rust: [`code/aiosh-rust/aiosh-core/tests/test_compliance_doc_integration.rs`](../code/aiosh-rust/aiosh-core/tests/test_compliance_doc_integration.rs)
+  - Python: [`code/aiosh-mcp/tests/test_compliance_doc_integration.py`](../code/aiosh-mcp/tests/test_compliance_doc_integration.py)
+- **Hardening Tests**:
+  - Rust: [`code/aiosh-rust/aiosh-core/tests/test_compliance_doc_hardening.rs`](../code/aiosh-rust/aiosh-core/tests/test_compliance_doc_hardening.rs)
+  - Python: [`code/aiosh-mcp/tests/test_compliance_doc_hardening.py`](../code/aiosh-mcp/tests/test_compliance_doc_hardening.py)
 
 ---
 
@@ -95,6 +105,7 @@ pub struct ComplianceDocRepository {
   - Match in `topic.summary`: +15 points
   - Match in section title: +5 points
   - Match in section body: +2 points
+- Deterministic Ordering: Primary by `score` descending, secondary by `topic_id` ascending.
 
 ---
 
@@ -115,3 +126,19 @@ Exposed via `aios.compliance` tool:
 - `action: "doc-get"`: Retrieve topic details and sections by `id`.
 - `action: "doc-search"`: Query documentation topics with ranked keyword matching and snippets.
 - All doc actions are read-only: do not mutate store, require no capability grant, and emit an honest audit row.
+
+---
+
+## 7. Hardening & Security Controls
+
+- **Unicode & Bidi Sanitization**: Strips bidirectional text override codepoints (`\u{202A}`..`\u{202E}`), invisible formatting marks (`\u{2060}`..`\u{2069}`), zero-width characters (`\u{200B}`..`\u{200F}`), and byte-order marks (`\u{FEFF}`).
+- **Topic ID Boundary Rules**: Topic IDs must strictly adhere to `[a-zA-Z0-9._-]` and cannot start or end with dots (`.`) or hyphens (`-`).
+- **Empty Query Collapse**: Queries consisting solely of invisible/control characters collapse to empty queries and trigger `COMPLYDOC_ERR_QUERY_BOUNDS` instead of performing unindexed scans.
+
+---
+
+## 8. Verification & Evidence Summary
+
+- Full dual-substrate test coverage (Rust + Python).
+- Clean static analysis: zero errors, zero warnings.
+- Proof-of-Restraint invariant `I-2` certified.

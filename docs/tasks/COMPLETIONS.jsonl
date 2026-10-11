@@ -2915,3 +2915,4 @@
 {"seq":2915,"ts":"2026-10-11T07:05:10Z","event":"completed","task_id":2915,"note":"Scaffold automated test suite for compliance mapping","evidence":["docs/tasks/evidence/T-02915-automated-tests-scaffold.md"]}
 {"seq":2916,"ts":"2026-10-11T07:19:54Z","event":"completed","task_id":2916,"note":"Implement automated tests for compliance mapping","evidence":["docs/tasks/evidence/T-02916-automated-tests-implementation.md"]}
 {"seq":2917,"ts":"2026-10-11T07:28:36Z","event":"completed","task_id":2917,"note":"Add unit tests for compliance mapping automated suite","evidence":["docs/tasks/evidence/T-02917-automated-tests-unit-test.md"]}
+{"seq":2918,"ts":"2026-10-11T07:35:01Z","event":"completed","task_id":2918,"note":"Integrate compliance mapping automated tests end-to-end","evidence":["docs/tasks/evidence/T-02918-automated-tests-integration.md"]}

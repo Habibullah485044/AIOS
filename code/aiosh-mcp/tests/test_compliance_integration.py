@@ -463,3 +463,57 @@ def test_config_ladder_end_to_end_cross_substrate():
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+
+def test_automated_vectors_e2e_cross_substrate():
+    """T-02918 Integration: End-to-end cross-substrate execution of automated test vectors."""
+    if _rust_bin() is None:
+        pytest.skip("aiosh Rust binary not built")
+
+    with wire_env() as env_ctx:
+        store = env_ctx["store"]
+        n0 = audit_count()
+
+        # 1. Initialize store via Rust CLI
+        res = rust("init", "--path", str(store))
+        assert res.returncode == 0
+
+        # 2. Register via Python wire MCP with pre-minted capability grant
+        grant_id = mint_grant(["aios.compliance"], grant_id="gr_auto_int_01")
+        out = wire([
+            init_req(1),
+            call_req(2, "aios_compliance", {
+                "action": "register",
+                "id": "MAP-AUTO-INT-001",
+                "control_id": "AC-10",
+                "framework": "soc2",
+                "target_type": "pep_gate",
+                "target_ref": "pep.gate.auto.int",
+                "status": "non_compliant",
+                "grant_id": grant_id,
+            }),
+        ])
+        r = wire_result(out[2])
+        assert r["ok"] is True
+        assert r["mapping"]["id"] == "MAP-AUTO-INT-001"
+
+        # 3. Status transition via Rust CLI (updates shared store)
+        res_st = rust("status", "MAP-AUTO-INT-001", "compliant", "--reason", "Integration verified", "--path", str(store))
+        assert res_st.returncode == 0
+
+        # 4. Assessment via MCP over wire (reads updated shared store)
+        out_assess = wire([
+            init_req(1),
+            call_req(2, "aios_compliance", {
+                "action": "assess",
+                "framework": "soc2",
+            }),
+        ])
+        r_assess = wire_result(out_assess[2])
+        assert r_assess["ok"] is True
+        report = r_assess["report"]
+        assert report["compliant_count"] >= 1
+
+        # 5. Check audit rows emitted for consequential MCP actions
+        assert audit_count() >= n0 + 2
+

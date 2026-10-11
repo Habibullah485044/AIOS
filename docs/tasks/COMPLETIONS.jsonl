@@ -2955,3 +2955,4 @@
 {"seq":2955,"ts":"2026-10-11T10:51:42Z","event":"completed","task_id":2955,"note":"Scaffold Compliance Mapping Recovery & Validation subsystem (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02955-scaffold.md"]}
 {"seq":2956,"ts":"2026-10-11T11:05:08Z","event":"completed","task_id":2956,"note":"Implement Compliance Mapping Recovery & Validation subsystem (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02956-implementation.md"]}
 {"seq":2957,"ts":"2026-10-11T12:25:08Z","event":"completed","task_id":2957,"note":"Add focused automated unit tests for compliance recovery & validation (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02957-unit.md"]}
+{"seq":2958,"ts":"2026-10-11T12:34:42Z","event":"completed","task_id":2958,"note":"Integrate Compliance Recovery & Validation with CLI subcommands and MCP tool actions","evidence":["docs/tasks/evidence/T-02958-integration.md"]}

@@ -77,7 +77,7 @@ def rust(*args: str) -> subprocess.CompletedProcess:
 @contextmanager
 def wire_env():
     """Isolated AIOSH_HOME + compliance store for one subprocess session."""
-    with tempfile.TemporaryDirectory(prefix="compliance-int-") as td:
+    with tempfile.TemporaryDirectory(prefix="compliance-int-", ignore_cleanup_errors=True) as td:
         home = Path(td) / ".aios"
         home.mkdir(parents=True, exist_ok=True)
         store = Path(td) / "compliance_map.json"
@@ -305,7 +305,7 @@ def test_cross_substrate_init_baseline_and_loads():
     if _rust_bin() is None:
         pytest.skip("aiosh Rust binary not built")
 
-    with tempfile.TemporaryDirectory(prefix="compliance-xsub-") as td:
+    with tempfile.TemporaryDirectory(prefix="compliance-xsub-", ignore_cleanup_errors=True) as td:
         rust_store = os.path.join(td, "rust_init.json")
         p = rust("init", "--path", rust_store)
         assert p.returncode == 0, p.stderr or p.stdout
@@ -347,7 +347,7 @@ def test_cross_substrate_register_show_status_assess():
     if _rust_bin() is None:
         pytest.skip("aiosh Rust binary not built")
 
-    with tempfile.TemporaryDirectory(prefix="compliance-xsub2-") as td:
+    with tempfile.TemporaryDirectory(prefix="compliance-xsub2-", ignore_cleanup_errors=True) as td:
         store = os.path.join(td, "shared.json")
         assert rust("init", "--path", store).returncode == 0
 
@@ -402,7 +402,7 @@ def test_config_ladder_end_to_end_cross_substrate():
     if _rust_bin() is None:
         pytest.skip("aiosh Rust binary not built")
 
-    with tempfile.TemporaryDirectory(prefix="compliance-ladder-") as td:
+    with tempfile.TemporaryDirectory(prefix="compliance-ladder-", ignore_cleanup_errors=True) as td:
         tdp = Path(td)
         home = tdp / ".aios"
         home.mkdir(parents=True, exist_ok=True)

@@ -24,7 +24,7 @@ from aiosh_mcp import compliance_config
 
 @contextmanager
 def temp_store():
-    with tempfile.TemporaryDirectory(prefix="compliance-auto-unit-") as td:
+    with tempfile.TemporaryDirectory(prefix="compliance-auto-unit-", ignore_cleanup_errors=True) as td:
         path = os.path.join(td, "compliance_map.json")
         old = os.environ.get("AIOSH_COMPLIANCE_MAP_PATH")
         os.environ["AIOSH_COMPLIANCE_MAP_PATH"] = path

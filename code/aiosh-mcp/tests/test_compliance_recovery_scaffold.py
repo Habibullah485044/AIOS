@@ -31,32 +31,16 @@ def test_compliance_recovery_scaffold_constants_and_types() -> None:
     assert ComplianceIssueType.SCHEMA_MISMATCH.value == "schema_mismatch"
 
 
-def test_compliance_recovery_scaffold_loud_failure_stubs() -> None:
+def test_compliance_recovery_scaffold_implementation_smoke() -> None:
     dummy_path = Path("dummy/path.json")
 
-    with pytest.raises(NotImplementedError):
-        ComplianceRecoveryService.validate_path(dummy_path)
+    val_p = ComplianceRecoveryService.validate_path(dummy_path)
+    assert val_p == dummy_path
 
-    with pytest.raises(NotImplementedError):
-        ComplianceRecoveryService.verify_integrity(dummy_path)
+    report = ComplianceRecoveryService.verify_integrity(dummy_path)
+    assert report.status == ComplianceCatalogStatus.MISSING
 
-    with pytest.raises(NotImplementedError):
-        ComplianceRecoveryService.create_backup(dummy_path)
-
-    with pytest.raises(NotImplementedError):
-        ComplianceRecoveryService.repair_catalog(dummy_path)
-
-    with pytest.raises(NotImplementedError):
-        ComplianceRecoveryService.restore_from_backup(dummy_path)
-
-    with pytest.raises(NotImplementedError):
-        execute("recovery-verify")
-
-    with pytest.raises(NotImplementedError):
-        execute("recovery-backup")
-
-    with pytest.raises(NotImplementedError):
-        execute("recovery-repair")
-
-    with pytest.raises(NotImplementedError):
-        execute("recovery-restore")
+    res = execute("recovery-verify")
+    assert res["ok"] is True
+    assert res["action"] == "recovery-verify"
+    assert "report" in res

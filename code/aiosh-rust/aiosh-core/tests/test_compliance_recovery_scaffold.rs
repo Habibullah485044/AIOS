@@ -23,22 +23,12 @@ fn test_compliance_recovery_scaffold_constants_and_types() {
 }
 
 #[test]
-fn test_compliance_recovery_scaffold_loud_failure_stubs() {
+fn test_compliance_recovery_scaffold_implementation_smoke() {
     let dummy_path = Path::new("dummy/path.json");
 
     let val_res = ComplianceRecoveryService::validate_path(dummy_path);
-    assert!(val_res.is_err());
-    assert!(val_res.unwrap_err().contains("not implemented"));
+    assert!(val_res.is_ok());
 
-    let backup_res = ComplianceRecoveryService::create_backup(dummy_path);
-    assert!(backup_res.is_err());
-    assert!(backup_res.unwrap_err().contains("not implemented"));
-
-    let repair_res = ComplianceRecoveryService::repair_catalog(dummy_path);
-    assert!(repair_res.is_err());
-    assert!(repair_res.unwrap_err().contains("not implemented"));
-
-    let restore_res = ComplianceRecoveryService::restore_from_backup(dummy_path);
-    assert!(restore_res.is_err());
-    assert!(restore_res.unwrap_err().contains("not implemented"));
+    let report = ComplianceRecoveryService::verify_integrity(dummy_path);
+    assert_eq!(report.status, ComplianceCatalogStatus::Missing);
 }

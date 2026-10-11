@@ -984,4 +984,14 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Rust core compliance test battery: 35 tests PASSED.
 - Evidence: docs/tasks/evidence/T-02932-verify.md, docs/tasks/evidence/T-02932-security-policy-verification-evidenc.md.
 
+## T-02942 - Compliance Mapping / observability: Verification & Evidence (2026-10-11)
+- Milestone closeout for Compliance Mapping observability subsystem (T-02933..T-02942).
+- Verification battery:
+  - Python observability suite (test_compliance_observability_unit.py, test_compliance_observability_integration.py): 11/11 tests PASSED.
+  - Rust observability suite (test_compliance_observability_unit.rs, test_compliance_observability_integration.rs): 11/11 tests PASSED.
+  - Proof of Restraint conformance battery (test_por_*.py): 80/80 tests PASSED.
+  - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
+- Evidence: docs/tasks/evidence/T-02942-verify.md, docs/tasks/evidence/T-02942-observability-verification-evidenc.md.
+
+
 

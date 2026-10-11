@@ -963,3 +963,13 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Epic close (T-02894..T-02902): full registered baseline battery green via tools/ci_run.py (31 suites incl. por_conformance + compliance_integration); PoR conformance C1..C6 PASS (incl. C6 anchor chain + window bounding); demo_por.py: unused grant proved PROVABLY_RESTRAINED, post-anchor tamper (delete row + re-chain) REJECTED with HEAD_HASH_MISMATCH.
 - Dispatch/PEP/audit semantics on this surface unchanged since T-02898: one honest audit row per call (refusals included), grants redeemed at most once (invariant I-2); T-02900 hardening added persistence size caps only (no gate changes).
 - Evidence: docs/tasks/evidence/T-02902-verify.md
+
+## T-02922 - Compliance Mapping / automated tests: Verification & Evidence (2026-10-11)
+- Milestone closeout for Compliance Mapping automated test suite (T-02913..T-02922).
+- Verification battery:
+  - Python automated suite (test_compliance_automated_smoke.py, test_compliance_automated_unit.py, test_compliance_integration.py): 32/32 tests PASSED.
+  - Rust core automated suite (test_compliance_automated.rs, test_compliance_automated_unit.rs): 22/22 tests PASSED.
+  - Proof of Restraint conformance battery (test_por_*.py): 80/80 tests PASSED.
+  - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
+- Evidence: docs/tasks/evidence/T-02922-verify.md.
+

@@ -2960,3 +2960,4 @@
 {"seq":2960,"ts":"2026-10-11T14:18:53Z","event":"completed","task_id":2960,"note":"Harden Compliance Mapping Recovery & Validation (quarantine rotation, atomic tmpfile replace, resource cleanup)","evidence":["docs/tasks/evidence/T-02960-hardening.md"]}
 {"seq":2961,"ts":"2026-10-11T14:21:57Z","event":"completed","task_id":2961,"note":"Document Compliance Mapping Recovery & Validation in SPEC-COMPLIANCE-RECOVERY.md","evidence":["docs/tasks/evidence/T-02961-documentation.md"]}
 {"seq":2962,"ts":"2026-10-11T14:46:08Z","event":"completed","task_id":2962,"note":"Verification & evidence for Compliance Mapping Recovery & Validation (subsystem closeout)","evidence":["docs/tasks/evidence/T-02962-verify.md"]}
+{"seq":2963,"ts":"2026-10-11T14:48:55Z","event":"completed","task_id":2963,"note":"Research Incident Response Runbooks data model (NIST SP 800-61, CISA, MITRE D3FEND)","evidence":["docs/tasks/evidence/T-02963-research.md"]}

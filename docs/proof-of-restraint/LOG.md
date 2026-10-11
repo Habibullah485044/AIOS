@@ -993,5 +993,16 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
 - Evidence: docs/tasks/evidence/T-02942-verify.md, docs/tasks/evidence/T-02942-observability-verification-evidenc.md.
 
+## T-02952 - Compliance Mapping / documentation: Verification & Evidence (2026-10-11)
+- Milestone closeout for Compliance Mapping documentation subsystem (T-02943..T-02952).
+- Verification battery:
+  - Python documentation suite (test_compliance_doc_scaffold.py, test_compliance_doc_unit.py, test_compliance_doc_integration.py, test_compliance_doc_hardening.py): 15/15 tests PASSED.
+  - Rust core documentation suite (test_compliance_doc_scaffold.rs, test_compliance_doc_unit.rs, test_compliance_doc_integration.rs, test_compliance_doc_hardening.rs): 13/13 tests PASSED.
+  - Proof of Restraint conformance battery (test_por_*.py): 80/80 tests PASSED.
+  - Live PoR demonstration (tools/demo_por.py): unused grant proved PROVABLY_RESTRAINED; post-anchor tamper (delete + re-chain) REJECTED with HEAD_HASH_MISMATCH.
+- Invariants certified: COMPLYDOC1..COMPLYDOC5, Invariant I-2.
+- Evidence: docs/tasks/evidence/T-02952-verify.md, docs/tasks/evidence/T-02952-documentation-verification-and-evidence.md.
+
+
 
 

@@ -47,21 +47,16 @@ def test_compliance_doc_scaffold_constants_and_types() -> None:
     assert "## Overview" in md
 
 
-def test_compliance_doc_scaffold_loud_failure_stubs() -> None:
+def test_compliance_doc_scaffold_implementation_smoke() -> None:
     repo = ComplianceDocRepository()
-    assert repo.list_topics() == []
+    assert len(repo.list_topics()) == 7
 
-    with pytest.raises(NotImplementedError):
-        repo.get_topic("comply-arch")
+    topic = repo.get_topic("compliance.arch.overview")
+    assert topic.id == "compliance.arch.overview"
 
-    with pytest.raises(NotImplementedError):
-        repo.search("test")
+    results = repo.search("architecture")
+    assert len(results) > 0
 
-    with pytest.raises(NotImplementedError):
-        execute("doc-list")
-
-    with pytest.raises(NotImplementedError):
-        execute("doc-get", id="comply-arch")
-
-    with pytest.raises(NotImplementedError):
-        execute("doc-search")
+    res = execute("doc-list")
+    assert res["ok"] is True
+    assert res["count"] == 7

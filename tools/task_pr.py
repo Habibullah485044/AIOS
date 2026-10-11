@@ -85,19 +85,28 @@ def api(token: str, method: str, path: str, payload: dict | None = None) -> dict
     if payload is not None:
         cmd += ["--data-binary", json.dumps(payload)]
     cmd.append(f"{API}{path}")
-    p = subprocess.run(cmd, input=f'header = "Authorization: Bearer {token}"\n',
-                       capture_output=True, text=True, cwd=ROOT)
-    if p.returncode != 0:
-        sys.exit(f"[-] curl {method} {path} failed: {p.stderr.strip()}")
-    body, _, code = p.stdout.rpartition("\n")
-    try:
-        data = json.loads(body) if body.strip() else {}
-    except json.JSONDecodeError:
-        sys.exit(f"[-] {method} {path}: non-JSON response (HTTP {code}): {body[:300]}")
-    if not code.startswith("2"):
-        msg = data.get("message", body[:200]) if isinstance(data, dict) else body[:200]
-        sys.exit(f"[-] {method} {path} -> HTTP {code}: {msg}")
-    return data
+
+    for attempt in range(4):
+        p = subprocess.run(cmd, input=f'header = "Authorization: Bearer {token}"\n',
+                           capture_output=True, text=True, cwd=ROOT)
+        if p.returncode != 0:
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+                continue
+            sys.exit(f"[-] curl {method} {path} failed: {p.stderr.strip()}")
+        body, _, code = p.stdout.rpartition("\n")
+        if code.startswith("5") and attempt < 3:
+            time.sleep(2 ** attempt)
+            continue
+        try:
+            data = json.loads(body) if body.strip() else {}
+        except json.JSONDecodeError:
+            sys.exit(f"[-] {method} {path}: non-JSON response (HTTP {code}): {body[:300]}")
+        if not code.startswith("2"):
+            msg = data.get("message", body[:200]) if isinstance(data, dict) else body[:200]
+            sys.exit(f"[-] {method} {path} -> HTTP {code}: {msg}")
+        return data
+    sys.exit(f"[-] {method} {path} failed after retries")
 
 
 def commit_message(title: str, body: str | None) -> str:
@@ -160,16 +169,22 @@ def main() -> int:
 
     token = github_token()
     slug = github_slug()
-    pr = api(token, "POST", f"/repos/{slug}/pulls", {
-        "title": args.title,
-        "head": branch,
-        "base": DEFAULT_BRANCH,
-        "body": args.body or
-                "Task shipped through `tools/task_pr.py` (see AGENTS.md).\n"
-                "Commits are authored by the agent and co-authored by the "
-                "repository owner.",
-    })
-    print(f"[+] opened PR #{pr['number']}: {pr['html_url']}")
+    owner = slug.split("/")[0]
+    existing = api(token, "GET", f"/repos/{slug}/pulls?head={owner}:{branch}&state=open")
+    if isinstance(existing, list) and existing:
+        pr = existing[0]
+        print(f"[+] using existing open PR #{pr['number']}: {pr['html_url']}")
+    else:
+        pr = api(token, "POST", f"/repos/{slug}/pulls", {
+            "title": args.title,
+            "head": branch,
+            "base": DEFAULT_BRANCH,
+            "body": args.body or
+                    "Task shipped through `tools/task_pr.py` (see AGENTS.md).\n"
+                    "Commits are authored by the agent and co-authored by the "
+                    "repository owner.",
+        })
+        print(f"[+] opened PR #{pr['number']}: {pr['html_url']}")
 
     merged = api(token, "PUT", f"/repos/{slug}/pulls/{pr['number']}/merge",
                  {"merge_method": "merge"})

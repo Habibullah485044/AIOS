@@ -6,6 +6,7 @@ steps, and catalog snapshots for Incident Response Runbooks.
 
 from dataclasses import dataclass, field, asdict
 from enum import Enum
+import json
 import re
 from typing import Any
 
@@ -216,11 +217,49 @@ class RunbookSpec:
             raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Tags count exceeds {MAX_RUNBOOK_TAGS_COUNT}")
         for t in self.tags:
             validate_identifier(t, "Tag")
+        seen_step_ids = set()
+        for step in self.steps:
+            if step.id in seen_step_ids:
+                raise ValueError(f"{RUNBOOK_ERR_DUPLICATE_ID}: Duplicate step ID {step.id}")
+            seen_step_ids.add(step.id)
         now = utcnow_iso()
         if not self.created_at:
             self.created_at = now
         if not self.updated_at:
             self.updated_at = now
+
+    def steps_for_phase(self, phase: RunbookPhase | str) -> list[RunbookStep]:
+        target_phase = phase if isinstance(phase, RunbookPhase) else RunbookPhase.parse_phase(phase)
+        return [s for s in self.steps if s.phase == target_phase]
+
+    def steps_for_target(self, target: RunbookTargetSubstrate | str) -> list[RunbookStep]:
+        target_sub = target if isinstance(target, RunbookTargetSubstrate) else RunbookTargetSubstrate.parse_target(target)
+        return [s for s in self.steps if s.target == target_sub]
+
+    def automated_steps(self) -> list[RunbookStep]:
+        return [s for s in self.steps if s.automated]
+
+    def manual_steps(self) -> list[RunbookStep]:
+        return [s for s in self.steps if not s.automated or s.requires_confirmation]
+
+    def total_timeout_seconds(self) -> int:
+        return sum(s.timeout_seconds for s in self.steps)
+
+    def validate(self) -> None:
+        validate_identifier(self.id, "Runbook ID")
+        validate_title(self.title, "Runbook title")
+        validate_text_length(self.description, MAX_RUNBOOK_DESC_LEN, "Runbook description")
+        if not self.steps:
+            raise ValueError(f"{RUNBOOK_ERR_EMPTY_STEPS}: Runbook must contain at least one step")
+        if len(self.steps) > MAX_RUNBOOK_STEPS_COUNT:
+            raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Steps count exceeds {MAX_RUNBOOK_STEPS_COUNT}")
+        if len(self.tags) > MAX_RUNBOOK_TAGS_COUNT:
+            raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Tags count exceeds {MAX_RUNBOOK_TAGS_COUNT}")
+        seen = set()
+        for s in self.steps:
+            if s.id in seen:
+                raise ValueError(f"{RUNBOOK_ERR_DUPLICATE_ID}: Duplicate step ID {s.id}")
+            seen.add(s.id)
 
 
 @dataclass
@@ -333,3 +372,100 @@ class RunbookCatalogSnapshot:
                 self.generated_at = utcnow_iso()
                 return self.runbooks.pop(i)
         return None
+
+    def find_by_category(self, category: IncidentCategory | str) -> list[RunbookSpec]:
+        cat = category if isinstance(category, IncidentCategory) else IncidentCategory.parse_category(category)
+        return [r for r in self.runbooks if r.category == cat]
+
+    def find_by_severity(self, severity: IncidentSeverity | str) -> list[RunbookSpec]:
+        sev = severity if isinstance(severity, IncidentSeverity) else IncidentSeverity.parse_severity(severity)
+        return [r for r in self.runbooks if r.severity == sev]
+
+    def filter_by_phase(self, phase: RunbookPhase | str) -> list[RunbookSpec]:
+        target_phase = phase if isinstance(phase, RunbookPhase) else RunbookPhase.parse_phase(phase)
+        return [r for r in self.runbooks if any(s.phase == target_phase for s in r.steps)]
+
+    def filter_by_target(self, target: RunbookTargetSubstrate | str) -> list[RunbookSpec]:
+        target_sub = target if isinstance(target, RunbookTargetSubstrate) else RunbookTargetSubstrate.parse_target(target)
+        return [r for r in self.runbooks if any(s.target == target_sub for s in r.steps)]
+
+    def filter_by_tag(self, tag: str) -> list[RunbookSpec]:
+        normalized = tag.strip().lower()
+        return [r for r in self.runbooks if any(t.lower() == normalized for t in r.tags)]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "version": self.version,
+            "runbooks": [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "category": r.category.value if isinstance(r.category, IncidentCategory) else str(r.category),
+                    "severity": r.severity.value if isinstance(r.severity, IncidentSeverity) else str(r.severity),
+                    "description": r.description,
+                    "steps": [
+                        {
+                            "id": s.id,
+                            "title": s.title,
+                            "phase": s.phase.value if isinstance(s.phase, RunbookPhase) else str(s.phase),
+                            "target": s.target.value if isinstance(s.target, RunbookTargetSubstrate) else str(s.target),
+                            "action_template": s.action_template,
+                            "automated": s.automated,
+                            "requires_confirmation": s.requires_confirmation,
+                            "timeout_seconds": s.timeout_seconds,
+                        }
+                        for s in r.steps
+                    ],
+                    "tags": r.tags,
+                    "created_at": r.created_at,
+                    "updated_at": r.updated_at,
+                }
+                for r in self.runbooks
+            ],
+            "generated_at": self.generated_at,
+        }
+
+    def to_json(self, indent: int | None = None) -> str:
+        return json.dumps(self.to_dict(), indent=indent)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RunbookCatalogSnapshot":
+        runbooks = []
+        for r_data in data.get("runbooks", []):
+            steps = []
+            for s_data in r_data.get("steps", []):
+                steps.append(
+                    RunbookStep(
+                        id=s_data["id"],
+                        title=s_data["title"],
+                        phase=RunbookPhase.parse_phase(s_data["phase"]),
+                        target=RunbookTargetSubstrate.parse_target(s_data["target"]),
+                        action_template=s_data["action_template"],
+                        automated=s_data.get("automated", True),
+                        requires_confirmation=s_data.get("requires_confirmation", False),
+                        timeout_seconds=s_data.get("timeout_seconds", 30),
+                    )
+                )
+            runbooks.append(
+                RunbookSpec(
+                    id=r_data["id"],
+                    title=r_data["title"],
+                    category=IncidentCategory.parse_category(r_data["category"]),
+                    severity=IncidentSeverity.parse_severity(r_data["severity"]),
+                    description=r_data["description"],
+                    steps=steps,
+                    tags=r_data.get("tags", []),
+                    created_at=r_data.get("created_at", ""),
+                    updated_at=r_data.get("updated_at", ""),
+                )
+            )
+        return cls(
+            version=data.get("version", "1.0.0"),
+            runbooks=runbooks,
+            generated_at=data.get("generated_at", ""),
+        )
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "RunbookCatalogSnapshot":
+        return cls.from_dict(json.loads(json_str))
+

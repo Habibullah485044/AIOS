@@ -261,6 +261,13 @@ impl RunbookSpec {
             validate_identifier(tag, "Tag")?;
         }
 
+        let mut seen_step_ids = std::collections::HashSet::new();
+        for step in &steps {
+            if !seen_step_ids.insert(&step.id) {
+                return Err(format!("{}: Duplicate step ID {}", RUNBOOK_ERR_DUPLICATE_ID, step.id));
+            }
+        }
+
         let now = utcnow_iso();
         Ok(Self {
             id: id.to_string(),
@@ -273,6 +280,48 @@ impl RunbookSpec {
             created_at: now.clone(),
             updated_at: now,
         })
+    }
+
+    pub fn steps_for_phase(&self, phase: RunbookPhase) -> Vec<&RunbookStep> {
+        self.steps.iter().filter(|s| s.phase == phase).collect()
+    }
+
+    pub fn steps_for_target(&self, target: RunbookTargetSubstrate) -> Vec<&RunbookStep> {
+        self.steps.iter().filter(|s| s.target == target).collect()
+    }
+
+    pub fn automated_steps(&self) -> Vec<&RunbookStep> {
+        self.steps.iter().filter(|s| s.automated).collect()
+    }
+
+    pub fn manual_steps(&self) -> Vec<&RunbookStep> {
+        self.steps.iter().filter(|s| !s.automated || s.requires_confirmation).collect()
+    }
+
+    pub fn total_timeout_seconds(&self) -> u64 {
+        self.steps.iter().map(|s| s.timeout_seconds).sum()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        validate_identifier(&self.id, "Runbook ID")?;
+        validate_title(&self.title, "Runbook title")?;
+        validate_text_length(&self.description, MAX_RUNBOOK_DESC_LEN, "Runbook description")?;
+        if self.steps.is_empty() {
+            return Err(format!("{}: Runbook must contain at least one step", RUNBOOK_ERR_EMPTY_STEPS));
+        }
+        if self.steps.len() > MAX_RUNBOOK_STEPS_COUNT {
+            return Err(format!("{}: Steps count exceeds maximum allowed {}", RUNBOOK_ERR_BOUNDS_EXCEEDED, MAX_RUNBOOK_STEPS_COUNT));
+        }
+        if self.tags.len() > MAX_RUNBOOK_TAGS_COUNT {
+            return Err(format!("{}: Tags count exceeds maximum allowed {}", RUNBOOK_ERR_BOUNDS_EXCEEDED, MAX_RUNBOOK_TAGS_COUNT));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for step in &self.steps {
+            if !seen.insert(&step.id) {
+                return Err(format!("{}: Duplicate step ID {}", RUNBOOK_ERR_DUPLICATE_ID, step.id));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -411,6 +460,30 @@ impl RunbookCatalogSnapshot {
 
     pub fn find_by_severity(&self, severity: IncidentSeverity) -> Vec<&RunbookSpec> {
         self.runbooks.iter().filter(|r| r.severity == severity).collect()
+    }
+
+    pub fn filter_by_phase(&self, phase: RunbookPhase) -> Vec<&RunbookSpec> {
+        self.runbooks.iter().filter(|r| r.steps.iter().any(|s| s.phase == phase)).collect()
+    }
+
+    pub fn filter_by_target(&self, target: RunbookTargetSubstrate) -> Vec<&RunbookSpec> {
+        self.runbooks.iter().filter(|r| r.steps.iter().any(|s| s.target == target)).collect()
+    }
+
+    pub fn filter_by_tag(&self, tag: &str) -> Vec<&RunbookSpec> {
+        self.runbooks.iter().filter(|r| r.tags.iter().any(|t| t.eq_ignore_ascii_case(tag))).collect()
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json_str)
     }
 }
 

@@ -84,6 +84,7 @@ pub mod hardware_observability;
 pub mod hardware_policy;
 pub mod hardware_recovery;
 pub mod hardware_service;
+pub mod incident_runbook_data_model;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;
@@ -600,6 +601,15 @@ pub use compliance_recovery::{
     ComplianceRecoveryReport, ComplianceRecoveryService, COMPLYREC_ERR_FILE_SIZE,
     COMPLYREC_ERR_IO, COMPLYREC_ERR_NO_BACKUP, COMPLYREC_ERR_PARSE,
     COMPLYREC_ERR_PATH_TRAVERSAL, COMPLYREC_ERR_VALIDATION,
+};
+
+pub use incident_runbook_data_model::{
+    IncidentCategory, IncidentSeverity, RunbookCatalogSnapshot, RunbookPhase,
+    RunbookSpec, RunbookStep, RunbookTargetSubstrate,
+    MAX_RUNBOOK_CATALOG_CAPACITY, MAX_RUNBOOK_DESC_LEN, MAX_RUNBOOK_ID_LEN,
+    MAX_RUNBOOK_STEPS_COUNT, MAX_RUNBOOK_TAGS_COUNT, MAX_RUNBOOK_TITLE_LEN,
+    RUNBOOK_ERR_BOUNDS_EXCEEDED, RUNBOOK_ERR_CONTROL_CHARS, RUNBOOK_ERR_DUPLICATE_ID,
+    RUNBOOK_ERR_EMPTY_STEPS, RUNBOOK_ERR_INVALID_ID, RUNBOOK_ERR_INVALID_TITLE,
 };
 
 

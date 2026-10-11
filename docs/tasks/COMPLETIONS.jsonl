@@ -2927,3 +2927,4 @@
 {"seq":2927,"ts":"2026-10-11T08:18:42Z","event":"completed","task_id":2927,"note":"Author unit tests for compliance mapping security policy in Rust and Python","evidence":["docs/tasks/evidence/T-02927-security-policy-unit-test.md"]}
 {"seq":2928,"ts":"2026-10-11T08:28:35Z","event":"completed","task_id":2928,"note":"Integrate compliance security policy into service layers and persistence","evidence":["docs/tasks/evidence/T-02928-security-policy-integration.md"]}
 {"seq":2929,"ts":"2026-10-11T08:32:04Z","event":"completed","task_id":2929,"note":"Security review for compliance mapping security policy subsystem","evidence":["docs/tasks/evidence/T-02929-security.md","docs/tasks/evidence/T-02929-security-policy-security-review.md"]}
+{"seq":2930,"ts":"2026-10-11T08:43:29Z","event":"completed","task_id":2930,"note":"Harden compliance mapping security policy against TOCTOU, OOM, and residue leaks","evidence":["docs/tasks/evidence/T-02930-security-policy-hardening.md"]}

@@ -111,10 +111,16 @@ impl ComplianceSecurityPolicy {
         if self.version.trim().is_empty() || !self.version.starts_with("1.") {
             return Err(format!("{}: version must begin with '1.'", COMPLIANCEPOL_ERR_VALIDATION));
         }
+        if self.version.len() > 32 {
+            return Err(format!("{}: version length exceeds maximum 32", COMPLIANCEPOL_ERR_VALIDATION));
+        }
+        if self.permitted_frameworks.len() > 16 {
+            return Err(format!("{}: permitted_frameworks count exceeds maximum 16", COMPLIANCEPOL_ERR_VALIDATION));
+        }
         if self.max_catalog_mappings == 0 || self.max_catalog_mappings > 4096 {
             return Err(format!("{}: max_catalog_mappings out of bounds [1, 4096]", COMPLIANCEPOL_ERR_VALIDATION));
         }
-        if self.min_compliant_percentage < 0.0 || self.min_compliant_percentage > 100.0 {
+        if self.min_compliant_percentage < 0.0 || self.min_compliant_percentage > 100.0 || self.min_compliant_percentage.is_nan() {
             return Err(format!("{}: min_compliant_percentage out of bounds [0.0, 100.0]", COMPLIANCEPOL_ERR_VALIDATION));
         }
         Ok(())
@@ -288,10 +294,22 @@ impl ComplianceSecurityPolicy {
             ));
         }
 
-        let content = fs::read_to_string(p)
+        use std::io::Read;
+        let f = fs::File::open(p)
+            .map_err(|e| format!("{}: cannot open policy file: {}", COMPLIANCEPOL_ERR_IO, e))?;
+        let mut buffer = Vec::new();
+        f.take(MAX_COMPLIANCE_SECURITY_POLICY_BYTES + 1)
+            .read_to_end(&mut buffer)
             .map_err(|e| format!("{}: read failed: {}", COMPLIANCEPOL_ERR_IO, e))?;
 
-        let policy: Self = serde_json::from_str(&content)
+        if buffer.len() as u64 > MAX_COMPLIANCE_SECURITY_POLICY_BYTES {
+            return Err(format!(
+                "{}: policy file size exceeds maximum {}",
+                COMPLIANCEPOL_ERR_IO, MAX_COMPLIANCE_SECURITY_POLICY_BYTES
+            ));
+        }
+
+        let policy: Self = serde_json::from_slice(&buffer)
             .map_err(|e| format!("{}: parse error: {}", COMPLIANCEPOL_ERR_PARSE, e))?;
 
         policy.validate()?;

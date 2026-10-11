@@ -125,32 +125,35 @@ def main() -> int:
     if branch == DEFAULT_BRANCH:
         sys.exit(f"[-] on {DEFAULT_BRANCH}: create the task branch first "
                  f"(git checkout -b task/... {DEFAULT_BRANCH})")
-    if not git("status", "--porcelain"):
-        sys.exit("[-] nothing to ship (clean tree)")
+    if git("status", "--porcelain"):
+        git("add", "-A")
+        staged = subprocess.run(["git", "diff", "--cached", "--quiet"],
+                                cwd=ROOT)
+        if staged.returncode == 0:
+            sys.exit("[-] nothing staged (index already matches HEAD)")
 
-    git("add", "-A")
-    staged = subprocess.run(["git", "diff", "--cached", "--quiet"],
-                            cwd=ROOT)
-    if staged.returncode == 0:
-        sys.exit("[-] nothing staged (index already matches HEAD)")
+        msg = commit_message(args.title, args.body)
+        if args.dry_run:
+            print("[dry-run] would commit:")
+            print(git("diff", "--cached", "--stat"))
+            print("---- message ----")
+            print(msg)
+            return 0
 
-    msg = commit_message(args.title, args.body)
-    if args.dry_run:
-        print("[dry-run] would commit:")
-        print(git("diff", "--cached", "--stat"))
-        print("---- message ----")
-        print(msg)
-        return 0
-
-    env = os.environ | {
-        "GIT_AUTHOR_NAME": AGENT_NAME,
-        "GIT_AUTHOR_EMAIL": AGENT_EMAIL,
-        "GIT_COMMITTER_NAME": AGENT_NAME,
-        "GIT_COMMITTER_EMAIL": AGENT_EMAIL,
-    }
-    git("commit", "-m", msg, env=env)
-    sha = git("rev-parse", "--short", "HEAD")
-    print(f"[+] committed {sha} as {AGENT_NAME} <{AGENT_EMAIL}> + owner co-author")
+        env = os.environ | {
+            "GIT_AUTHOR_NAME": AGENT_NAME,
+            "GIT_AUTHOR_EMAIL": AGENT_EMAIL,
+            "GIT_COMMITTER_NAME": AGENT_NAME,
+            "GIT_COMMITTER_EMAIL": AGENT_EMAIL,
+        }
+        git("commit", "-m", msg, env=env)
+        sha = git("rev-parse", "--short", "HEAD")
+        print(f"[+] committed {sha} as {AGENT_NAME} <{AGENT_EMAIL}> + owner co-author")
+    else:
+        ahead = git("rev-list", f"origin/{DEFAULT_BRANCH}..HEAD", "--count")
+        if ahead == "0":
+            sys.exit("[-] nothing to ship (clean tree and not ahead of origin/main)")
+        print(f"[+] working tree clean; branch is already committed ({ahead} commit ahead of origin/{DEFAULT_BRANCH})")
 
     git("push", "-u", "origin", branch)
     print(f"[+] pushed origin/{branch}")

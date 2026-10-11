@@ -622,7 +622,10 @@ def execute(
                 "uncovered_required": [] if covered else [gate_id]}
 
     if action == "stats":
-        raise NotImplementedError("compliance action 'stats' scaffolded for T-02935")
+        from .compliance_observability import generate_compliance_observability_report
+        snap = _load_or_baseline(path)
+        report = generate_compliance_observability_report(snap, policy=None, ring=None)
+        return {"ok": True, "action": "stats", "report": asdict(report)}
 
     # action == "init"
     snap = init_store(path)

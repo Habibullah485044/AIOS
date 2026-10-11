@@ -74,13 +74,16 @@ def test_s2_closed_vocabularies():
 
 
 def test_s3_action_vocabulary_and_gating_split():
-    """Spec §2/§8: seven verbs + stats + doc actions; exactly three are write actions."""
+    """Spec §2/§8: seven verbs + stats + doc + recovery actions; write actions require capability grant."""
     assert set(compliance.ACTIONS) == {
         "list", "show", "register", "status", "assess", "check-pep", "init",
-        "stats", "doc-list", "doc-get", "doc-search"}
-    assert set(compliance.WRITE_ACTIONS) == {"register", "status", "init"}
+        "stats", "doc-list", "doc-get", "doc-search",
+        "recovery-verify", "recovery-backup", "recovery-repair", "recovery-restore"}
+    assert set(compliance.WRITE_ACTIONS) == {
+        "register", "status", "init", "recovery-backup", "recovery-repair", "recovery-restore"}
     assert set(compliance.READ_ACTIONS) == {
-        "list", "show", "assess", "check-pep", "stats", "doc-list", "doc-get", "doc-search"}
+        "list", "show", "assess", "check-pep", "stats", "doc-list", "doc-get", "doc-search",
+        "recovery-verify"}
     assert not set(compliance.READ_ACTIONS) & set(compliance.WRITE_ACTIONS)
 
 

@@ -24,9 +24,16 @@ from .audit_client import utcnow_iso
 # --- Tool surface (spec §2) -------------------------------------------------
 
 TOOL_NAME = "aios.compliance"
-ACTIONS = ("list", "show", "register", "status", "assess", "check-pep", "init", "stats", "doc-list", "doc-get", "doc-search")
-READ_ACTIONS = ("list", "show", "assess", "check-pep", "stats", "doc-list", "doc-get", "doc-search")
-WRITE_ACTIONS = ("register", "status", "init")
+ACTIONS = (
+    "list", "show", "register", "status", "assess", "check-pep", "init", "stats",
+    "doc-list", "doc-get", "doc-search",
+    "recovery-verify", "recovery-backup", "recovery-repair", "recovery-restore",
+)
+READ_ACTIONS = (
+    "list", "show", "assess", "check-pep", "stats", "doc-list", "doc-get", "doc-search",
+    "recovery-verify",
+)
+WRITE_ACTIONS = ("register", "status", "init", "recovery-backup", "recovery-repair", "recovery-restore")
 
 # --- Constants (parity with compliance_data_model.rs) -----------------------
 
@@ -673,6 +680,9 @@ def execute(
             for r in repo.search(query)
         ]
         return {"ok": True, "action": "doc-search", "query": query, "results": results, "count": len(results)}
+
+    if action in ("recovery-verify", "recovery-backup", "recovery-repair", "recovery-restore"):
+        raise NotImplementedError(f"compliance action '{action}' scaffolded for T-02955")
 
     # action == "init"
     snap = init_store(path)

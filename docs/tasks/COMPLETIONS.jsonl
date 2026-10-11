@@ -2957,3 +2957,4 @@
 {"seq":2957,"ts":"2026-10-11T12:25:08Z","event":"completed","task_id":2957,"note":"Add focused automated unit tests for compliance recovery & validation (COMPLYREC1..COMPLYREC5)","evidence":["docs/tasks/evidence/T-02957-unit.md"]}
 {"seq":2958,"ts":"2026-10-11T12:34:42Z","event":"completed","task_id":2958,"note":"Integrate Compliance Recovery & Validation with CLI subcommands and MCP tool actions","evidence":["docs/tasks/evidence/T-02958-integration.md"]}
 {"seq":2959,"ts":"2026-10-11T14:09:45Z","event":"completed","task_id":2959,"note":"Security review of Compliance Mapping Recovery & Validation (CWE-22, CWE-59, CWE-400, CWE-362, PoR Invariant I-2)","evidence":["docs/tasks/evidence/T-02959-security.md"]}
+{"seq":2960,"ts":"2026-10-11T14:18:53Z","event":"completed","task_id":2960,"note":"Harden Compliance Mapping Recovery & Validation (quarantine rotation, atomic tmpfile replace, resource cleanup)","evidence":["docs/tasks/evidence/T-02960-hardening.md"]}

@@ -2944,3 +2944,4 @@
 {"seq":2944,"ts":"2026-10-11T09:48:01Z","event":"completed","task_id":2944,"note":"Specify exact contract, invariants, data structures, and query bounds for Compliance Mapping Documentation","evidence":["docs/tasks/evidence/T-02944-spec.md","docs/tasks/evidence/T-02944-documentation-specification.md"]}
 {"seq":2945,"ts":"2026-10-11T09:55:57Z","event":"completed","task_id":2945,"note":"Scaffold Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02945-scaffold.md"]}
 {"seq":2946,"ts":"2026-10-11T10:04:11Z","event":"completed","task_id":2946,"note":"Implement Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02946-implementation.md"]}
+{"seq":2947,"ts":"2026-10-11T10:12:56Z","event":"completed","task_id":2947,"note":"Add unit tests for Compliance Mapping Documentation subsystem (COMPLYDOC1..COMPLYDOC5)","evidence":["docs/tasks/evidence/T-02947-unit-test.md"]}

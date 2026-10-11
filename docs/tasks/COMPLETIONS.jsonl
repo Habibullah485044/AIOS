@@ -2918,3 +2918,4 @@
 {"seq":2918,"ts":"2026-10-11T07:35:01Z","event":"completed","task_id":2918,"note":"Integrate compliance mapping automated tests end-to-end","evidence":["docs/tasks/evidence/T-02918-automated-tests-integration.md"]}
 {"seq":2919,"ts":"2026-10-11T07:37:28Z","event":"completed","task_id":2919,"note":"Security review automated tests for compliance mapping","evidence":["docs/tasks/evidence/T-02919-security.md","docs/tasks/evidence/T-02919-automated-tests-security-review.md"]}
 {"seq":2920,"ts":"2026-10-11T07:44:52Z","event":"completed","task_id":2920,"note":"Harden compliance mapping automated test harnesses","evidence":["docs/tasks/evidence/T-02920-automated-tests-hardening.md"]}
+{"seq":2921,"ts":"2026-10-11T07:47:13Z","event":"completed","task_id":2921,"note":"Document compliance mapping automated test suite","evidence":["docs/tasks/evidence/T-02921-automated-tests-documentation.md"]}

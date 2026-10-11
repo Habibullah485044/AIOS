@@ -1003,6 +1003,17 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Invariants certified: COMPLYDOC1..COMPLYDOC5, Invariant I-2.
 - Evidence: docs/tasks/evidence/T-02952-verify.md, docs/tasks/evidence/T-02952-documentation-verification-and-evidence.md.
 
+## T-02962 - Compliance Mapping / recovery & validation: Verification & Evidence (2026-10-11)
+- Milestone closeout for Compliance Mapping recovery & validation subsystem (T-02953..T-02962) and overall Compliance Mapping subsystem closeout.
+- Verification battery:
+  - Python recovery suite (test_compliance_recovery_scaffold.py, test_compliance_recovery_unit.py, test_compliance_recovery_integration.py): 9/9 tests PASSED.
+  - Rust recovery suite (test_compliance_recovery_scaffold.rs, test_compliance_recovery_unit.rs, test_compliance_recovery_integration.rs): 10/10 tests PASSED.
+  - Rust CLI recovery suite (compliance_cli_tests): 5/5 tests PASSED.
+  - Full Python compliance battery: 153/153 tests PASSED.
+  - Full Rust core compliance battery: 42/42 tests PASSED.
+- Invariants certified: COMPLYREC1..COMPLYREC5, PoR Invariant I-2.
+- Evidence: docs/tasks/evidence/T-02962-verify.md, docs/tasks/evidence/T-02962-recovery-validation-verification-evidenc.md.
+
 
 
 

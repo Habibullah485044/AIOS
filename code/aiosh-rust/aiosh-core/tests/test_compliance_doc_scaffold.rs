@@ -44,15 +44,14 @@ fn test_compliance_doc_scaffold_constants_and_types() {
 }
 
 #[test]
-fn test_compliance_doc_scaffold_loud_failure_stubs() {
-    let repo = ComplianceDocRepository::new();
-    assert_eq!(repo.list_topics().len(), 0);
+fn test_compliance_doc_scaffold_implementation_smoke() {
+    let repo = ComplianceDocRepository::with_canonical_topics();
+    assert_eq!(repo.list_topics().len(), 7);
 
-    let get_res = repo.get_topic("comply-test");
-    assert!(get_res.is_err());
-    assert!(get_res.unwrap_err().contains("not implemented"));
+    let get_res = repo.get_topic("compliance.arch.overview");
+    assert!(get_res.is_ok());
 
-    let search_res = repo.search("test");
-    assert!(search_res.is_err());
-    assert!(search_res.unwrap_err().contains("not implemented"));
+    let search_res = repo.search("architecture");
+    assert!(search_res.is_ok());
+    assert!(!search_res.unwrap().is_empty());
 }

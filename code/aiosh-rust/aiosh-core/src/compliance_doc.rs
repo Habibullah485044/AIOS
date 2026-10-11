@@ -13,16 +13,27 @@ pub const MAX_COMPLIANCE_DOC_SNIPPET_LEN: usize = 200;
 pub const COMPLYDOC_ERR_NOT_FOUND: &str = "COMPLYDOC_ERR_NOT_FOUND";
 pub const COMPLYDOC_ERR_QUERY_BOUNDS: &str = "COMPLYDOC_ERR_QUERY_BOUNDS";
 
-/// Sanitizes search query string by stripping control characters and trimming.
+/// Identifies bidirectional override or zero-width formatting codepoints.
+pub fn is_bidi_or_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2069}'
+            | '\u{FEFF}'
+    )
+}
+
+/// Sanitizes search query string by stripping control characters, bidi overrides, and trimming.
 pub fn sanitize_doc_query(s: &str) -> String {
     s.chars()
-        .filter(|c| !c.is_control())
+        .filter(|c| !c.is_control() && !is_bidi_or_invisible(*c))
         .collect::<String>()
         .trim()
         .to_string()
 }
 
-/// Validates topic identifier against path traversal, control chars, and delimiters.
+/// Validates topic identifier against path traversal, control chars, boundary dots/hyphens, and delimiters.
 pub fn validate_topic_id(id: &str) -> Result<(), &'static str> {
     let trimmed = id.trim();
     if trimmed.is_empty() {
@@ -31,7 +42,10 @@ pub fn validate_topic_id(id: &str) -> Result<(), &'static str> {
     if trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains('\0') {
         return Err(COMPLYDOC_ERR_NOT_FOUND);
     }
-    if trimmed.chars().any(|c| c.is_control()) {
+    if trimmed.starts_with('.') || trimmed.ends_with('.') || trimmed.starts_with('-') || trimmed.ends_with('-') {
+        return Err(COMPLYDOC_ERR_NOT_FOUND);
+    }
+    if !trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
         return Err(COMPLYDOC_ERR_NOT_FOUND);
     }
     Ok(())

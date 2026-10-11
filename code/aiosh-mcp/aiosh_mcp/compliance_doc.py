@@ -19,20 +19,39 @@ COMPLYDOC_ERR_NOT_FOUND = "COMPLYDOC_ERR_NOT_FOUND"
 COMPLYDOC_ERR_QUERY_BOUNDS = "COMPLYDOC_ERR_QUERY_BOUNDS"
 
 
+BIDI_AND_INVISIBLE_CODEPOINTS = {
+    0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+    0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x2066, 0x2067, 0x2068, 0x2069,
+    0xFEFF,
+}
+
+
 def sanitize_doc_query(s: str) -> str:
-    """Strips ASCII/Unicode control characters and trims query string."""
-    return "".join(c for c in s if not (ord(c) < 32 or (127 <= ord(c) <= 159))).strip()
+    """Strips ASCII/Unicode control characters, bidi overrides, and trims query string."""
+    filtered = []
+    for c in s:
+        cp = ord(c)
+        if cp < 32 or (127 <= cp <= 159) or cp in BIDI_AND_INVISIBLE_CODEPOINTS:
+            continue
+        filtered.append(c)
+    return "".join(filtered).strip()
 
 
 def validate_topic_id(topic_id: str) -> None:
-    """Validates topic identifier against path traversal and forbidden characters."""
+    """Validates topic identifier against path traversal, forbidden characters, and boundaries."""
     trimmed = (topic_id or "").strip()
     if not trimmed:
         raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: empty topic ID")
     if ".." in trimmed or "/" in trimmed or "\\" in trimmed or "\0" in trimmed:
         raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: invalid characters in topic ID")
-    if any(ord(c) < 32 or (127 <= ord(c) <= 159) for c in trimmed):
-        raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: control characters in topic ID")
+    if trimmed.startswith(".") or trimmed.endswith(".") or trimmed.startswith("-") or trimmed.endswith("-"):
+        raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: invalid boundary characters in topic ID")
+    for c in trimmed:
+        if not (c.isalnum() or c in (".", "_", "-")):
+            raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: forbidden character '{c}' in topic ID")
+        if ord(c) < 32 or (127 <= ord(c) <= 159):
+            raise ValueError(f"{COMPLYDOC_ERR_NOT_FOUND}: control characters in topic ID")
 
 
 class ComplianceDocCategory(str, Enum):

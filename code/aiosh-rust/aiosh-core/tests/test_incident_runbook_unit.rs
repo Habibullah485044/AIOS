@@ -278,3 +278,103 @@ fn test_json_roundtrip_serialization() {
     assert_eq!(baseline.runbooks[0].id, deserialized.runbooks[0].id);
     assert_eq!(baseline.runbooks[0].steps.len(), deserialized.runbooks[0].steps.len());
 }
+
+#[test]
+fn test_action_template_hardening() {
+    assert!(validate_action_template("aiosh run kill {pid}").is_ok());
+    assert!(validate_action_template("aiosh run {cmd_01} --user {target_user}").is_ok());
+    
+    // Unclosed placeholder
+    let unclosed = validate_action_template("aiosh run {pid");
+    assert!(unclosed.is_err());
+    assert!(unclosed.unwrap_err().contains(RUNBOOK_ERR_INVALID_TEMPLATE));
+
+    // Empty placeholder
+    let empty_ph = validate_action_template("aiosh run {}");
+    assert!(empty_ph.is_err());
+    assert!(empty_ph.unwrap_err().contains(RUNBOOK_ERR_INVALID_TEMPLATE));
+
+    // Metacharacters or injection in placeholder
+    let bad_ph = validate_action_template("aiosh run {$(rm -rf)}");
+    assert!(bad_ph.is_err());
+    assert!(bad_ph.unwrap_err().contains(RUNBOOK_ERR_INVALID_TEMPLATE));
+}
+
+#[test]
+fn test_timeout_bounds_hardening() {
+    let ok_step = RunbookStep::new(
+        "S-OK",
+        "Valid timeout",
+        RunbookPhase::Containment,
+        RunbookTargetSubstrate::Process,
+        "echo test",
+        true,
+        false,
+        3600,
+    );
+    assert!(ok_step.is_ok());
+
+    let too_long = RunbookStep::new(
+        "S-BAD",
+        "Too long timeout",
+        RunbookPhase::Containment,
+        RunbookTargetSubstrate::Process,
+        "echo test",
+        true,
+        false,
+        3601,
+    );
+    assert!(too_long.is_err());
+    assert!(too_long.unwrap_err().contains(RUNBOOK_ERR_BOUNDS_EXCEEDED));
+}
+
+#[test]
+fn test_high_risk_classification() {
+    let s_erad = RunbookStep::new(
+        "S-ERAD",
+        "Eradicate rootkit",
+        RunbookPhase::Eradication,
+        RunbookTargetSubstrate::Process,
+        "rm evil",
+        true,
+        false,
+        30,
+    ).unwrap();
+    assert!(s_erad.is_high_risk());
+
+    let s_storage = RunbookStep::new(
+        "S-STOR",
+        "Wipe disk slice",
+        RunbookPhase::Containment,
+        RunbookTargetSubstrate::Storage,
+        "unmount /data",
+        true,
+        false,
+        30,
+    ).unwrap();
+    assert!(s_storage.is_high_risk());
+
+    let s_normal = RunbookStep::new(
+        "S-NORM",
+        "Inspect logs",
+        RunbookPhase::Detection,
+        RunbookTargetSubstrate::AuditRing,
+        "cat logs",
+        true,
+        false,
+        30,
+    ).unwrap();
+    assert!(!s_normal.is_high_risk());
+
+    let rb = RunbookSpec::new(
+        "RB-RISK",
+        "High Risk Spec",
+        IncidentCategory::IntegrityViolation,
+        IncidentSeverity::Critical,
+        "Desc",
+        vec![s_erad, s_storage, s_normal],
+        vec![],
+    ).unwrap();
+    assert_eq!(rb.high_risk_steps().len(), 2);
+}
+

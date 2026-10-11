@@ -550,6 +550,7 @@ def execute(
     reason: str | None = None,
     gate_id: str | None = None,
     grant_id: str | None = None,
+    query: str | None = None,
 ) -> dict:
     """Validate -> operate -> spec §3 envelope. Raises ValueError('CODE: msg')
     on failure; the tool wrapper maps these to the spec §4 error envelope and
@@ -627,8 +628,51 @@ def execute(
         report = generate_compliance_observability_report(snap, policy=None, ring=None)
         return {"ok": True, "action": "stats", "report": asdict(report)}
 
-    if action in ("doc-list", "doc-get", "doc-search"):
-        raise NotImplementedError(f"compliance action '{action}' scaffolded for T-02945")
+    if action == "doc-list":
+        from .compliance_doc import ComplianceDocRepository
+        repo = ComplianceDocRepository()
+        topics = [
+            {"id": t.id, "title": t.title, "category": t.category.value, "summary": t.summary}
+            for t in repo.list_topics()
+        ]
+        return {"ok": True, "action": "doc-list", "topics": topics, "count": len(topics)}
+
+    if action == "doc-get":
+        if not (id or "").strip():
+            raise _err(PARAM_INVALID, "doc-get: required parameter 'id' missing")
+        from .compliance_doc import ComplianceDocRepository
+        repo = ComplianceDocRepository()
+        topic = repo.get_topic(id)
+        return {
+            "ok": True,
+            "action": "doc-get",
+            "topic": {
+                "id": topic.id,
+                "title": topic.title,
+                "category": topic.category.value,
+                "summary": topic.summary,
+                "sections": [{"title": s.title, "content": s.content} for s in topic.sections],
+                "related_topics": topic.related_topics,
+                "markdown": topic.to_markdown(),
+            },
+        }
+
+    if action == "doc-search":
+        if not (query or "").strip():
+            raise _err(PARAM_INVALID, "doc-search: required parameter 'query' missing")
+        from .compliance_doc import ComplianceDocRepository
+        repo = ComplianceDocRepository()
+        results = [
+            {
+                "topic_id": r.topic_id,
+                "title": r.title,
+                "category": r.category.value,
+                "score": r.score,
+                "snippet": r.snippet,
+            }
+            for r in repo.search(query)
+        ]
+        return {"ok": True, "action": "doc-search", "query": query, "results": results, "count": len(results)}
 
     # action == "init"
     snap = init_store(path)

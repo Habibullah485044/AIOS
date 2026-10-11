@@ -681,8 +681,25 @@ def execute(
         ]
         return {"ok": True, "action": "doc-search", "query": query, "results": results, "count": len(results)}
 
-    if action in ("recovery-verify", "recovery-backup", "recovery-repair", "recovery-restore"):
-        raise NotImplementedError(f"compliance action '{action}' scaffolded for T-02955")
+    if action == "recovery-verify":
+        from .compliance_recovery import ComplianceRecoveryService
+        report = ComplianceRecoveryService.verify_integrity(path)
+        return {"ok": True, "action": "recovery-verify", "report": asdict(report)}
+
+    if action == "recovery-backup":
+        from .compliance_recovery import ComplianceRecoveryService
+        backup_path = ComplianceRecoveryService.create_backup(path)
+        return {"ok": True, "action": "recovery-backup", "backup_path": str(backup_path)}
+
+    if action == "recovery-repair":
+        from .compliance_recovery import ComplianceRecoveryService
+        report = ComplianceRecoveryService.repair_catalog(path)
+        return {"ok": True, "action": "recovery-repair", "report": asdict(report)}
+
+    if action == "recovery-restore":
+        from .compliance_recovery import ComplianceRecoveryService
+        report = ComplianceRecoveryService.restore_from_backup(path)
+        return {"ok": True, "action": "recovery-restore", "report": asdict(report)}
 
     # action == "init"
     snap = init_store(path)

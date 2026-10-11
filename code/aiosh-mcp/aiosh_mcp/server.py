@@ -813,7 +813,7 @@ def aios_compliance(
 ) -> dict:
     """Compliance Mapping control surface (T-02894-spec.md §2): action dispatch
     over the compliance catalog. Actions: list | show | register | status |
-    assess | check-pep | init. Read actions need no grant; register/status/init
+    assess | check-pep | init | stats. Read actions need no grant; register/status/init
     are state-changing and require a capability grant via grant_id.
 
     The store is selected by the shared configuration ladder

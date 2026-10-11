@@ -142,6 +142,26 @@ class ComplianceSecurityPolicy:
 
         return CompliancePolicyVerdict.permit()
 
+    @classmethod
+    def permissive(cls) -> "ComplianceSecurityPolicy":
+        return cls(mode=CompliancePolicyMode.PERMISSIVE)
+
+    @classmethod
+    def disabled(cls) -> "ComplianceSecurityPolicy":
+        return cls(mode=CompliancePolicyMode.DISABLED)
+
+    def evaluate_capacity(self, current_count: int) -> CompliancePolicyVerdict:
+        if self.mode == CompliancePolicyMode.DISABLED:
+            return CompliancePolicyVerdict.permit()
+
+        if current_count >= self.max_catalog_mappings:
+            reason = f"Compliance catalog entry count {current_count} reaches policy maximum {self.max_catalog_mappings}"
+            if self.mode == CompliancePolicyMode.ENFORCING:
+                return CompliancePolicyVerdict.deny(reason, COMPLIANCEPOL_ERR_CAPACITY_EXCEEDED)
+            return CompliancePolicyVerdict.permit_with_warning(reason)
+
+        return CompliancePolicyVerdict.permit()
+
     def evaluate_override(self, _caller: str) -> CompliancePolicyVerdict:
         if self.mode == CompliancePolicyMode.DISABLED:
             return CompliancePolicyVerdict.permit()
@@ -153,6 +173,10 @@ class ComplianceSecurityPolicy:
             return CompliancePolicyVerdict.permit_with_warning(reason)
 
         return CompliancePolicyVerdict.permit()
+
+    @classmethod
+    def load_from_path(cls, path: str | Path) -> "ComplianceSecurityPolicy":
+        return cls.load_from_file(path)
 
     @classmethod
     def load_from_file(cls, path: str | Path) -> "ComplianceSecurityPolicy":
@@ -197,3 +221,6 @@ class ComplianceSecurityPolicy:
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(encoded)
         tmp.replace(p)
+
+    def save_to_path(self, path: str | Path) -> None:
+        self.save_to_file(path)

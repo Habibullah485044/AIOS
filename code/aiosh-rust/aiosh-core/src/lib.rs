@@ -48,6 +48,7 @@ pub mod compliance_config;
 pub mod compliance_data_model;
 pub mod compliance_policy;
 pub mod compliance_service;
+pub mod compliance_observability;
 pub mod dispatch;
 pub mod distro;
 pub mod distro_config;

@@ -37,6 +37,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -196,7 +197,12 @@ def main() -> int:
     print(f"[+] merged PR #{pr['number']} ({merged.get('sha', '')[:7]})")
 
     git("checkout", DEFAULT_BRANCH)
-    git("pull", "--ff-only", "origin", DEFAULT_BRANCH)
+    try:
+        git("pull", "--ff-only", "origin", DEFAULT_BRANCH)
+    except Exception:
+        time.sleep(1)
+        git("fetch", "origin", DEFAULT_BRANCH)
+        git("reset", "--hard", f"origin/{DEFAULT_BRANCH}")
     if not args.keep_branch:
         git("branch", "-D", branch, check=False)
         subprocess.run(["git", "push", "origin", "--delete", branch],

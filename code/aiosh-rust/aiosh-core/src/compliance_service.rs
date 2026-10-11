@@ -295,4 +295,8 @@ impl ComplianceService {
             .map(|g| g.to_string())
             .collect()
     }
+
+    pub fn observability_report(&self, ring: Option<&crate::audit::AuditRing>) -> Result<crate::compliance_observability::ComplianceObservabilityReport, String> {
+        crate::compliance_observability::ComplianceObservabilityReport::generate(self, ring)
+    }
 }

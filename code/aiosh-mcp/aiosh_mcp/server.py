@@ -810,10 +810,11 @@ def aios_compliance(
     reason: str | None = None,
     gate_id: str | None = None,
     grant_id: str | None = None,
+    query: str | None = None,
 ) -> dict:
     """Compliance Mapping control surface (T-02894-spec.md §2): action dispatch
     over the compliance catalog. Actions: list | show | register | status |
-    assess | check-pep | init | stats. Read actions need no grant; register/status/init
+    assess | check-pep | init | stats | doc-list | doc-get | doc-search. Read actions need no grant; register/status/init
     are state-changing and require a capability grant via grant_id.
 
     The store is selected by the shared configuration ladder
@@ -828,7 +829,7 @@ def aios_compliance(
             "control_id": control_id, "target_type": target_type,
             "target_ref": target_ref, "threat_ids": threat_ids,
             "mitigation_summary": mitigation_summary, "tags": tags,
-            "reason": reason, "gate_id": gate_id}
+            "reason": reason, "gate_id": gate_id, "query": query}
 
     def _clip(v):
         if isinstance(v, str):
@@ -847,6 +848,7 @@ def aios_compliance(
                 target_ref=target_ref, threat_ids=threat_ids,
                 mitigation_summary=mitigation_summary, tags=tags,
                 reason=reason, gate_id=gate_id, grant_id=grant_id,
+                query=query,
             )
         except ValueError as exc:
             # Spec §4 envelope; _recorded_call turns ok=false into the single

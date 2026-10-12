@@ -6,6 +6,7 @@ and session management for Incident Response Runbooks.
 
 from dataclasses import dataclass, field
 from enum import Enum
+import json
 import re
 from typing import Any
 
@@ -13,6 +14,9 @@ from .audit_client import utcnow_iso
 from .incident_runbook_data_model import (
     RunbookSpec,
     RunbookStep,
+    RunbookCatalogSnapshot,
+    IncidentCategory,
+    IncidentSeverity,
     validate_action_template,
     RUNBOOK_ERR_INVALID_TEMPLATE,
 )
@@ -160,3 +164,175 @@ class RunbookExecutionSession:
             RunbookExecutionStatus.FAILED,
             RunbookExecutionStatus.ABORTED,
         )
+
+    def advance_step(self, spec: RunbookSpec, simulate_success: bool = True) -> StepExecutionStatus:
+        if self.is_terminal():
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Cannot advance session in terminal state {self.status}")
+
+        if self.current_step_index >= len(self.step_records):
+            self.status = RunbookExecutionStatus.COMPLETED
+            self.completed_at = utcnow_iso()
+            return StepExecutionStatus.COMPLETED
+
+        if self.current_step_index >= len(spec.steps):
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Step index {self.current_step_index} out of bounds")
+
+        step_def = spec.steps[self.current_step_index]
+
+        # If step requires confirmation and operator hasn't confirmed yet:
+        if (step_def.requires_confirmation or step_def.is_high_risk()) and not self.operator_confirmed:
+            self.status = RunbookExecutionStatus.AwaitingConfirmation
+            self.step_records[self.current_step_index].status = StepExecutionStatus.AWAITING_CONFIRMATION
+            return StepExecutionStatus.AWAITING_CONFIRMATION
+
+        # Execute step
+        self.status = RunbookExecutionStatus.RUNNING
+        record = self.step_records[self.current_step_index]
+        record.status = StepExecutionStatus.RUNNING
+        record.started_at = utcnow_iso()
+
+        if simulate_success:
+            record.status = StepExecutionStatus.COMPLETED
+            record.completed_at = utcnow_iso()
+            record.exit_code = 0
+            record.output = f"Executed successfully: {record.command_rendered}"
+
+            self.current_step_index += 1
+            self.operator_confirmed = False
+
+            if self.current_step_index >= len(self.step_records):
+                self.status = RunbookExecutionStatus.COMPLETED
+                self.completed_at = utcnow_iso()
+
+            return StepExecutionStatus.COMPLETED
+        else:
+            record.status = StepExecutionStatus.FAILED
+            record.completed_at = utcnow_iso()
+            record.exit_code = 1
+            record.error_message = "Execution simulated failure"
+
+            self.status = RunbookExecutionStatus.FAILED
+            self.completed_at = utcnow_iso()
+
+            return StepExecutionStatus.FAILED
+
+    def confirm_current_step(self) -> None:
+        if self.status != RunbookExecutionStatus.AWAITING_CONFIRMATION:
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session is not awaiting confirmation")
+        self.operator_confirmed = True
+        self.status = RunbookExecutionStatus.RUNNING
+
+    def abort(self, reason: str = "") -> None:
+        if self.is_terminal():
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session already in terminal state")
+        self.status = RunbookExecutionStatus.ABORTED
+        self.completed_at = utcnow_iso()
+        if self.current_step_index < len(self.step_records):
+            record = self.step_records[self.current_step_index]
+            record.status = StepExecutionStatus.SKIPPED
+            record.completed_at = utcnow_iso()
+            record.error_message = f"Aborted: {reason}"
+
+    def fail_current(self, error_message: str) -> None:
+        if self.is_terminal():
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session already in terminal state")
+        if self.current_step_index < len(self.step_records):
+            record = self.step_records[self.current_step_index]
+            record.status = StepExecutionStatus.FAILED
+            record.completed_at = utcnow_iso()
+            record.exit_code = 1
+            record.error_message = error_message
+        self.status = RunbookExecutionStatus.FAILED
+        self.completed_at = utcnow_iso()
+
+    def timeout_current(self) -> None:
+        if self.is_terminal():
+            raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session already in terminal state")
+        if self.current_step_index < len(self.step_records):
+            record = self.step_records[self.current_step_index]
+            record.status = StepExecutionStatus.TIMED_OUT
+            record.completed_at = utcnow_iso()
+            record.exit_code = 124
+            record.error_message = f"{RUNBOOK_ERR_TIMEOUT_EXCEEDED}: Step timeout exceeded"
+        self.status = RunbookExecutionStatus.FAILED
+        self.completed_at = utcnow_iso()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "runbook_id": self.runbook_id,
+            "incident_id": self.incident_id,
+            "parameters": self.parameters,
+            "status": self.status.value if isinstance(self.status, RunbookExecutionStatus) else str(self.status),
+            "current_step_index": self.current_step_index,
+            "step_records": [
+                {
+                    "step_id": r.step_id,
+                    "command_rendered": r.command_rendered,
+                    "status": r.status.value if isinstance(r.status, StepExecutionStatus) else str(r.status),
+                    "started_at": r.started_at,
+                    "completed_at": r.completed_at,
+                    "exit_code": r.exit_code,
+                    "output": r.output,
+                    "error_message": r.error_message,
+                }
+                for r in self.step_records
+            ],
+            "operator_confirmed": self.operator_confirmed,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+        }
+
+    def to_json(self, indent: int | None = None) -> str:
+        return json.dumps(self.to_dict(), indent=indent)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RunbookExecutionSession":
+        step_records = [
+            StepExecutionRecord(
+                step_id=r["step_id"],
+                command_rendered=r["command_rendered"],
+                status=StepExecutionStatus.parse_status(r["status"]),
+                started_at=r.get("started_at", ""),
+                completed_at=r.get("completed_at", ""),
+                exit_code=r.get("exit_code"),
+                output=r.get("output", ""),
+                error_message=r.get("error_message"),
+            )
+            for r in data.get("step_records", [])
+        ]
+        return cls(
+            session_id=data["session_id"],
+            runbook_id=data["runbook_id"],
+            incident_id=data["incident_id"],
+            parameters=data.get("parameters", {}),
+            status=RunbookExecutionStatus.parse_status(data["status"]),
+            current_step_index=data.get("current_step_index", 0),
+            step_records=step_records,
+            operator_confirmed=data.get("operator_confirmed", False),
+            started_at=data.get("started_at", ""),
+            completed_at=data.get("completed_at", ""),
+        )
+
+    @classmethod
+    def from_json(cls, json_str: str) -> "RunbookExecutionSession":
+        return cls.from_dict(json.loads(json_str))
+
+
+def match_runbook(
+    catalog: RunbookCatalogSnapshot,
+    category: IncidentCategory | str,
+    severity: IncidentSeverity | str | None = None,
+) -> RunbookSpec | None:
+    cat = category if isinstance(category, IncidentCategory) else IncidentCategory.parse_category(category)
+    sev = severity if severity is None or isinstance(severity, IncidentSeverity) else IncidentSeverity.parse_severity(severity)
+
+    if sev is not None:
+        for r in catalog.runbooks:
+            if r.category == cat and r.severity == sev:
+                return r
+    for r in catalog.runbooks:
+        if r.category == cat:
+            return r
+    return None
+

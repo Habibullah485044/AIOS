@@ -203,6 +203,138 @@ impl RunbookExecutionSession {
                 | RunbookExecutionStatus::Aborted
         )
     }
+
+    pub fn advance_step(&mut self, spec: &RunbookSpec, simulate_success: bool) -> Result<StepExecutionStatus, String> {
+        if self.is_terminal() {
+            return Err(format!("{}: Cannot advance session in terminal state {:?}", RUNBOOK_ERR_INVALID_TRANSITION, self.status));
+        }
+
+        if self.current_step_index >= self.step_records.len() {
+            self.status = RunbookExecutionStatus::Completed;
+            self.completed_at = utcnow_iso();
+            return Ok(StepExecutionStatus::Completed);
+        }
+
+        let step_def = match spec.steps.get(self.current_step_index) {
+            Some(s) => s,
+            None => {
+                return Err(format!("{}: Step definition index {} out of bounds", RUNBOOK_ERR_INVALID_TRANSITION, self.current_step_index));
+            }
+        };
+
+        // If step requires confirmation and operator hasn't confirmed yet:
+        if (step_def.requires_confirmation || step_def.is_high_risk()) && !self.operator_confirmed {
+            self.status = RunbookExecutionStatus::AwaitingConfirmation;
+            self.step_records[self.current_step_index].status = StepExecutionStatus::AwaitingConfirmation;
+            return Ok(StepExecutionStatus::AwaitingConfirmation);
+        }
+
+        // Execute step
+        self.status = RunbookExecutionStatus::Running;
+        let record = &mut self.step_records[self.current_step_index];
+        record.status = StepExecutionStatus::Running;
+        record.started_at = utcnow_iso();
+
+        if simulate_success {
+            record.status = StepExecutionStatus::Completed;
+            record.completed_at = utcnow_iso();
+            record.exit_code = Some(0);
+            record.output = format!("Executed successfully: {}", record.command_rendered);
+
+            self.current_step_index += 1;
+            self.operator_confirmed = false;
+
+            if self.current_step_index >= self.step_records.len() {
+                self.status = RunbookExecutionStatus::Completed;
+                self.completed_at = utcnow_iso();
+            }
+
+            Ok(StepExecutionStatus::Completed)
+        } else {
+            record.status = StepExecutionStatus::Failed;
+            record.completed_at = utcnow_iso();
+            record.exit_code = Some(1);
+            record.error_message = Some("Execution simulated failure".to_string());
+
+            self.status = RunbookExecutionStatus::Failed;
+            self.completed_at = utcnow_iso();
+
+            Ok(StepExecutionStatus::Failed)
+        }
+    }
+
+    pub fn confirm_current_step(&mut self) -> Result<(), String> {
+        if self.status != RunbookExecutionStatus::AwaitingConfirmation {
+            return Err(format!("{}: Session is not awaiting confirmation", RUNBOOK_ERR_INVALID_TRANSITION));
+        }
+        self.operator_confirmed = true;
+        self.status = RunbookExecutionStatus::Running;
+        Ok(())
+    }
+
+    pub fn abort(&mut self, reason: &str) -> Result<(), String> {
+        if self.is_terminal() {
+            return Err(format!("{}: Session already in terminal state", RUNBOOK_ERR_INVALID_TRANSITION));
+        }
+        self.status = RunbookExecutionStatus::Aborted;
+        self.completed_at = utcnow_iso();
+        if self.current_step_index < self.step_records.len() {
+            let record = &mut self.step_records[self.current_step_index];
+            record.status = StepExecutionStatus::Skipped;
+            record.completed_at = utcnow_iso();
+            record.error_message = Some(format!("Aborted: {}", reason));
+        }
+        Ok(())
+    }
+
+    pub fn fail_current(&mut self, error_message: &str) -> Result<(), String> {
+        if self.is_terminal() {
+            return Err(format!("{}: Session already in terminal state", RUNBOOK_ERR_INVALID_TRANSITION));
+        }
+        if self.current_step_index < self.step_records.len() {
+            let record = &mut self.step_records[self.current_step_index];
+            record.status = StepExecutionStatus::Failed;
+            record.completed_at = utcnow_iso();
+            record.exit_code = Some(1);
+            record.error_message = Some(error_message.to_string());
+        }
+        self.status = RunbookExecutionStatus::Failed;
+        self.completed_at = utcnow_iso();
+        Ok(())
+    }
+
+    pub fn timeout_current(&mut self) -> Result<(), String> {
+        if self.is_terminal() {
+            return Err(format!("{}: Session already in terminal state", RUNBOOK_ERR_INVALID_TRANSITION));
+        }
+        if self.current_step_index < self.step_records.len() {
+            let record = &mut self.step_records[self.current_step_index];
+            record.status = StepExecutionStatus::TimedOut;
+            record.completed_at = utcnow_iso();
+            record.exit_code = Some(124);
+            record.error_message = Some(format!("{}: Step timeout exceeded", RUNBOOK_ERR_TIMEOUT_EXCEEDED));
+        }
+        self.status = RunbookExecutionStatus::Failed;
+        self.completed_at = utcnow_iso();
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json_str)
+    }
+}
+
+pub fn match_runbook<'a>(
+    catalog: &'a RunbookCatalogSnapshot,
+    category: IncidentCategory,
+    severity: IncidentSeverity,
+) -> Option<&'a RunbookSpec> {
+    catalog.runbooks.iter().find(|r| r.category == category && r.severity == severity)
+        .or_else(|| catalog.runbooks.iter().find(|r| r.category == category))
 }
 
 pub fn render_action_template(

@@ -18,7 +18,9 @@ from .incident_runbook_data_model import (
     IncidentCategory,
     IncidentSeverity,
     validate_action_template,
+    validate_identifier,
     RUNBOOK_ERR_INVALID_TEMPLATE,
+    RUNBOOK_ERR_BOUNDS_EXCEEDED,
 )
 
 RUNBOOK_ERR_SESSION_NOT_FOUND = "RUNBOOK_ERR_SESSION_NOT_FOUND"
@@ -27,6 +29,23 @@ RUNBOOK_ERR_MISSING_CONFIRMATION = "RUNBOOK_ERR_MISSING_CONFIRMATION"
 RUNBOOK_ERR_MISSING_CAPABILITY = "RUNBOOK_ERR_MISSING_CAPABILITY"
 RUNBOOK_ERR_TIMEOUT_EXCEEDED = "RUNBOOK_ERR_TIMEOUT_EXCEEDED"
 RUNBOOK_ERR_PARAMETER_NOT_FOUND = "RUNBOOK_ERR_PARAMETER_NOT_FOUND"
+RUNBOOK_ERR_INVALID_PARAM_VALUE = "RUNBOOK_ERR_INVALID_PARAM_VALUE"
+
+MAX_RUNBOOK_PARAM_LEN = 256
+MAX_RUNBOOK_PARAMS_COUNT = 32
+
+
+def validate_parameter_value(key: str, val: str) -> str:
+    if not val:
+        raise ValueError(f"{RUNBOOK_ERR_INVALID_PARAM_VALUE}: Parameter '{key}' value cannot be empty")
+    if len(val) > MAX_RUNBOOK_PARAM_LEN:
+        raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Parameter '{key}' length {len(val)} exceeds max {MAX_RUNBOOK_PARAM_LEN}")
+    if ".." in val:
+        raise ValueError(f"{RUNBOOK_ERR_INVALID_PARAM_VALUE}: Parameter '{key}' contains illegal path traversal '..'")
+    if not re.match(r"^[a-zA-Z0-9_\-\.:/]+$", val):
+        raise ValueError(f"{RUNBOOK_ERR_INVALID_PARAM_VALUE}: Parameter '{key}' contains forbidden characters")
+    return val
+
 
 
 class StepExecutionStatus(str, Enum):
@@ -90,8 +109,7 @@ def render_action_template(template: str, parameters: dict[str, str]) -> str:
         if param_name not in parameters:
             raise ValueError(f"{RUNBOOK_ERR_PARAMETER_NOT_FOUND}: Missing parameter '{param_name}'")
         val = parameters[param_name]
-        if any(c in val for c in (";", "|", "&", "`", "$", "\n")):
-            raise ValueError(f"{RUNBOOK_ERR_INVALID_TEMPLATE}: Parameter '{param_name}' contains forbidden shell characters")
+        validate_parameter_value(param_name, val)
         return val
 
     return re.sub(r"\{([^}]+)\}", replacer, template)
@@ -134,6 +152,12 @@ class RunbookExecutionSession:
         parameters: dict[str, str],
     ) -> "RunbookExecutionSession":
         spec.validate()
+        if len(parameters) > MAX_RUNBOOK_PARAMS_COUNT:
+            raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Parameters count {len(parameters)} exceeds max {MAX_RUNBOOK_PARAMS_COUNT}")
+        for k, v in parameters.items():
+            validate_identifier(k, "Parameter key")
+            validate_parameter_value(k, v)
+
         step_records = []
         for step in spec.steps:
             rendered = render_action_template(step.action_template, parameters)
@@ -216,9 +240,15 @@ class RunbookExecutionSession:
 
             return StepExecutionStatus.FAILED
 
-    def confirm_current_step(self) -> None:
+    def confirm_current_step(self, operator_id: str = "operator-default", token: str = "token-auto-approved") -> None:
         if self.status != RunbookExecutionStatus.AWAITING_CONFIRMATION:
             raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session is not awaiting confirmation")
+        op_trimmed = operator_id.strip()
+        if not op_trimmed or len(op_trimmed) > 64:
+            raise ValueError(f"{RUNBOOK_ERR_MISSING_CONFIRMATION}: Invalid operator_id")
+        tok_trimmed = token.strip()
+        if not tok_trimmed or len(tok_trimmed) > 64:
+            raise ValueError(f"{RUNBOOK_ERR_MISSING_CONFIRMATION}: Invalid confirmation token")
         self.operator_confirmed = True
         self.status = RunbookExecutionStatus.RUNNING
 

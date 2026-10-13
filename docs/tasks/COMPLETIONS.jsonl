@@ -2990,3 +2990,4 @@
 {"seq":2990,"ts":"2026-10-13T08:25:35Z","event":"completed","task_id":2990,"note":"Harden Incident Response Runbooks CLI and RustSec security scanning tooling with strict whitelist and bounds clamping","evidence":["docs/tasks/evidence/T-02990-hardening.md"]}
 {"seq":2991,"ts":"2026-10-13T08:27:38Z","event":"completed","task_id":2991,"note":"Document Incident Response Runbooks CLI surface and RustSec security scanning tooling","evidence":["docs/tasks/evidence/T-02991-documentation.md"]}
 {"seq":2992,"ts":"2026-10-13T08:32:13Z","event":"completed","task_id":2992,"note":"Verify Incident Response Runbooks CLI surface and RustSec security scanning tooling milestone","evidence":["docs/tasks/evidence/T-02992-cli-surface-verification-evidenc.md"]}
+{"seq":2993,"ts":"2026-10-13T08:34:44Z","event":"completed","task_id":2993,"note":"Research MCP/API surface for Incident Response Runbooks and RustSec scanning tooling","evidence":["docs/tasks/evidence/T-02993-research.md"]}

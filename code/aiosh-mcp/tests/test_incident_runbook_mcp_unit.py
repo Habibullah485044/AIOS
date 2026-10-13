@@ -1,4 +1,4 @@
-"""Unit tests for Incident Response Runbooks & RustSec MCP surface (T-02996 / T-02997)."""
+"""Unit tests for Incident Response Runbooks & RustSec MCP surface (T-02997)."""
 
 import os
 import tempfile
@@ -9,10 +9,13 @@ from aiosh_mcp.incident_runbook_mcp import (
     execute_scan_action,
     validate_scan_target,
     SEC_ERR_INVALID_TARGET,
+    SEC_ERR_BOUNDS_EXCEEDED,
+    MAX_SCAN_TARGET_LEN,
 )
 from aiosh_mcp.incident_runbook_service import (
     RUNBOOK_ERR_SESSION_NOT_FOUND,
     RUNBOOK_ERR_MISSING_CONFIRMATION,
+    RUNBOOK_ERR_INVALID_TRANSITION,
 )
 
 
@@ -36,11 +39,21 @@ def test_target_validation():
     with pytest.raises(ValueError, match=SEC_ERR_INVALID_TARGET):
         validate_scan_target("127.0.0.1\0malicious")
 
+    # Bounds exceeded
+    oversized = "a" * (MAX_SCAN_TARGET_LEN + 1)
+    with pytest.raises(ValueError, match=SEC_ERR_BOUNDS_EXCEEDED):
+        validate_scan_target(oversized)
+
 
 def test_runbook_mcp_list_and_show():
     res_list = execute_runbook_action(action="list")
     assert res_list["ok"] is True
     assert len(res_list["runbooks"]) >= 2
+
+    # Filtering by category
+    res_filtered = execute_runbook_action(action="list", category="malware_containment")
+    assert res_filtered["ok"] is True
+    assert any(rb["id"] == "RB-IR-MALWARE-01" for rb in res_filtered["runbooks"])
 
     res_show = execute_runbook_action(action="show", runbook_id="RB-IR-MALWARE-01")
     assert res_show["ok"] is True
@@ -88,6 +101,40 @@ def test_runbook_mcp_session_lifecycle():
     assert step_after["ok"] is False
 
 
+def test_runbook_mcp_confirmation_gating():
+    # RB-IR-ACCESS-01 has step 2 requiring confirmation
+    start_res = execute_runbook_action(
+        action="start",
+        runbook_id="RB-IR-ACCESS-01",
+        incident_id="INC-MCP-CONFIRM",
+        parameters={"grant_id": "tok_123", "session_id": "sess_456"},
+    )
+    assert start_res["ok"] is True
+    session_id = start_res["session_id"]
+
+    # Step 1: automated revocation
+    s1 = execute_runbook_action(action="step", session_id=session_id)
+    assert s1["ok"] is True
+
+    # Step 2: requires confirmation
+    s2 = execute_runbook_action(action="step", session_id=session_id)
+    assert s2["ok"] is False
+    assert s2.get("awaiting_confirmation") is True
+
+    # Submitting confirmation
+    conf = execute_runbook_action(
+        action="confirm",
+        session_id=session_id,
+        operator_id="sec_admin",
+        token="CONFIRM_OK_123",
+    )
+    assert conf["ok"] is True
+
+    # Step 2 now advances successfully
+    s2_retry = execute_runbook_action(action="step", session_id=session_id)
+    assert s2_retry["ok"] is True
+
+
 def test_runbook_mcp_abort():
     start_res = execute_runbook_action(
         action="start",
@@ -101,6 +148,24 @@ def test_runbook_mcp_abort():
     abort_res = execute_runbook_action(action="abort", session_id=session_id, reason="False alarm")
     assert abort_res["ok"] is True
     assert abort_res["status"] == "aborted"
+
+
+def test_runbook_mcp_negative_errors():
+    # Show without ID
+    res = execute_runbook_action(action="show")
+    assert res["ok"] is False
+
+    # Start with invalid ID
+    res = execute_runbook_action(action="start", runbook_id="RB-NONEXISTENT", incident_id="INC-1")
+    assert res["ok"] is False
+
+    # Status with invalid session
+    res = execute_runbook_action(action="status", session_id="INVALID-SESSION-UUID")
+    assert res["ok"] is False
+
+    # Confirm with missing token
+    res = execute_runbook_action(action="confirm", session_id="INVALID-SESSION", operator_id="admin")
+    assert res["ok"] is False
 
 
 def test_scan_mcp_files_and_net():
@@ -130,3 +195,15 @@ def test_scan_mcp_files_and_net():
     assert res_net["ok"] is True
     assert res_net["scanned_ports_count"] == 3
     assert res_net["target"] == "127.0.0.1"
+
+
+def test_scan_mcp_web_probing():
+    # Web probing on localhost
+    res_web = execute_scan_action(
+        action="web",
+        target="127.0.0.1:9",
+        wordlist="admin,metrics",
+        timeout_ms=50,
+    )
+    assert res_web["ok"] is True
+    assert res_web["probed_count"] == 2

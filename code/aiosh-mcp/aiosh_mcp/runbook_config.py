@@ -186,8 +186,8 @@ def resolve_runbook_config(
 
     # Level 3: Configuration File
     target_config_path = None
-    if config_path and hygiene_ok(config_path):
-        target_config_path = config_path
+    if config_path is not None:
+        target_config_path = validate_config_path(config_path)
     elif ENV_RUNBOOK_CONFIG in os.environ and hygiene_ok(os.environ[ENV_RUNBOOK_CONFIG]):
         target_config_path = os.environ[ENV_RUNBOOK_CONFIG]
     elif os.path.exists(DEFAULT_CONFIG_PATH):
@@ -293,3 +293,36 @@ def resolve_runbook_config(
         require_operator_confirmation=resolved_require_confirm,
         sources=sources,
     )
+
+
+def safe_resolve_runbook_config(
+    config_path: str | None = None,
+    catalog_path: str | None = None,
+    max_active_sessions: int | None = None,
+    max_catalog_file_bytes: int | None = None,
+    default_step_timeout_seconds: int | None = None,
+    require_operator_confirmation: bool | None = None,
+) -> dict[str, Any]:
+    """Safe resolution wrapper returning standardized result envelope.
+
+    Never raises; returns ok=False with error_code and fallback defaults on failure.
+    """
+    try:
+        cfg = resolve_runbook_config(
+            config_path=config_path,
+            catalog_path=catalog_path,
+            max_active_sessions=max_active_sessions,
+            max_catalog_file_bytes=max_catalog_file_bytes,
+            default_step_timeout_seconds=default_step_timeout_seconds,
+            require_operator_confirmation=require_operator_confirmation,
+        )
+        return {"ok": True, "config": cfg.to_dict()}
+    except ValueError as exc:
+        msg = str(exc)
+        err_code = msg.split(":")[0].strip() if ":" in msg else RUNBOOKCONF_ERR_VALIDATION
+        return {
+            "ok": False,
+            "error_code": err_code,
+            "error": msg,
+            "config": RunbookConfig().to_dict(),
+        }

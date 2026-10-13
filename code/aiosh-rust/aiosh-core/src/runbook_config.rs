@@ -281,3 +281,33 @@ pub fn resolve_runbook_config(overrides: Option<&RunbookConfigOverrides>) -> Res
 
     Ok(config)
 }
+
+/// Standardized result envelope for safe configuration resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SafeResolvedRunbookConfig {
+    pub ok: bool,
+    pub error_code: Option<String>,
+    pub error: Option<String>,
+    pub config: RunbookConfig,
+}
+
+/// Safe resolution wrapper that never panics or fails loudly; returns standardized result envelope.
+pub fn safe_resolve_runbook_config(overrides: Option<&RunbookConfigOverrides>) -> SafeResolvedRunbookConfig {
+    match resolve_runbook_config(overrides) {
+        Ok(cfg) => SafeResolvedRunbookConfig {
+            ok: true,
+            error_code: None,
+            error: None,
+            config: cfg,
+        },
+        Err(err) => {
+            let code = err.split(':').next().unwrap_or(RUNBOOKCONF_ERR_VALIDATION).trim().to_string();
+            SafeResolvedRunbookConfig {
+                ok: false,
+                error_code: Some(code),
+                error: Some(err),
+                config: RunbookConfig::default(),
+            }
+        }
+    }
+}

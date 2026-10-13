@@ -211,7 +211,8 @@ def execute_runbook_core(
         }
 
     if action == "config":
-        cfg = resolve_runbook_config()
+        c_path = parameters.get("config_path") if parameters else None
+        cfg = resolve_runbook_config(config_path=c_path)
         return {
             "ok": True,
             "action": "config",

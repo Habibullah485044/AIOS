@@ -873,6 +873,12 @@ pentest_mod.register_pentest_tools(mcp)
 from . import release as release_mod
 release_mod.register_release_tools(mcp)
 
+# -----------------------------------------------------------------------
+# Phase 2: Register Incident Response Runbooks & RustSec Scanning MCP tools
+# -----------------------------------------------------------------------
+from . import incident_runbook_mcp as incident_runbook_mcp_mod
+incident_runbook_mcp_mod.register_runbook_tools(mcp)
+
 
 
 # -----------------------------------------------------------------------

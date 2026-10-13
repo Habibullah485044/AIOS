@@ -1028,3 +1028,15 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Invariants certified: IRCLI-INV1..IRCLI-INV5, PoR Invariant I-2.
 - Hardening verified: Strict target validation whitelist `[a-zA-Z0-9_\-\.:/\\~@]`, path traversal `..` prohibition, control character scrubbing, resource bounds clamping on ports, timeouts, file sizes, recursion depths, and web paths.
 - Evidence: docs/tasks/evidence/T-02992-verify.md, docs/tasks/evidence/T-02992-cli-surface-verification-evidenc.md.
+
+## T-03002 - Incident Response Runbooks & RustSec Tooling / MCP/API surface: Verification & Evidence (2026-10-13)
+- Milestone closeout for Incident Response Runbooks MCP/API surface and RustSec scanning tooling (T-02993..T-03002).
+- Verification battery:
+  - Python MCP scaffold suite (`test_incident_runbook_mcp_scaffold.py`): 2/2 tests PASSED.
+  - Python MCP unit test suite (`test_incident_runbook_mcp_unit.py`): 8/8 tests PASSED.
+  - Python MCP integration suite (`test_incident_runbook_mcp_integration.py`): 2/2 tests PASSED.
+  - Python core service suites (`test_incident_runbook_service_unit.py`, `test_incident_runbook_service_integration.py`): 10/10 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: IRMCP-INV1..IRMCP-INV5, PoR Invariant I-2.
+- Dual-gate dispatch verified: classifier rule-pack checking (C-1..C-4) and PEP capability redemption required for all consequential operations; atomic audit row emitted on every path.
+- Evidence: docs/tasks/evidence/T-03002-verify.md, docs/tasks/evidence/T-03002-mcp-api-surface-verification-evidenc.md.

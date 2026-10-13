@@ -35,6 +35,7 @@ from .incident_runbook_service import (
     RUNBOOK_ERR_INVALID_PARAM_VALUE,
     MAX_RUNBOOK_PARAM_LEN,
     MAX_RUNBOOK_PARAMS_COUNT,
+    validate_parameter_value,
 )
 
 # Constants & Bounds Clamping
@@ -134,7 +135,8 @@ def _recorded_mcp_call(
             classify_overall_verdict=verdict.get("classify_overall_verdict"),
             classify_verdict_reason=verdict.get("classify_verdict_reason"),
         )
-        return {"ok": False, "error": detail, "audit_id": row.id}
+        action_name = command.split(".")[-1] if "." in command else command
+        return {"ok": False, "action": action_name, "error": detail, "audit_id": row.id}
 
 
 def execute_runbook_core(
@@ -225,6 +227,11 @@ def execute_runbook_core(
             raise ValueError(f"{RUNBOOK_ERR_SESSION_NOT_FOUND}: Runbook '{runbook_id}' not found")
 
         params = parameters or {}
+        if len(params) > MAX_RUNBOOK_PARAMS_COUNT:
+            raise ValueError(f"{RUNBOOK_ERR_BOUNDS_EXCEEDED}: Parameters count {len(params)} exceeds maximum {MAX_RUNBOOK_PARAMS_COUNT}")
+        for k, v in params.items():
+            validate_parameter_value(k, str(v))
+
         session = RunbookExecutionSession.init_from_spec(spec, incident_id, params)
         with _SESSION_STORE_LOCK:
             if len(_ACTIVE_SESSIONS) >= 1000:
@@ -282,8 +289,10 @@ def execute_runbook_core(
     if action == "confirm":
         if not session_id:
             raise ValueError(f"{RUNBOOK_ERR_SESSION_NOT_FOUND}: session_id is required for confirm")
-        if not operator_id or not token:
-            raise ValueError(f"{RUNBOOK_ERR_MISSING_CONFIRMATION}: operator_id and token are required for confirm")
+        if not operator_id or not operator_id.strip() or len(operator_id) > 64:
+            raise ValueError(f"{RUNBOOK_ERR_MISSING_CONFIRMATION}: operator_id must be non-empty and <= 64 characters")
+        if not token or not token.strip() or len(token) > 64:
+            raise ValueError(f"{RUNBOOK_ERR_MISSING_CONFIRMATION}: token must be non-empty and <= 64 characters")
 
         with _SESSION_STORE_LOCK:
             session = _ACTIVE_SESSIONS.get(session_id)

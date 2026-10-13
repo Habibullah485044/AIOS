@@ -38,6 +38,8 @@ from .incident_runbook_service import (
     validate_parameter_value,
 )
 
+from .runbook_config import resolve_runbook_config
+
 # Constants & Bounds Clamping
 MAX_SCAN_TARGET_LEN = 256
 MAX_PORTS_PER_SCAN = 10000
@@ -49,7 +51,7 @@ MAX_WEB_PATHS = 1000
 SEC_ERR_INVALID_TARGET = "SEC_ERR_INVALID_TARGET"
 SEC_ERR_BOUNDS_EXCEEDED = "SEC_ERR_BOUNDS_EXCEEDED"
 
-RUNBOOK_READ_ACTIONS = {"list", "show", "status"}
+RUNBOOK_READ_ACTIONS = {"list", "show", "status", "config"}
 RUNBOOK_WRITE_ACTIONS = {"start", "step", "confirm", "abort", "init"}
 SCAN_ACTIONS = {"net", "files", "web"}
 
@@ -208,6 +210,14 @@ def execute_runbook_core(
             },
         }
 
+    if action == "config":
+        cfg = resolve_runbook_config()
+        return {
+            "ok": True,
+            "action": "config",
+            "config": cfg.to_dict(),
+        }
+
     if action == "init":
         _CATALOG_SNAPSHOT = RunbookCatalogSnapshot.canonical_baseline()
         return {
@@ -233,8 +243,9 @@ def execute_runbook_core(
             validate_parameter_value(k, str(v))
 
         session = RunbookExecutionSession.init_from_spec(spec, incident_id, params)
+        cfg = resolve_runbook_config()
         with _SESSION_STORE_LOCK:
-            if len(_ACTIVE_SESSIONS) >= 1000:
+            if len(_ACTIVE_SESSIONS) >= cfg.max_active_sessions:
                 oldest = next(iter(_ACTIVE_SESSIONS))
                 _ACTIVE_SESSIONS.pop(oldest, None)
             _ACTIVE_SESSIONS[session.session_id] = session
@@ -624,7 +635,7 @@ def register_runbook_tools(mcp: FastMCP) -> None:
         grant_id: str | None = None,
     ) -> dict[str, Any]:
         """Incident Response Runbooks control surface (SPEC-INCIDENT-RUNBOOK-MCP):
-        Actions: list | show | init | start | step | confirm | status | abort.
+        Actions: list | show | init | start | step | confirm | status | abort | config.
         """
         return execute_runbook_action(
             action=action,

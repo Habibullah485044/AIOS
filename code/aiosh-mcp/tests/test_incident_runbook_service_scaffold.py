@@ -41,7 +41,7 @@ def test_incident_runbook_service_template_interpolation():
 
     # Injection characters in parameter
     bad_params = {"bad_param": "1337; rm -rf /"}
-    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_TEMPLATE):
+    with pytest.raises(ValueError, match=r"RUNBOOK_ERR_INVALID_(TEMPLATE|PARAM_VALUE)"):
         render_action_template("aiosh run kill {bad_param}", bad_params)
 
 

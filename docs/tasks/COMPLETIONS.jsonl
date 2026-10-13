@@ -2984,3 +2984,4 @@
 {"seq":2984,"ts":"2026-10-12T14:22:23Z","event":"completed","task_id":2984,"note":"Specify Incident Response Runbooks and RustSec security scanning CLI surface","evidence":["docs/tasks/evidence/T-02984-spec.md"]}
 {"seq":2985,"ts":"2026-10-13T07:52:23Z","event":"completed","task_id":2985,"note":"Scaffold Incident Response Runbooks CLI and RustSec security scanning substrate","evidence":["docs/tasks/evidence/T-02985-scaffold.md"]}
 {"seq":2986,"ts":"2026-10-13T08:07:04Z","event":"completed","task_id":2986,"note":"Implement working Incident Response Runbooks CLI and RustSec security scanning execution substrate","evidence":["docs/tasks/evidence/T-02986-implementation.md"]}
+{"seq":2987,"ts":"2026-10-13T08:12:18Z","event":"completed","task_id":2987,"note":"Add unit tests for Incident Response Runbooks CLI and RustSec security scanning tooling","evidence":["docs/tasks/evidence/T-02987-unit-test.md"]}

@@ -21759,6 +21759,68 @@ mod compliance_cli_tests {
     }
 }
 
+#[cfg(test)]
+mod runbook_scan_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_runbook_cli_commands() {
+        // 1. Help
+        assert_eq!(cmd_runbook(&s(&["--help"])), 0);
+
+        // 2. List
+        assert_eq!(cmd_runbook(&s(&["list"])), 0);
+        assert_eq!(cmd_runbook(&s(&["list", "--json"])), 0);
+        assert_eq!(cmd_runbook(&s(&["list", "--category", "malware"])), 0);
+        assert_eq!(cmd_runbook(&s(&["list", "--severity", "high"])), 0);
+
+        // 3. Show
+        assert_eq!(cmd_runbook(&s(&["show", "RB-IR-MALWARE-01"])), 0);
+        assert_eq!(cmd_runbook(&s(&["show", "RB-IR-MALWARE-01", "--json"])), 0);
+        assert_eq!(cmd_runbook(&s(&["show", "RB-NONEXISTENT"])), 1);
+        assert_eq!(cmd_runbook(&s(&["show"])), 2);
+
+        // 4. Unknown
+        assert_eq!(cmd_runbook(&s(&["unknown_cmd"])), 2);
+
+        // 5. Init
+        let tmp_init = std::env::temp_dir().join(format!("test_rb_init_{}.json", std::process::id()));
+        let tmp_str = tmp_init.to_string_lossy().to_string();
+        assert_eq!(cmd_runbook(&s(&["init", "--path", &tmp_str])), 0);
+        let _ = std::fs::remove_file(&tmp_init);
+    }
+
+    #[test]
+    fn test_scan_cli_commands() {
+        // 1. Help
+        assert_eq!(cmd_scan(&s(&["--help"])), 0);
+
+        // 2. Unknown
+        assert_eq!(cmd_scan(&s(&["unknown_scan"])), 2);
+
+        // 3. Scan Net
+        assert_eq!(cmd_scan(&s(&["net"])), 2);
+        assert_eq!(cmd_scan(&s(&["net", "127.0.0.1", "--timeout-s", "1"])), 0);
+        assert_eq!(cmd_scan(&s(&["net", "127.0.0.1", "--timeout-s", "1", "--json"])), 0);
+
+        // 4. Scan Files
+        assert_eq!(cmd_scan(&s(&["files"])), 2);
+        assert_eq!(cmd_scan(&s(&["files", "/tmp"])), 2); // missing --pattern
+        let temp_dir = std::env::temp_dir();
+        let temp_str = temp_dir.to_string_lossy().to_string();
+        assert_eq!(cmd_scan(&s(&["files", &temp_str, "--pattern", "AIOS_PATTERN_NONE", "--timeout-s", "1"])), 0);
+
+        // 5. Scan Web
+        assert_eq!(cmd_scan(&s(&["web"])), 2);
+        assert_eq!(cmd_scan(&s(&["web", "http://127.0.0.1:59999", "--timeout-s", "1"])), 0);
+    }
+}
+
+
 
 
 

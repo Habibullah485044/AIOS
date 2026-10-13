@@ -2987,3 +2987,4 @@
 {"seq":2987,"ts":"2026-10-13T08:12:18Z","event":"completed","task_id":2987,"note":"Add unit tests for Incident Response Runbooks CLI and RustSec security scanning tooling","evidence":["docs/tasks/evidence/T-02987-unit-test.md"]}
 {"seq":2988,"ts":"2026-10-13T08:16:44Z","event":"completed","task_id":2988,"note":"Integrate Incident Response Runbooks CLI and RustSec security scanning tooling with core audit ring","evidence":["docs/tasks/evidence/T-02988-integration.md"]}
 {"seq":2989,"ts":"2026-10-13T08:19:17Z","event":"completed","task_id":2989,"note":"Security review for Incident Response Runbooks CLI and RustSec security scanning tooling","evidence":["docs/tasks/evidence/T-02989-security.md"]}
+{"seq":2990,"ts":"2026-10-13T08:25:35Z","event":"completed","task_id":2990,"note":"Harden Incident Response Runbooks CLI and RustSec security scanning tooling with strict whitelist and bounds clamping","evidence":["docs/tasks/evidence/T-02990-hardening.md"]}

@@ -66,7 +66,7 @@ pub struct ScanWebResult {
     pub elapsed_ms: u64,
 }
 
-/// Validate target string against injection characters, path traversal, and length limits.
+/// Validate target string against injection characters, path traversal, control characters, and length limits.
 pub fn validate_scan_target(target: &str) -> Result<(), String> {
     let trimmed = target.trim();
     if trimmed.is_empty() {
@@ -75,8 +75,14 @@ pub fn validate_scan_target(target: &str) -> Result<(), String> {
     if trimmed.len() > MAX_SCAN_TARGET_LEN {
         return Err(format!("{}: Target length {} exceeds maximum {}", SEC_ERR_BOUNDS_EXCEEDED, trimmed.len(), MAX_SCAN_TARGET_LEN));
     }
-    if trimmed.contains("..") || trimmed.contains(';') || trimmed.contains('|') || trimmed.contains('&') || trimmed.contains('`') || trimmed.contains('$') {
-        return Err(format!("{}: Target contains illegal characters or path traversal", SEC_ERR_INVALID_TARGET));
+    if trimmed.contains("..") {
+        return Err(format!("{}: Path traversal '..' strictly prohibited", SEC_ERR_INVALID_TARGET));
+    }
+    if trimmed.contains('\0') || trimmed.contains('\n') || trimmed.contains('\r') {
+        return Err(format!("{}: Control characters strictly prohibited", SEC_ERR_INVALID_TARGET));
+    }
+    if !trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':' || c == '/' || c == '\\' || c == '~' || c == '@') {
+        return Err(format!("{}: Target contains illegal characters outside whitelist [a-zA-Z0-9_\\-\\.:/\\\\~@]", SEC_ERR_INVALID_TARGET));
     }
     Ok(())
 }

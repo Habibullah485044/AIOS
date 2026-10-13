@@ -2996,3 +2996,4 @@
 {"seq":2996,"ts":"2026-10-13T08:49:37Z","event":"completed","task_id":2996,"note":"Implement MCP/API surface for Incident Response Runbooks and RustSec scanning tooling","evidence":["docs/tasks/evidence/T-02996-implementation.md"]}
 {"seq":2997,"ts":"2026-10-13T08:54:23Z","event":"completed","task_id":2997,"note":"Add focused unit tests for Incident Response Runbooks and RustSec scanning MCP surface","evidence":["docs/tasks/evidence/T-02997-unit-test.md"]}
 {"seq":2998,"ts":"2026-10-13T09:00:42Z","event":"completed","task_id":2998,"note":"Integrate Incident Response Runbooks and RustSec scanning MCP surface with FastMCP server and audit ring","evidence":["docs/tasks/evidence/T-02998-integration.md"]}
+{"seq":2999,"ts":"2026-10-13T09:03:25Z","event":"completed","task_id":2999,"note":"Security review for Incident Response Runbooks and RustSec scanning MCP surface","evidence":["docs/tasks/evidence/T-02999-security.md"]}

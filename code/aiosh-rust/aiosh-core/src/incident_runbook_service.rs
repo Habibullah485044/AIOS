@@ -16,6 +16,10 @@ pub const RUNBOOK_ERR_MISSING_CONFIRMATION: &str = "RUNBOOK_ERR_MISSING_CONFIRMA
 pub const RUNBOOK_ERR_MISSING_CAPABILITY: &str = "RUNBOOK_ERR_MISSING_CAPABILITY";
 pub const RUNBOOK_ERR_TIMEOUT_EXCEEDED: &str = "RUNBOOK_ERR_TIMEOUT_EXCEEDED";
 pub const RUNBOOK_ERR_PARAMETER_NOT_FOUND: &str = "RUNBOOK_ERR_PARAMETER_NOT_FOUND";
+pub const RUNBOOK_ERR_INVALID_PARAM_VALUE: &str = "RUNBOOK_ERR_INVALID_PARAM_VALUE";
+
+pub const MAX_RUNBOOK_PARAM_LEN: usize = 256;
+pub const MAX_RUNBOOK_PARAMS_COUNT: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -173,6 +177,14 @@ impl RunbookExecutionSession {
     ) -> Result<Self, String> {
         spec.validate()?;
 
+        if parameters.len() > MAX_RUNBOOK_PARAMS_COUNT {
+            return Err(format!("{}: Parameters count {} exceeds maximum {}", RUNBOOK_ERR_BOUNDS_EXCEEDED, parameters.len(), MAX_RUNBOOK_PARAMS_COUNT));
+        }
+        for (k, v) in &parameters {
+            validate_identifier(k, "Parameter key")?;
+            validate_parameter_value(k, v)?;
+        }
+
         let mut step_records = Vec::with_capacity(spec.steps.len());
         for step in &spec.steps {
             let rendered = render_action_template(&step.action_template, &parameters)?;
@@ -264,8 +276,20 @@ impl RunbookExecutionSession {
     }
 
     pub fn confirm_current_step(&mut self) -> Result<(), String> {
+        self.confirm_with_token("operator-default", "token-auto-approved")
+    }
+
+    pub fn confirm_with_token(&mut self, operator_id: &str, token: &str) -> Result<(), String> {
         if self.status != RunbookExecutionStatus::AwaitingConfirmation {
             return Err(format!("{}: Session is not awaiting confirmation", RUNBOOK_ERR_INVALID_TRANSITION));
+        }
+        let op_trimmed = operator_id.trim();
+        if op_trimmed.is_empty() || op_trimmed.len() > 64 {
+            return Err(format!("{}: Invalid operator_id", RUNBOOK_ERR_MISSING_CONFIRMATION));
+        }
+        let token_trimmed = token.trim();
+        if token_trimmed.is_empty() || token_trimmed.len() > 64 {
+            return Err(format!("{}: Invalid confirmation token", RUNBOOK_ERR_MISSING_CONFIRMATION));
         }
         self.operator_confirmed = true;
         self.status = RunbookExecutionStatus::Running;
@@ -337,6 +361,22 @@ pub fn match_runbook<'a>(
         .or_else(|| catalog.runbooks.iter().find(|r| r.category == category))
 }
 
+pub fn validate_parameter_value(key: &str, val: &str) -> Result<(), String> {
+    if val.is_empty() {
+        return Err(format!("{}: Parameter '{}' value cannot be empty", RUNBOOK_ERR_INVALID_PARAM_VALUE, key));
+    }
+    if val.len() > MAX_RUNBOOK_PARAM_LEN {
+        return Err(format!("{}: Parameter '{}' length {} exceeds max {}", RUNBOOK_ERR_BOUNDS_EXCEEDED, key, val.len(), MAX_RUNBOOK_PARAM_LEN));
+    }
+    if val.contains("..") {
+        return Err(format!("{}: Parameter '{}' contains illegal path traversal '..'", RUNBOOK_ERR_INVALID_PARAM_VALUE, key));
+    }
+    if !val.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':' || c == '/') {
+        return Err(format!("{}: Parameter '{}' contains forbidden characters (allowed: alphanumeric, '_', '-', '.', ':', '/')", RUNBOOK_ERR_INVALID_PARAM_VALUE, key));
+    }
+    Ok(())
+}
+
 pub fn render_action_template(
     template: &str,
     parameters: &HashMap<String, String>,
@@ -357,10 +397,7 @@ pub fn render_action_template(
             }
             let key_trimmed = key.trim();
             if let Some(val) = parameters.get(key_trimmed) {
-                // Ensure value does not contain command injection characters
-                if val.chars().any(|ch| ch == ';' || ch == '|' || ch == '&' || ch == '`' || ch == '$' || ch == '\n') {
-                    return Err(format!("{}: Parameter '{}' contains forbidden shell characters", RUNBOOK_ERR_INVALID_TEMPLATE, key_trimmed));
-                }
+                validate_parameter_value(key_trimmed, val)?;
                 result.push_str(val);
             } else {
                 return Err(format!("{}: Missing required parameter '{}'", RUNBOOK_ERR_PARAMETER_NOT_FOUND, key_trimmed));

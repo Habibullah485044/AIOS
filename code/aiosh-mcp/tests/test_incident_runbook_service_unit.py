@@ -12,8 +12,14 @@ from aiosh_mcp.incident_runbook_service import (
     RunbookExecutionStatus,
     RunbookExecutionSession,
     match_runbook,
+    validate_parameter_value,
     RUNBOOK_ERR_INVALID_TRANSITION,
     RUNBOOK_ERR_TIMEOUT_EXCEEDED,
+    RUNBOOK_ERR_INVALID_PARAM_VALUE,
+    RUNBOOK_ERR_BOUNDS_EXCEEDED,
+    RUNBOOK_ERR_MISSING_CONFIRMATION,
+    MAX_RUNBOOK_PARAM_LEN,
+    MAX_RUNBOOK_PARAMS_COUNT,
 )
 
 
@@ -141,3 +147,65 @@ def test_catalog_matching_and_json_roundtrip():
     assert session.session_id == rehydrated.session_id
     assert len(session.step_records) == len(rehydrated.step_records)
     assert session.status == rehydrated.status
+
+
+def test_parameter_value_hardening():
+    # Valid values
+    assert validate_parameter_value("pid", "12345") == "12345"
+    assert validate_parameter_value("path", "/var/log/audit.log") == "/var/log/audit.log"
+    assert validate_parameter_value("ip", "192.168.1.1:8080") == "192.168.1.1:8080"
+
+    # Empty
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("pid", "")
+
+    # Path traversal
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("path", "../etc/passwd")
+
+    # Command injection metacharacters
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("pid", "1234; rm -rf")
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("pid", "1234 | sh")
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("pid", "1234 `id`")
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_INVALID_PARAM_VALUE):
+        validate_parameter_value("pid", "$(cat /etc/shadow)")
+
+    # Exceed max length
+    long_val = "A" * (MAX_RUNBOOK_PARAM_LEN + 1)
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_BOUNDS_EXCEEDED):
+        validate_parameter_value("long", long_val)
+
+
+def test_parameter_count_bounds_hardening():
+    baseline = RunbookCatalogSnapshot.canonical_baseline()
+    spec = baseline.get_runbook("RB-IR-MALWARE-01")
+
+    too_many_params = {f"param_{i}": f"val_{i}" for i in range(33)}
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_BOUNDS_EXCEEDED):
+        RunbookExecutionSession.init_from_spec(spec, "INC-TOO-MANY", too_many_params)
+
+
+def test_confirmation_token_hardening():
+    baseline = RunbookCatalogSnapshot.canonical_baseline()
+    access_spec = baseline.get_runbook("RB-IR-ACCESS-01")
+
+    params = {"grant_id": "GRANT-1", "session_id": "SES-1"}
+    session = RunbookExecutionSession.init_from_spec(access_spec, "INC-CONF-VAL", params)
+    session.advance_step(access_spec, simulate_success=True)
+    session.advance_step(access_spec, simulate_success=True)
+    assert session.status == RunbookExecutionStatus.AWAITING_CONFIRMATION
+
+    # Invalid operator ID
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_MISSING_CONFIRMATION):
+        session.confirm_current_step(operator_id="", token="valid-token")
+
+    # Invalid token
+    with pytest.raises(ValueError, match=RUNBOOK_ERR_MISSING_CONFIRMATION):
+        session.confirm_current_step(operator_id="operator-alice", token="")
+
+    # Valid confirmation
+    session.confirm_current_step(operator_id="operator-alice", token="sig-verified-99")
+    assert session.status == RunbookExecutionStatus.RUNNING

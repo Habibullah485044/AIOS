@@ -16,9 +16,11 @@ def test_mcp_tools_registered():
     assert "aios_scan" in tools
 
 
-def test_scaffold_functions_raise_not_implemented():
-    with pytest.raises(NotImplementedError, match="execute_runbook_action scaffold"):
-        execute_runbook_action(action="list")
+def test_scaffold_tools_callable():
+    res = execute_runbook_action(action="list")
+    assert res["ok"] is True
+    assert "runbooks" in res
 
-    with pytest.raises(NotImplementedError, match="execute_scan_action scaffold"):
-        execute_scan_action(action="net", target="127.0.0.1")
+    res_scan = execute_scan_action(action="net", target="127.0.0.1", ports="80,443")
+    assert res_scan["ok"] is True
+    assert res_scan["target"] == "127.0.0.1"

@@ -35,6 +35,7 @@ def test_validate_config_path():
         validate_config_path("../evil/path.json")
 
 
-def test_resolve_scaffold_raises_not_implemented():
-    with pytest.raises(NotImplementedError, match="resolve_runbook_config scaffold"):
-        resolve_runbook_config()
+def test_resolve_scaffold():
+    cfg = resolve_runbook_config()
+    assert isinstance(cfg, RunbookConfig)
+    assert cfg.catalog_path == DEFAULT_CATALOG_PATH

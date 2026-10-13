@@ -1,11 +1,11 @@
-//! Incident Response Runbooks configuration module (T-03005 SCAFFOLD).
+//! Incident Response Runbooks configuration module (T-03006).
 //!
 //! Contract: `docs/SPEC-INCIDENT-RUNBOOK-CONFIG.md`.
 //! Research: `docs/tasks/evidence/T-03003-research.md`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Hard cap on configuration JSON file: 64 KiB.
 pub const MAX_CONFIG_FILE_BYTES: u64 = 64 * 1024;
@@ -113,10 +113,13 @@ pub struct RunbookConfigOverrides {
     pub require_operator_confirmation: Option<bool>,
 }
 
-/// Resolve configuration by evaluating the 4-level precedence ladder.
-/// Scaffold implementation fails loudly with unimplemented.
-pub fn resolve_runbook_config(_overrides: Option<&RunbookConfigOverrides>) -> Result<RunbookConfig, String> {
-    unimplemented!("resolve_runbook_config scaffold - pending T-03006 implementation")
+/// Hygiene check for paths.
+pub fn hygiene_ok(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_CONFIG_PATH_LEN || trimmed.contains("..") {
+        return false;
+    }
+    !trimmed.chars().any(|ch| (ch as u32) < 32 || (ch as u32) == 127)
 }
 
 /// Validate configuration path against traversal and length limits.
@@ -132,4 +135,149 @@ pub fn validate_config_path(path: &str) -> Result<PathBuf, String> {
         return Err(format!("{}: Path traversal '..' strictly prohibited", RUNBOOKCONF_ERR_PATH_TRAVERSAL));
     }
     Ok(PathBuf::from(trimmed))
+}
+
+fn read_raw_config(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    if path.is_dir() {
+        return Err(format!("{}: Config path is a directory: {:?}", RUNBOOKCONF_ERR_IO, path));
+    }
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("{}: Cannot stat {:?}: {}", RUNBOOKCONF_ERR_IO, path, e))?;
+    if metadata.len() > MAX_CONFIG_FILE_BYTES {
+        return Err(format!("{}: Config file {:?} exceeds maximum {} bytes", RUNBOOKCONF_ERR_FILE_SIZE, path, MAX_CONFIG_FILE_BYTES));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("{}: Cannot read {:?}: {}", RUNBOOKCONF_ERR_IO, path, e))?;
+    let val: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("{}: Malformed JSON in {:?}: {}", RUNBOOKCONF_ERR_PARSE, path, e))?;
+    if !val.is_object() {
+        return Err(format!("{}: Config root must be a JSON object: {:?}", RUNBOOKCONF_ERR_PARSE, path));
+    }
+    Ok(Some(val))
+}
+
+/// Resolve configuration by evaluating the 4-level precedence ladder.
+pub fn resolve_runbook_config(overrides: Option<&RunbookConfigOverrides>) -> Result<RunbookConfig, String> {
+    let mut config = RunbookConfig::default();
+
+    // Level 3: Config file
+    let target_file_path = if let Some(p) = overrides.and_then(|o| o.config_path.as_deref()) {
+        validate_config_path(p)?;
+        Some(PathBuf::from(p))
+    } else if let Ok(env_path) = std::env::var(ENV_RUNBOOK_CONFIG) {
+        if hygiene_ok(&env_path) {
+            Some(PathBuf::from(env_path))
+        } else {
+            None
+        }
+    } else {
+        let def = PathBuf::from(DEFAULT_CONFIG_PATH);
+        if def.exists() {
+            Some(def)
+        } else {
+            None
+        }
+    };
+
+    if let Some(ref path) = target_file_path {
+        if let Some(val) = read_raw_config(path)? {
+            if let Some(obj) = val.as_object() {
+                if let Some(cat) = obj.get("catalog_path").and_then(|v| v.as_str()) {
+                    if hygiene_ok(cat) {
+                        config.catalog_path = cat.to_string();
+                        config.sources.insert("catalog_path".to_string(), ConfigSource::File);
+                    } else {
+                        config.sources.insert("catalog_path".to_string(), ConfigSource::ConfigInvalid);
+                    }
+                }
+                if let Some(ms) = obj.get("max_active_sessions").and_then(|v| v.as_u64()) {
+                    config.max_active_sessions = ms.clamp(MIN_MAX_ACTIVE_SESSIONS as u64, MAX_MAX_ACTIVE_SESSIONS as u64) as u32;
+                    config.sources.insert("max_active_sessions".to_string(), ConfigSource::File);
+                }
+                if let Some(mf) = obj.get("max_catalog_file_bytes").and_then(|v| v.as_u64()) {
+                    config.max_catalog_file_bytes = mf.clamp(MIN_MAX_CATALOG_FILE_BYTES, MAX_MAX_CATALOG_FILE_BYTES);
+                    config.sources.insert("max_catalog_file_bytes".to_string(), ConfigSource::File);
+                }
+                if let Some(to) = obj.get("default_step_timeout_seconds").and_then(|v| v.as_u64()) {
+                    config.default_step_timeout_seconds = to.clamp(MIN_STEP_TIMEOUT_SECONDS, MAX_STEP_TIMEOUT_SECONDS);
+                    config.sources.insert("default_step_timeout_seconds".to_string(), ConfigSource::File);
+                }
+                if let Some(rc) = obj.get("require_operator_confirmation").and_then(|v| v.as_bool()) {
+                    config.require_operator_confirmation = rc;
+                    config.sources.insert("require_operator_confirmation".to_string(), ConfigSource::File);
+                }
+            }
+        }
+    }
+
+    // Level 2: Environment variables
+    if let Ok(env_cat) = std::env::var(ENV_RUNBOOK_CATALOG_PATH) {
+        if hygiene_ok(&env_cat) {
+            config.catalog_path = env_cat.trim().to_string();
+            config.sources.insert("catalog_path".to_string(), ConfigSource::Env);
+        } else {
+            config.sources.insert("catalog_path".to_string(), ConfigSource::EnvInvalid);
+        }
+    }
+
+    if let Ok(env_ms) = std::env::var(ENV_RUNBOOK_MAX_SESSIONS) {
+        if let Ok(parsed) = env_ms.trim().parse::<u32>() {
+            config.max_active_sessions = parsed.clamp(MIN_MAX_ACTIVE_SESSIONS, MAX_MAX_ACTIVE_SESSIONS);
+            config.sources.insert("max_active_sessions".to_string(), ConfigSource::Env);
+        } else {
+            config.sources.insert("max_active_sessions".to_string(), ConfigSource::EnvInvalid);
+        }
+    }
+
+    if let Ok(env_to) = std::env::var(ENV_RUNBOOK_STEP_TIMEOUT) {
+        if let Ok(parsed) = env_to.trim().parse::<u64>() {
+            config.default_step_timeout_seconds = parsed.clamp(MIN_STEP_TIMEOUT_SECONDS, MAX_STEP_TIMEOUT_SECONDS);
+            config.sources.insert("default_step_timeout_seconds".to_string(), ConfigSource::Env);
+        } else {
+            config.sources.insert("default_step_timeout_seconds".to_string(), ConfigSource::EnvInvalid);
+        }
+    }
+
+    if let Ok(env_rc) = std::env::var(ENV_RUNBOOK_REQUIRE_CONFIRMATION) {
+        let norm = env_rc.trim().to_lowercase();
+        if norm == "1" || norm == "true" || norm == "yes" || norm == "on" {
+            config.require_operator_confirmation = true;
+            config.sources.insert("require_operator_confirmation".to_string(), ConfigSource::Env);
+        } else if norm == "0" || norm == "false" || norm == "no" || norm == "off" {
+            config.require_operator_confirmation = false;
+            config.sources.insert("require_operator_confirmation".to_string(), ConfigSource::Env);
+        } else {
+            config.sources.insert("require_operator_confirmation".to_string(), ConfigSource::EnvInvalid);
+        }
+    }
+
+    // Level 1: Overrides
+    if let Some(ov) = overrides {
+        if let Some(ref cat) = ov.catalog_path {
+            validate_config_path(cat)?;
+            config.catalog_path = cat.trim().to_string();
+            config.sources.insert("catalog_path".to_string(), ConfigSource::Argument);
+        }
+        if let Some(ms) = ov.max_active_sessions {
+            config.max_active_sessions = ms.clamp(MIN_MAX_ACTIVE_SESSIONS, MAX_MAX_ACTIVE_SESSIONS);
+            config.sources.insert("max_active_sessions".to_string(), ConfigSource::Argument);
+        }
+        if let Some(mf) = ov.max_catalog_file_bytes {
+            config.max_catalog_file_bytes = mf.clamp(MIN_MAX_CATALOG_FILE_BYTES, MAX_MAX_CATALOG_FILE_BYTES);
+            config.sources.insert("max_catalog_file_bytes".to_string(), ConfigSource::Argument);
+        }
+        if let Some(to) = ov.default_step_timeout_seconds {
+            config.default_step_timeout_seconds = to.clamp(MIN_STEP_TIMEOUT_SECONDS, MAX_STEP_TIMEOUT_SECONDS);
+            config.sources.insert("default_step_timeout_seconds".to_string(), ConfigSource::Argument);
+        }
+        if let Some(rc) = ov.require_operator_confirmation {
+            config.require_operator_confirmation = rc;
+            config.sources.insert("require_operator_confirmation".to_string(), ConfigSource::Argument);
+        }
+    }
+
+    Ok(config)
 }

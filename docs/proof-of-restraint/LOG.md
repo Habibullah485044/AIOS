@@ -1017,3 +1017,14 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 
 
 
+
+## T-02992 - Incident Response Runbooks & RustSec Tooling / CLI surface: Verification & Evidence (2026-10-13)
+- Milestone closeout for Incident Response Runbooks CLI surface and RustSec security scanning tooling (T-02983..T-02992).
+- Verification battery:
+  - Rust Core unit test suite (`test_sec_tools_unit.rs`): 4/4 tests PASSED.
+  - Rust Core integration suite (`test_sec_tools_integration.rs`): 1/1 test PASSED.
+  - Rust CLI surface test suite (`runbook_scan_cli_tests`): 2/2 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: IRCLI-INV1..IRCLI-INV5, PoR Invariant I-2.
+- Hardening verified: Strict target validation whitelist `[a-zA-Z0-9_\-\.:/\\~@]`, path traversal `..` prohibition, control character scrubbing, resource bounds clamping on ports, timeouts, file sizes, recursion depths, and web paths.
+- Evidence: docs/tasks/evidence/T-02992-verify.md, docs/tasks/evidence/T-02992-cli-surface-verification-evidenc.md.

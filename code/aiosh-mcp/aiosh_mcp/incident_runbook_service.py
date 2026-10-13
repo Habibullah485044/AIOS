@@ -181,7 +181,7 @@ class RunbookExecutionSession:
 
         # If step requires confirmation and operator hasn't confirmed yet:
         if (step_def.requires_confirmation or step_def.is_high_risk()) and not self.operator_confirmed:
-            self.status = RunbookExecutionStatus.AwaitingConfirmation
+            self.status = RunbookExecutionStatus.AWAITING_CONFIRMATION
             self.step_records[self.current_step_index].status = StepExecutionStatus.AWAITING_CONFIRMATION
             return StepExecutionStatus.AWAITING_CONFIRMATION
 

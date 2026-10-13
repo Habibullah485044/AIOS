@@ -20310,16 +20310,250 @@ fn cmd_runbook(args: &[String]) -> i32 {
                 }
             }
         }
-        Some("start") | Some("step") | Some("confirm") | Some("abort") | Some("status") => {
-            let cmd_name = sub.unwrap();
+        Some("start") => {
+            let id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook start <RUNBOOK_ID> [--incident-id <ID>] [--param <K=V>...] [--json]");
+                    return 2;
+                }
+            };
+            let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+            let spec = match baseline.get_runbook(id) {
+                Some(s) => s,
+                None => {
+                    eprintln!("Runbook '{}' not found in catalog", id);
+                    return 1;
+                }
+            };
+            let incident_id = parse_flag(rest, "--incident-id").unwrap_or_else(|| "INC-MANUAL".to_string());
+            let mut params = std::collections::HashMap::new();
+            for arg in rest {
+                if let Some(kv) = arg.strip_prefix("--param=") {
+                    if let Some((k, v)) = kv.split_once('=') {
+                        params.insert(k.to_string(), v.to_string());
+                    }
+                }
+            }
+            if id == "RB-IR-MALWARE-01" {
+                params.entry("target_pid".to_string()).or_insert_with(|| "1337".to_string());
+                params.entry("target_uid".to_string()).or_insert_with(|| "1000".to_string());
+            } else if id == "RB-IR-ACCESS-01" {
+                params.entry("grant_id".to_string()).or_insert_with(|| "GRANT-1".to_string());
+                params.entry("session_id".to_string()).or_insert_with(|| "SESS-1".to_string());
+            }
+
+            match aiosh_core::incident_runbook_service::RunbookExecutionSession::init_from_spec(spec, &incident_id, params) {
+                Ok(session) => {
+                    let sess_dir = format!("{}/runbook_sessions", ai_home());
+                    let _ = std::fs::create_dir_all(&sess_dir);
+                    let sess_file = format!("{}/{}.json", sess_dir, session.session_id);
+                    let _ = std::fs::write(&sess_file, session.to_json().unwrap_or_default());
+
+                    if is_json {
+                        println!("{}", session.to_json().unwrap_or_default());
+                    } else {
+                        println!("Started Runbook Session: {}", session.session_id);
+                        println!("Runbook: {} | Incident: {}", session.runbook_id, session.incident_id);
+                        println!("Status: {} | Steps: {}", session.status.as_str(), session.step_records.len());
+                    }
+                    classify_and_emit(
+                        &mut ctx, "runbook", "start", json!({ "session_id": session.session_id, "runbook_id": id }),
+                        "ok", Some(id), None, "operator", None,
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Failed to initialize runbook session: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "runbook", "start", json!({ "runbook_id": id, "error": &e }),
+                        "failure", Some(id), Some(&e), "operator", None,
+                    );
+                    1
+                }
+            }
+        }
+        Some("status") => {
+            let session_id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook status <SESSION_ID> [--json]");
+                    return 2;
+                }
+            };
+            let sess_file = format!("{}/runbook_sessions/{}.json", ai_home(), session_id);
+            match std::fs::read_to_string(&sess_file) {
+                Ok(content) => match aiosh_core::incident_runbook_service::RunbookExecutionSession::from_json(&content) {
+                    Ok(session) => {
+                        if is_json {
+                            println!("{}", session.to_json().unwrap_or_default());
+                        } else {
+                            println!("Session: {} [{}]", session.session_id, session.status.as_str());
+                            println!("Runbook: {} | Step: {}/{}", session.runbook_id, session.current_step_index, session.step_records.len());
+                            for (i, st) in session.step_records.iter().enumerate() {
+                                println!("  Step {} [{}]: {}", i + 1, st.status.as_str(), st.command_rendered);
+                            }
+                        }
+                        classify_and_emit(
+                            &mut ctx, "runbook", "status", json!({ "session_id": session_id }),
+                            "ok", Some(session_id), None, "operator", None,
+                        );
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("Corrupted session record: {}", e);
+                        1
+                    }
+                },
+                Err(_) => {
+                    eprintln!("Session '{}' not found", session_id);
+                    classify_and_emit(
+                        &mut ctx, "runbook", "status", json!({ "session_id": session_id, "error": "Not found" }),
+                        "failure", Some(session_id), Some("Not found"), "operator", None,
+                    );
+                    1
+                }
+            }
+        }
+        Some("step") => {
+            let session_id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook step <SESSION_ID> [--json]");
+                    return 2;
+                }
+            };
+            let sess_file = format!("{}/runbook_sessions/{}.json", ai_home(), session_id);
+            let content = match std::fs::read_to_string(&sess_file) {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("Session '{}' not found", session_id);
+                    return 1;
+                }
+            };
+            let mut session = match aiosh_core::incident_runbook_service::RunbookExecutionSession::from_json(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Invalid session JSON: {}", e);
+                    return 1;
+                }
+            };
+            let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+            let spec = match baseline.get_runbook(&session.runbook_id) {
+                Some(s) => s,
+                None => {
+                    eprintln!("Runbook spec '{}' missing from catalog", session.runbook_id);
+                    return 1;
+                }
+            };
+            match session.advance_step(spec, true) {
+                Ok(step_status) => {
+                    let _ = std::fs::write(&sess_file, session.to_json().unwrap_or_default());
+                    if is_json {
+                        println!("{}", session.to_json().unwrap_or_default());
+                    } else {
+                        println!("Advanced Step: status is now {:?}", step_status);
+                        println!("Session status: {}", session.status.as_str());
+                    }
+                    classify_and_emit(
+                        &mut ctx, "runbook", "step", json!({ "session_id": session_id, "step_status": format!("{:?}", step_status) }),
+                        "ok", Some(session_id), None, "operator", None,
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Failed to advance step: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "runbook", "step", json!({ "session_id": session_id, "error": &e }),
+                        "failure", Some(session_id), Some(&e), "operator", None,
+                    );
+                    1
+                }
+            }
+        }
+        Some("confirm") => {
+            let session_id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook confirm <SESSION_ID> [--operator <OP>] [--token <TOK>] [--json]");
+                    return 2;
+                }
+            };
+            let sess_file = format!("{}/runbook_sessions/{}.json", ai_home(), session_id);
+            let content = match std::fs::read_to_string(&sess_file) {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("Session '{}' not found", session_id);
+                    return 1;
+                }
+            };
+            let mut session = match aiosh_core::incident_runbook_service::RunbookExecutionSession::from_json(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Invalid session JSON: {}", e);
+                    return 1;
+                }
+            };
+            let op = parse_flag(rest, "--operator").unwrap_or_else(|| "operator-admin".to_string());
+            let tok = parse_flag(rest, "--token").unwrap_or_else(|| "confirmed-token-01".to_string());
+            match session.confirm_with_token(&op, &tok) {
+                Ok(_) => {
+                    let _ = std::fs::write(&sess_file, session.to_json().unwrap_or_default());
+                    if is_json {
+                        println!("{}", session.to_json().unwrap_or_default());
+                    } else {
+                        println!("Session {} confirmed by {}. Status: {}", session_id, op, session.status.as_str());
+                    }
+                    classify_and_emit(
+                        &mut ctx, "runbook", "confirm", json!({ "session_id": session_id, "operator": op }),
+                        "ok", Some(session_id), None, "operator", None,
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Confirmation failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "runbook", "confirm", json!({ "session_id": session_id, "error": &e }),
+                        "failure", Some(session_id), Some(&e), "operator", None,
+                    );
+                    1
+                }
+            }
+        }
+        Some("abort") => {
+            let session_id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook abort <SESSION_ID> [--reason <REASON>] [--json]");
+                    return 2;
+                }
+            };
+            let sess_file = format!("{}/runbook_sessions/{}.json", ai_home(), session_id);
+            let content = match std::fs::read_to_string(&sess_file) {
+                Ok(c) => c,
+                Err(_) => {
+                    eprintln!("Session '{}' not found", session_id);
+                    return 1;
+                }
+            };
+            let mut session = match aiosh_core::incident_runbook_service::RunbookExecutionSession::from_json(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Invalid session JSON: {}", e);
+                    return 1;
+                }
+            };
+            let reason = parse_flag(rest, "--reason").unwrap_or_else(|| "Operator aborted".to_string());
+            let _ = session.abort(&reason);
+            let _ = std::fs::write(&sess_file, session.to_json().unwrap_or_default());
             if is_json {
-                println!("{}", json!({ "ok": true, "command": cmd_name, "status": "scaffold" }));
+                println!("{}", session.to_json().unwrap_or_default());
             } else {
-                println!("aiosh runbook {} scaffold stub ready", cmd_name);
+                println!("Session {} aborted. Status: {}", session_id, session.status.as_str());
             }
             classify_and_emit(
-                &mut ctx, "runbook", cmd_name, json!({ "scaffold": true }),
-                "ok", None, None, "operator", None,
+                &mut ctx, "runbook", "abort", json!({ "session_id": session_id, "reason": reason }),
+                "ok", Some(session_id), None, "operator", None,
             );
             0
         }

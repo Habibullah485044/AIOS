@@ -232,6 +232,8 @@ fn main() {
         Some("secret") | Some("sec") => cmd_secret(&args[1..]),
         Some("threat") | Some("threats") | Some("tm") => cmd_threat(&args[1..]),
         Some("compliance") | Some("comp") => cmd_compliance(&args[1..]),
+        Some("runbook") | Some("rb") => cmd_runbook(&args[1..]),
+        Some("scan") => cmd_scan(&args[1..]),
         Some("--help") | Some("-h") | None => {
             println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox|privilege|secret|threat|compliance> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control\n  aiosh privilege <eval|status|policy-list|policy-add|policy-remove|report>  Privilege Escalation Prevention Control\n  aiosh secret <store|get|list|rotate|revoke>  Secrets Handling & Runtime Vault Control\n  aiosh threat <list|show|register|status|mitigate|assess|init>  Threat Model Maintenance & Risk Control\n  aiosh compliance <list|show|register|status|assess|check-pep|init> [--path P] [--config P]  Compliance Mapping & Control Frameworks");
             0
@@ -20205,6 +20207,287 @@ fn cmd_compliance(args: &[String]) -> i32 {
         }
     }
 }
+
+fn cmd_runbook(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    match sub {
+        Some("list") => {
+            let cat_flag = parse_flag(rest, "--category");
+            let sev_flag = parse_flag(rest, "--severity");
+            let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+            let mut runbooks = baseline.runbooks;
+            if let Some(cat) = cat_flag {
+                if let Some(c) = aiosh_core::incident_runbook_data_model::IncidentCategory::parse_category(&cat) {
+                    runbooks.retain(|r| r.category == c);
+                }
+            }
+            if let Some(sev) = sev_flag {
+                if let Some(s) = aiosh_core::incident_runbook_data_model::IncidentSeverity::parse_severity(&sev) {
+                    runbooks.retain(|r| r.severity == s);
+                }
+            }
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&runbooks).unwrap_or_default());
+            } else {
+                println!("Incident Response Runbooks ({})", runbooks.len());
+                for r in &runbooks {
+                    println!("  {} [{} / {}]: {}", r.id, r.category.as_str(), r.severity.as_str(), r.title);
+                }
+            }
+            classify_and_emit(
+                &mut ctx, "runbook", "list", json!({ "count": runbooks.len() }),
+                "ok", None, None, "operator", None,
+            );
+            0
+        }
+        Some("show") => {
+            let id = match rest.first() {
+                Some(id) if !id.starts_with("--") => id,
+                _ => {
+                    eprintln!("Usage: aiosh runbook show <RUNBOOK_ID> [--json]");
+                    classify_and_emit(
+                        &mut ctx, "runbook", "show", json!({ "error": "Missing runbook ID" }),
+                        "failure", None, Some("Usage error"), "operator", None,
+                    );
+                    return 2;
+                }
+            };
+            let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+            if let Some(rb) = baseline.get_runbook(id) {
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&rb).unwrap_or_default());
+                } else {
+                    println!("Runbook: {} - {}", rb.id, rb.title);
+                    println!("Category: {} | Severity: {}", rb.category.as_str(), rb.severity.as_str());
+                    println!("Description: {}", rb.description);
+                    println!("Steps ({}):", rb.steps.len());
+                    for s in &rb.steps {
+                        println!("  - [{}] {}: {} (target: {})", s.id, s.phase.as_str(), s.title, s.target.as_str());
+                    }
+                }
+                classify_and_emit(
+                    &mut ctx, "runbook", "show", json!({ "id": id }),
+                    "ok", Some(id), None, "operator", None,
+                );
+                0
+            } else {
+                eprintln!("Runbook '{}' not found in catalog", id);
+                classify_and_emit(
+                    &mut ctx, "runbook", "show", json!({ "id": id, "error": "Not found" }),
+                    "failure", Some(id), Some("Not found"), "operator", None,
+                );
+                1
+            }
+        }
+        Some("init") => {
+            let path_str = parse_flag(rest, "--path").unwrap_or_else(|| "docs/incident_runbooks.json".to_string());
+            let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+            let json_content = baseline.to_json().unwrap_or_else(|_| "{}".to_string());
+            match std::fs::write(&path_str, json_content) {
+                Ok(_) => {
+                    if is_json {
+                        println!("{}", json!({ "ok": true, "path": path_str }));
+                    } else {
+                        println!("Initialized incident runbook catalog at {}", path_str);
+                    }
+                    classify_and_emit(
+                        &mut ctx, "runbook", "init", json!({ "path": &path_str }),
+                        "ok", Some(&path_str), None, "operator", None,
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Failed to write catalog to {}: {}", path_str, e);
+                    classify_and_emit(
+                        &mut ctx, "runbook", "init", json!({ "path": &path_str, "error": e.to_string() }),
+                        "failure", Some(&path_str), Some("Write error"), "operator", None,
+                    );
+                    3
+                }
+            }
+        }
+        Some("start") | Some("step") | Some("confirm") | Some("abort") | Some("status") => {
+            let cmd_name = sub.unwrap();
+            if is_json {
+                println!("{}", json!({ "ok": true, "command": cmd_name, "status": "scaffold" }));
+            } else {
+                println!("aiosh runbook {} scaffold stub ready", cmd_name);
+            }
+            classify_and_emit(
+                &mut ctx, "runbook", cmd_name, json!({ "scaffold": true }),
+                "ok", None, None, "operator", None,
+            );
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh runbook — Incident Response Runbooks & Containment\n\nUsage: aiosh runbook <list|show|init|start|step|confirm|abort|status> [OPTIONS]\n\nSubcommands:\n  list       [--category C] [--severity S] [--json]\n  show       <ID> [--json]\n  init       [--path P] [--force]\n  start      <ID> [--incident-id INC] [--param K=V]... [--grant G] [--json]\n  step       <SESSION_ID> [--confirm] [--token T] [--operator OP] [--json]\n  confirm    <SESSION_ID> --operator OP --token T\n  abort      <SESSION_ID> [--reason R]\n  status     <SESSION_ID> [--json]");
+            0
+        }
+        Some(unknown) => {
+            eprintln!("unknown runbook subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "runbook", unknown, json!({ "error": "Unknown subcommand" }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            2
+        }
+    }
+}
+
+fn cmd_scan(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    match sub {
+        Some("net") => {
+            let target = match rest.first() {
+                Some(t) if !t.starts_with("--") => t,
+                _ => {
+                    eprintln!("Usage: aiosh scan net <HOST_OR_CIDR> [--ports <RANGE>] [--timeout-s <S>] [--grant <TOKEN>] [--json]");
+                    classify_and_emit(
+                        &mut ctx, "scan.net", "net", json!({ "error": "Missing target" }),
+                        "failure", None, Some("Usage error"), "operator", None,
+                    );
+                    return 2;
+                }
+            };
+            let grant = parse_flag(rest, "--grant");
+            let timeout_s = parse_flag(rest, "--timeout-s").and_then(|s| s.parse().ok()).unwrap_or(10);
+            let ports = vec![21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 3306, 3389, 5432, 8080, 8443];
+            match aiosh_core::sec_tools::scan_net(target, &ports, timeout_s, grant.as_deref()) {
+                Ok(res) => {
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&res).unwrap_or_default());
+                    } else {
+                        println!("Scan Net: Target {} (scanned {} ports in {}ms)", res.target, res.scanned_ports_count, res.elapsed_ms);
+                        println!("Open ports: {:?}", res.open_ports);
+                    }
+                    classify_and_emit(
+                        &mut ctx, "scan.net", "net", json!({ "target": target }),
+                        "ok", Some(target), None, "operator", grant.as_deref(),
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Scan Net failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "scan.net", "net", json!({ "target": target, "error": &e }),
+                        "failure", Some(target), Some(&e), "operator", grant.as_deref(),
+                    );
+                    1
+                }
+            }
+        }
+        Some("files") => {
+            let dir = match rest.first() {
+                Some(d) if !d.starts_with("--") => d,
+                _ => {
+                    eprintln!("Usage: aiosh scan files <DIR> --pattern <REGEX> [--max-depth <N>] [--timeout-s <S>] [--grant <TOKEN>] [--json]");
+                    classify_and_emit(
+                        &mut ctx, "scan.files", "files", json!({ "error": "Missing directory" }),
+                        "failure", None, Some("Usage error"), "operator", None,
+                    );
+                    return 2;
+                }
+            };
+            let pattern = match parse_flag(rest, "--pattern") {
+                Some(p) => p,
+                None => {
+                    eprintln!("Missing required --pattern argument");
+                    classify_and_emit(
+                        &mut ctx, "scan.files", "files", json!({ "error": "Missing pattern" }),
+                        "failure", Some(dir), Some("Usage error"), "operator", None,
+                    );
+                    return 2;
+                }
+            };
+            let grant = parse_flag(rest, "--grant");
+            let depth = parse_flag(rest, "--max-depth").and_then(|s| s.parse().ok()).unwrap_or(10);
+            let timeout_s = parse_flag(rest, "--timeout-s").and_then(|s| s.parse().ok()).unwrap_or(30);
+            match aiosh_core::sec_tools::scan_files(dir, &pattern, depth, timeout_s, grant.as_deref()) {
+                Ok(res) => {
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&res).unwrap_or_default());
+                    } else {
+                        println!("Scan Files: Target '{}' Pattern '{}' ({} files scanned in {}ms)", res.target_dir, res.pattern, res.files_scanned_count, res.elapsed_ms);
+                        println!("Matches found: {}", res.matches.len());
+                    }
+                    classify_and_emit(
+                        &mut ctx, "scan.files", "files", json!({ "dir": dir, "pattern": pattern }),
+                        "ok", Some(dir), None, "operator", grant.as_deref(),
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Scan Files failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "scan.files", "files", json!({ "dir": dir, "error": &e }),
+                        "failure", Some(dir), Some(&e), "operator", grant.as_deref(),
+                    );
+                    1
+                }
+            }
+        }
+        Some("web") => {
+            let url = match rest.first() {
+                Some(u) if !u.starts_with("--") => u,
+                _ => {
+                    eprintln!("Usage: aiosh scan web <URL> [--wordlist <PATH>] [--depth <N>] [--timeout-s <S>] [--grant <TOKEN>] [--json]");
+                    classify_and_emit(
+                        &mut ctx, "scan.web", "web", json!({ "error": "Missing URL" }),
+                        "failure", None, Some("Usage error"), "operator", None,
+                    );
+                    return 2;
+                }
+            };
+            let grant = parse_flag(rest, "--grant");
+            let depth = parse_flag(rest, "--depth").and_then(|s| s.parse().ok()).unwrap_or(2);
+            let timeout_s = parse_flag(rest, "--timeout-s").and_then(|s| s.parse().ok()).unwrap_or(30);
+            match aiosh_core::sec_tools::scan_web(url, None, depth, timeout_s, grant.as_deref()) {
+                Ok(res) => {
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&res).unwrap_or_default());
+                    } else {
+                        println!("Scan Web: Base URL '{}' ({} requests sent in {}ms)", res.base_url, res.requests_sent, res.elapsed_ms);
+                        println!("Endpoints discovered: {}", res.endpoints.len());
+                    }
+                    classify_and_emit(
+                        &mut ctx, "scan.web", "web", json!({ "url": url }),
+                        "ok", Some(url), None, "operator", grant.as_deref(),
+                    );
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Scan Web failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "scan.web", "web", json!({ "url": url, "error": &e }),
+                        "failure", Some(url), Some(&e), "operator", grant.as_deref(),
+                    );
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh scan — RustSec Security Tooling Substrate\n\nUsage: aiosh scan <net|files|web> [TARGET] [OPTIONS]\n\nSubcommands:\n  net    <HOST_OR_CIDR> [--ports P] [--timeout-s S] [--grant G] [--json]\n  files  <DIR> --pattern <REGEX> [--max-depth D] [--timeout-s S] [--grant G] [--json]\n  web    <URL> [--wordlist W] [--depth D] [--timeout-s S] [--grant G] [--json]");
+            0
+        }
+        Some(unknown) => {
+            eprintln!("unknown scan subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "scan", unknown, json!({ "error": "Unknown subcommand" }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            2
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod update_cli_tests {

@@ -31,7 +31,7 @@ fn test_validate_config_path() {
 }
 
 #[test]
-#[should_panic(expected = "resolve_runbook_config scaffold")]
-fn test_resolve_scaffold_panics_unimplemented() {
-    let _ = resolve_runbook_config(None);
+fn test_resolve_scaffold() {
+    let cfg = resolve_runbook_config(None).expect("resolve should succeed");
+    assert_eq!(cfg.catalog_path, DEFAULT_CATALOG_PATH);
 }

@@ -39,6 +39,7 @@ from .incident_runbook_service import (
 )
 
 from .runbook_config import resolve_runbook_config
+from .incident_runbook_policy import RunbookSecurityPolicy
 
 # Constants & Bounds Clamping
 MAX_SCAN_TARGET_LEN = 256
@@ -51,7 +52,7 @@ MAX_WEB_PATHS = 1000
 SEC_ERR_INVALID_TARGET = "SEC_ERR_INVALID_TARGET"
 SEC_ERR_BOUNDS_EXCEEDED = "SEC_ERR_BOUNDS_EXCEEDED"
 
-RUNBOOK_READ_ACTIONS = {"list", "show", "status", "config"}
+RUNBOOK_READ_ACTIONS = {"list", "show", "status", "config", "policy"}
 RUNBOOK_WRITE_ACTIONS = {"start", "step", "confirm", "abort", "init"}
 SCAN_ACTIONS = {"net", "files", "web"}
 
@@ -59,6 +60,7 @@ SCAN_ACTIONS = {"net", "files", "web"}
 _SESSION_STORE_LOCK = threading.Lock()
 _ACTIVE_SESSIONS: dict[str, RunbookExecutionSession] = {}
 _CATALOG_SNAPSHOT = RunbookCatalogSnapshot.canonical_baseline()
+_ACTIVE_POLICY = RunbookSecurityPolicy()
 
 
 def validate_scan_target(target: str) -> str:
@@ -219,6 +221,18 @@ def execute_runbook_core(
             "config": cfg.to_dict(),
         }
 
+    if action == "policy":
+        return {
+            "ok": True,
+            "action": "policy",
+            "version": _ACTIVE_POLICY.version,
+            "mode": _ACTIVE_POLICY.mode.value,
+            "require_operator_confirmation_for_high_risk": _ACTIVE_POLICY.require_operator_confirmation_for_high_risk,
+            "max_step_timeout_seconds": _ACTIVE_POLICY.max_step_timeout_seconds,
+            "max_active_sessions": _ACTIVE_POLICY.max_active_sessions,
+            "require_pep_grant": _ACTIVE_POLICY.require_pep_grant,
+        }
+
     if action == "init":
         _CATALOG_SNAPSHOT = RunbookCatalogSnapshot.canonical_baseline()
         return {
@@ -236,6 +250,8 @@ def execute_runbook_core(
         spec = _CATALOG_SNAPSHOT.get_runbook(runbook_id)
         if not spec:
             raise ValueError(f"{RUNBOOK_ERR_SESSION_NOT_FOUND}: Runbook '{runbook_id}' not found")
+
+        _ACTIVE_POLICY.evaluate_runbook_start(spec)
 
         params = parameters or {}
         if len(params) > MAX_RUNBOOK_PARAMS_COUNT:
@@ -375,6 +391,12 @@ def execute_scan_core(
 ) -> dict[str, Any]:
     validated_target = validate_scan_target(target)
     start_time = time.monotonic()
+
+    _ACTIVE_POLICY.evaluate_scan_operation(
+        action=action,
+        ports_count=len(ports.split(",")) if ports else 4,
+        depth=max_depth or 5,
+    )
 
     if action == "net":
         ports_list = []

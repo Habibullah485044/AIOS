@@ -3025,3 +3025,4 @@
 {"seq":3025,"ts":"2026-10-15T08:19:31Z","event":"completed","task_id":3025,"note":"Create module skeleton and interfaces for incident runbook security policy","evidence":["docs/tasks/evidence/T-03025-security-policy-scaffold.md"]}
 {"seq":3026,"ts":"2026-10-15T08:24:54Z","event":"completed","task_id":3026,"note":"Implement runbook start, confirmation gating, substrate restrictions, and scan budgeting in policy","evidence":["docs/tasks/evidence/T-03026-security-policy-implementation.md"]}
 {"seq":3027,"ts":"2026-10-15T08:29:47Z","event":"completed","task_id":3027,"note":"Add unit tests covering valid input, boundary values, invalid files, and disabled mode bypass","evidence":["docs/tasks/evidence/T-03027-security-policy-unit-test.md"]}
+{"seq":3028,"ts":"2026-10-15T08:37:27Z","event":"completed","task_id":3028,"note":"Integrate security policy into FastMCP tool surfaces and CLI dispatcher","evidence":["docs/tasks/evidence/T-03028-security-policy-integration.md"]}

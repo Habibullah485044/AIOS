@@ -3015,3 +3015,4 @@
 {"seq":3015,"ts":"2026-10-15T07:29:16Z","event":"completed","task_id":3015,"note":"Scaffold automated test harnesses for Incident Response Runbooks across Rust and Python","evidence":["docs/tasks/evidence/T-03015-scaffold.md"]}
 {"seq":3016,"ts":"2026-10-15T07:43:20Z","event":"completed","task_id":3016,"note":"Implement 10 automated test vectors AUTORUNBOOK1..10 across Rust and Python","evidence":["docs/tasks/evidence/T-03016-automated-tests-implementation.md"]}
 {"seq":3017,"ts":"2026-10-15T07:48:06Z","event":"completed","task_id":3017,"note":"Add unit tests covering boundary values, negative cases, and primary failure modes","evidence":["docs/tasks/evidence/T-03017-automated-tests-unit-test.md"]}
+{"seq":3018,"ts":"2026-10-15T07:56:07Z","event":"completed","task_id":3018,"note":"Integrate automated tests with MCP and CLI runtime surfaces","evidence":["docs/tasks/evidence/T-03018-automated-tests-integration.md"]}

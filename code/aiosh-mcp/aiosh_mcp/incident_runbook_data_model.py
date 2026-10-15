@@ -305,6 +305,10 @@ class RunbookCatalogSnapshot:
         if not self.generated_at:
             self.generated_at = utcnow_iso()
 
+    @property
+    def catalog_version(self) -> str:
+        return self.version
+
     @classmethod
     def canonical_baseline(cls) -> "RunbookCatalogSnapshot":
         malware_steps = [

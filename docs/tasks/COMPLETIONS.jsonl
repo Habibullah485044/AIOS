@@ -3018,3 +3018,4 @@
 {"seq":3018,"ts":"2026-10-15T07:56:07Z","event":"completed","task_id":3018,"note":"Integrate automated tests with MCP and CLI runtime surfaces","evidence":["docs/tasks/evidence/T-03018-automated-tests-integration.md"]}
 {"seq":3019,"ts":"2026-10-15T07:58:14Z","event":"completed","task_id":3019,"note":"Security review automated tests subsystem; analyze and mitigate 5 abuse scenarios","evidence":["docs/tasks/evidence/T-03019-automated-tests-security-review.md"]}
 {"seq":3020,"ts":"2026-10-15T08:01:59Z","event":"completed","task_id":3020,"note":"Harden automated tests with timeout enforcement, bounded retries, and leak-free resource cleanup","evidence":["docs/tasks/evidence/T-03020-automated-tests-hardening.md"]}
+{"seq":3021,"ts":"2026-10-15T08:05:05Z","event":"completed","task_id":3021,"note":"Document automated test harness, execution commands, and constraints","evidence":["docs/tasks/evidence/T-03021-automated-tests-documentation.md"]}

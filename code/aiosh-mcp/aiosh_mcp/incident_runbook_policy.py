@@ -41,6 +41,26 @@ class RunbookEnforcementMode(str, Enum):
 
 
 @dataclass
+class PolicyResultEnvelope:
+    ok: bool
+    error_code: str | None = None
+    error_message: str | None = None
+    audit_row_required: bool = False
+
+    @classmethod
+    def success(cls) -> "PolicyResultEnvelope":
+        return cls(ok=True)
+
+    @classmethod
+    def success_audited(cls) -> "PolicyResultEnvelope":
+        return cls(ok=True, audit_row_required=True)
+
+    @classmethod
+    def failure(cls, code: str, msg: str) -> "PolicyResultEnvelope":
+        return cls(ok=False, error_code=code, error_message=msg, audit_row_required=True)
+
+
+@dataclass
 class RunbookSecurityPolicy:
     version: str = "1.0.0"
     mode: RunbookEnforcementMode = RunbookEnforcementMode.ENFORCING
@@ -53,6 +73,20 @@ class RunbookSecurityPolicy:
     max_file_scan_depth: int = DEFAULT_MAX_FILE_SCAN_DEPTH
     max_file_scan_size_bytes: int = DEFAULT_MAX_FILE_SCAN_BYTES
     require_pep_grant: bool = True
+
+    def validate_bounds(self) -> None:
+        if self.max_step_timeout_seconds <= 0 or self.max_step_timeout_seconds > MAX_PERMISSIBLE_STEP_TIMEOUT_SECS:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_VALIDATION}: max_step_timeout_seconds {self.max_step_timeout_seconds} out of bounds [1, {MAX_PERMISSIBLE_STEP_TIMEOUT_SECS}]"
+            )
+        if self.max_scanned_ports <= 0 or self.max_scanned_ports > 65_535:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_VALIDATION}: max_scanned_ports {self.max_scanned_ports} out of bounds [1, 65535]"
+            )
+        if self.max_file_scan_depth <= 0 or self.max_file_scan_depth > 32:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_VALIDATION}: max_file_scan_depth {self.max_file_scan_depth} out of bounds [1, 32]"
+            )
 
     def evaluate_runbook_start(self, spec: RunbookSpec) -> None:
         if self.mode == RunbookEnforcementMode.DISABLED:
@@ -86,6 +120,34 @@ class RunbookSecurityPolicy:
             raise ValueError(
                 f"{RUNBOOKPOL_ERR_POLICY_VIOLATION}: Step '{step.id}' timeout {step.timeout_seconds}s exceeds policy maximum {self.max_step_timeout_seconds}s"
             )
+
+    def evaluate_step_with_envelope(
+        self, step: RunbookStep, operator_confirmed: bool
+    ) -> PolicyResultEnvelope:
+        if self.mode == RunbookEnforcementMode.DISABLED:
+            return PolicyResultEnvelope.success_audited()
+
+        if (
+            self.require_operator_confirmation_for_high_risk
+            and step.is_high_risk()
+            and not operator_confirmed
+        ):
+            if self.mode == RunbookEnforcementMode.PERMISSIVE:
+                return PolicyResultEnvelope.success_audited()
+            return PolicyResultEnvelope.failure(
+                RUNBOOKPOL_ERR_CONFIRMATION_REQUIRED,
+                f"Step '{step.id}' requires explicit operator confirmation under policy",
+            )
+
+        if step.timeout_seconds > self.max_step_timeout_seconds:
+            if self.mode == RunbookEnforcementMode.PERMISSIVE:
+                return PolicyResultEnvelope.success_audited()
+            return PolicyResultEnvelope.failure(
+                RUNBOOKPOL_ERR_POLICY_VIOLATION,
+                f"Step '{step.id}' timeout {step.timeout_seconds}s exceeds policy maximum {self.max_step_timeout_seconds}s",
+            )
+
+        return PolicyResultEnvelope.success()
 
     def evaluate_scan_operation(self, action: str, ports_count: int, depth: int) -> None:
         if self.mode == RunbookEnforcementMode.DISABLED:
@@ -122,7 +184,7 @@ class RunbookSecurityPolicy:
         cats = [IncidentCategory(c) for c in data.get("disallowed_categories", [])]
         subs = [RunbookTargetSubstrate(s) for s in data.get("disallowed_substrates", [])]
 
-        return cls(
+        policy = cls(
             version=data.get("version", "1.0.0"),
             mode=mode,
             require_operator_confirmation_for_high_risk=data.get(
@@ -141,8 +203,11 @@ class RunbookSecurityPolicy:
             ),
             require_pep_grant=data.get("require_pep_grant", True),
         )
+        policy.validate_bounds()
+        return policy
 
     def save_to_file(self, path: str) -> None:
+        self.validate_bounds()
         p = Path(path)
         data = asdict(self)
         data["mode"] = self.mode.value
@@ -155,5 +220,12 @@ class RunbookSecurityPolicy:
                 f"{RUNBOOKPOL_ERR_IO}: Serialized policy size exceeds {MAX_RUNBOOK_POLICY_BYTES} bytes"
             )
 
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(serialized)
+        temp_path = p.with_suffix(f".tmp.{os.getpid()}")
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(serialized)
+            os.replace(temp_path, p)
+        except Exception:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise

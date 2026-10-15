@@ -5,8 +5,11 @@ substrate access, and security scanning budgets.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import asdict, dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from .incident_runbook_data_model import (
     IncidentCategory,
@@ -52,17 +55,105 @@ class RunbookSecurityPolicy:
     require_pep_grant: bool = True
 
     def evaluate_runbook_start(self, spec: RunbookSpec) -> None:
-        raise NotImplementedError("evaluate_runbook_start scaffold - pending T-03026")
+        if self.mode == RunbookEnforcementMode.DISABLED:
+            return
+
+        if spec.category in self.disallowed_categories:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_CATEGORY_DISALLOWED}: Category '{spec.category}' is disallowed by security policy"
+            )
+
+        for step in spec.steps:
+            if step.target in self.disallowed_substrates:
+                raise ValueError(
+                    f"{RUNBOOKPOL_ERR_SUBSTRATE_DISALLOWED}: Target substrate '{step.target}' in step '{step.id}' is disallowed by security policy"
+                )
 
     def evaluate_step_advance(self, step: RunbookStep, operator_confirmed: bool) -> None:
-        raise NotImplementedError("evaluate_step_advance scaffold - pending T-03026")
+        if self.mode == RunbookEnforcementMode.DISABLED:
+            return
+
+        if (
+            self.require_operator_confirmation_for_high_risk
+            and step.is_high_risk()
+            and not operator_confirmed
+        ):
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_CONFIRMATION_REQUIRED}: Step '{step.id}' requires explicit operator confirmation under policy"
+            )
+
+        if step.timeout_seconds > self.max_step_timeout_seconds:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_POLICY_VIOLATION}: Step '{step.id}' timeout {step.timeout_seconds}s exceeds policy maximum {self.max_step_timeout_seconds}s"
+            )
 
     def evaluate_scan_operation(self, action: str, ports_count: int, depth: int) -> None:
-        raise NotImplementedError("evaluate_scan_operation scaffold - pending T-03026")
+        if self.mode == RunbookEnforcementMode.DISABLED:
+            return
+
+        if ports_count > self.max_scanned_ports:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_SCAN_BOUNDS}: Scanned ports count {ports_count} exceeds policy limit {self.max_scanned_ports}"
+            )
+
+        if depth > self.max_file_scan_depth:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_SCAN_BOUNDS}: File scan depth {depth} exceeds policy limit {self.max_file_scan_depth}"
+            )
 
     @classmethod
     def load_from_file(cls, path: str) -> "RunbookSecurityPolicy":
-        raise NotImplementedError("load_from_file scaffold - pending T-03026")
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"{RUNBOOKPOL_ERR_IO}: Policy file '{path}' does not exist")
+
+        size = p.stat().st_size
+        if size > MAX_RUNBOOK_POLICY_BYTES:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_IO}: Policy file size {size} bytes exceeds maximum {MAX_RUNBOOK_POLICY_BYTES}"
+            )
+
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        mode_str = data.get("mode", "enforcing")
+        mode = RunbookEnforcementMode(mode_str)
+
+        cats = [IncidentCategory(c) for c in data.get("disallowed_categories", [])]
+        subs = [RunbookTargetSubstrate(s) for s in data.get("disallowed_substrates", [])]
+
+        return cls(
+            version=data.get("version", "1.0.0"),
+            mode=mode,
+            require_operator_confirmation_for_high_risk=data.get(
+                "require_operator_confirmation_for_high_risk", True
+            ),
+            max_step_timeout_seconds=data.get(
+                "max_step_timeout_seconds", DEFAULT_MAX_STEP_TIMEOUT_SECS
+            ),
+            max_active_sessions=data.get("max_active_sessions", 100),
+            disallowed_categories=cats,
+            disallowed_substrates=subs,
+            max_scanned_ports=data.get("max_scanned_ports", DEFAULT_MAX_SCANNED_PORTS),
+            max_file_scan_depth=data.get("max_file_scan_depth", DEFAULT_MAX_FILE_SCAN_DEPTH),
+            max_file_scan_size_bytes=data.get(
+                "max_file_scan_size_bytes", DEFAULT_MAX_FILE_SCAN_BYTES
+            ),
+            require_pep_grant=data.get("require_pep_grant", True),
+        )
 
     def save_to_file(self, path: str) -> None:
-        raise NotImplementedError("save_to_file scaffold - pending T-03026")
+        p = Path(path)
+        data = asdict(self)
+        data["mode"] = self.mode.value
+        data["disallowed_categories"] = [c.value for c in self.disallowed_categories]
+        data["disallowed_substrates"] = [s.value for s in self.disallowed_substrates]
+
+        serialized = json.dumps(data, indent=2)
+        if len(serialized.encode("utf-8")) > MAX_RUNBOOK_POLICY_BYTES:
+            raise ValueError(
+                f"{RUNBOOKPOL_ERR_IO}: Serialized policy size exceeds {MAX_RUNBOOK_POLICY_BYTES} bytes"
+            )
+
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(serialized)

@@ -88,7 +88,66 @@ impl Default for RunbookSecurityPolicy {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyResultEnvelope {
+    pub ok: bool,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub audit_row_required: bool,
+}
+
+impl PolicyResultEnvelope {
+    pub fn success() -> Self {
+        Self {
+            ok: true,
+            error_code: None,
+            error_message: None,
+            audit_row_required: false,
+        }
+    }
+
+    pub fn success_audited() -> Self {
+        Self {
+            ok: true,
+            error_code: None,
+            error_message: None,
+            audit_row_required: true,
+        }
+    }
+
+    pub fn failure(code: &str, msg: &str) -> Self {
+        Self {
+            ok: false,
+            error_code: Some(code.to_string()),
+            error_message: Some(msg.to_string()),
+            audit_row_required: true,
+        }
+    }
+}
+
 impl RunbookSecurityPolicy {
+    pub fn validate_bounds(&self) -> Result<(), String> {
+        if self.max_step_timeout_seconds == 0 || self.max_step_timeout_seconds > MAX_PERMISSIBLE_STEP_TIMEOUT_SECS {
+            return Err(format!(
+                "{}: max_step_timeout_seconds {} out of bounds [1, {}]",
+                RUNBOOKPOL_ERR_VALIDATION, self.max_step_timeout_seconds, MAX_PERMISSIBLE_STEP_TIMEOUT_SECS
+            ));
+        }
+        if self.max_scanned_ports == 0 || self.max_scanned_ports > 65_535 {
+            return Err(format!(
+                "{}: max_scanned_ports {} out of bounds [1, 65535]",
+                RUNBOOKPOL_ERR_VALIDATION, self.max_scanned_ports
+            ));
+        }
+        if self.max_file_scan_depth == 0 || self.max_file_scan_depth > 32 {
+            return Err(format!(
+                "{}: max_file_scan_depth {} out of bounds [1, 32]",
+                RUNBOOKPOL_ERR_VALIDATION, self.max_file_scan_depth
+            ));
+        }
+        Ok(())
+    }
+
     pub fn evaluate_runbook_start(&self, spec: &RunbookSpec) -> Result<(), String> {
         if self.mode == RunbookEnforcementMode::Disabled {
             return Ok(());
@@ -142,6 +201,41 @@ impl RunbookSecurityPolicy {
         Ok(())
     }
 
+    pub fn evaluate_step_with_envelope(
+        &self,
+        step: &RunbookStep,
+        operator_confirmed: bool,
+    ) -> PolicyResultEnvelope {
+        if self.mode == RunbookEnforcementMode::Disabled {
+            return PolicyResultEnvelope::success_audited();
+        }
+
+        if self.require_operator_confirmation_for_high_risk
+            && step.is_high_risk()
+            && !operator_confirmed
+        {
+            if self.mode == RunbookEnforcementMode::Permissive {
+                return PolicyResultEnvelope::success_audited();
+            }
+            return PolicyResultEnvelope::failure(
+                RUNBOOKPOL_ERR_CONFIRMATION_REQUIRED,
+                &format!("Step {} requires explicit operator confirmation under policy", step.id),
+            );
+        }
+
+        if (step.timeout_seconds as u64) > self.max_step_timeout_seconds {
+            if self.mode == RunbookEnforcementMode::Permissive {
+                return PolicyResultEnvelope::success_audited();
+            }
+            return PolicyResultEnvelope::failure(
+                RUNBOOKPOL_ERR_POLICY_VIOLATION,
+                &format!("Step {} timeout {}s exceeds policy maximum {}s", step.id, step.timeout_seconds, self.max_step_timeout_seconds),
+            );
+        }
+
+        PolicyResultEnvelope::success()
+    }
+
     pub fn evaluate_scan_operation(
         &self,
         _action: &str,
@@ -184,10 +278,15 @@ impl RunbookSecurityPolicy {
         }
 
         let content = fs::read_to_string(p).map_err(|e| format!("{}: Failed reading file: {}", RUNBOOKPOL_ERR_IO, e))?;
-        serde_json::from_str(&content).map_err(|e| format!("{}: Failed parsing policy JSON: {}", RUNBOOKPOL_ERR_VALIDATION, e))
+        let policy: Self = serde_json::from_str(&content)
+            .map_err(|e| format!("{}: Failed parsing policy JSON: {}", RUNBOOKPOL_ERR_VALIDATION, e))?;
+        policy.validate_bounds()?;
+        Ok(policy)
     }
 
     pub fn save_to_file(&self, path: &str) -> Result<(), String> {
+        self.validate_bounds()?;
+
         let json_str = serde_json::to_string_pretty(self)
             .map_err(|e| format!("{}: Failed serializing policy: {}", RUNBOOKPOL_ERR_VALIDATION, e))?;
 
@@ -198,11 +297,24 @@ impl RunbookSecurityPolicy {
             ));
         }
 
-        let mut file = File::create(path).map_err(|e| format!("{}: Failed creating file: {}", RUNBOOKPOL_ERR_IO, e))?;
-        file.write_all(json_str.as_bytes())
-            .map_err(|e| format!("{}: Failed writing policy: {}", RUNBOOKPOL_ERR_IO, e))?;
-        file.flush()
-            .map_err(|e| format!("{}: Failed flushing policy file: {}", RUNBOOKPOL_ERR_IO, e))?;
+        let temp_path = format!("{}.tmp.{}", path, std::process::id());
+        let write_res = (|| -> Result<(), std::io::Error> {
+            let mut file = File::create(&temp_path)?;
+            file.write_all(json_str.as_bytes())?;
+            file.flush()?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_res {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("{}: Failed writing policy temp file: {}", RUNBOOKPOL_ERR_IO, e));
+        }
+
+        if let Err(e) = fs::rename(&temp_path, path) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("{}: Failed renaming temp file into place: {}", RUNBOOKPOL_ERR_IO, e));
+        }
+
         Ok(())
     }
 }

@@ -29,6 +29,4 @@ def test_policy_scaffold_fail_loudly():
     baseline = RunbookCatalogSnapshot.canonical_baseline()
     malware = baseline.get_runbook("RB-IR-MALWARE-01")
     assert malware is not None
-
-    with pytest.raises(NotImplementedError, match="pending T-03026"):
-        policy.evaluate_runbook_start(malware)
+    policy.evaluate_runbook_start(malware)

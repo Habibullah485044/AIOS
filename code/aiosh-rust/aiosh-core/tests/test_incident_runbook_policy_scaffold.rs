@@ -22,10 +22,10 @@ fn test_policy_scaffold_default_initialization() {
 }
 
 #[test]
-#[should_panic(expected = "pending T-03026")]
 fn test_policy_scaffold_fail_loudly() {
     let policy = RunbookSecurityPolicy::default();
     let baseline = RunbookCatalogSnapshot::canonical_baseline();
     let malware = baseline.get_runbook("RB-IR-MALWARE-01").unwrap();
-    let _ = policy.evaluate_runbook_start(malware);
+    assert!(policy.evaluate_runbook_start(malware).is_ok());
 }
+

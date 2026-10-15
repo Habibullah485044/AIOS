@@ -89,6 +89,7 @@ pub mod incident_runbook_service;
 pub mod sec_tools;
 pub mod runbook_config;
 pub mod incident_runbook_policy;
+pub mod incident_runbook_observability;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;
@@ -629,9 +630,20 @@ pub use runbook_config::{
     resolve_runbook_config,
 };
 
+pub use incident_runbook_policy::{
+    RunbookSecurityPolicy, RunbookEnforcementMode, PolicyResultEnvelope,
+    DEFAULT_MAX_STEP_TIMEOUT_SECS, MAX_PERMISSIBLE_STEP_TIMEOUT_SECS,
+    DEFAULT_MAX_SCANNED_PORTS, DEFAULT_MAX_FILE_SCAN_DEPTH, DEFAULT_MAX_FILE_SCAN_BYTES,
+    RUNBOOKPOL_ERR_VALIDATION, RUNBOOKPOL_ERR_POLICY_VIOLATION,
+    RUNBOOKPOL_ERR_CONFIRMATION_REQUIRED, RUNBOOKPOL_ERR_CATEGORY_DISALLOWED,
+    RUNBOOKPOL_ERR_SUBSTRATE_DISALLOWED, RUNBOOKPOL_ERR_SCAN_BOUNDS, RUNBOOKPOL_ERR_IO,
+};
 
-
-
+pub use incident_runbook_observability::{
+    RunbookObservabilitySnapshot, RunbookObservabilityService,
+    MAX_OBSERVABILITY_PAYLOAD_BYTES, MAX_OBSERVABILITY_ENTRIES, MAX_OBSERVABILITY_TEXT_LEN,
+    IROBS_ERR_VALIDATION, IROBS_ERR_INACCESSIBLE,
+};
 
 
 

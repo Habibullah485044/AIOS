@@ -3021,3 +3021,4 @@
 {"seq":3021,"ts":"2026-10-15T08:05:05Z","event":"completed","task_id":3021,"note":"Document automated test harness, execution commands, and constraints","evidence":["docs/tasks/evidence/T-03021-automated-tests-documentation.md"]}
 {"seq":3022,"ts":"2026-10-15T08:08:52Z","event":"completed","task_id":3022,"note":"Milestone closeout: 23 Rust tests and 19 Python tests verified green","evidence":["docs/tasks/evidence/T-03022-automated-tests-verification-evidenc.md"]}
 {"seq":3023,"ts":"2026-10-15T08:11:12Z","event":"completed","task_id":3023,"note":"Establish security policy facts, constraints, and prior art from NIST SP 800-61 and ADRs","evidence":["docs/tasks/evidence/T-03023-security-policy-research.md"]}
+{"seq":3024,"ts":"2026-10-15T08:13:00Z","event":"completed","task_id":3024,"note":"Specify data models, enforcement modes, error codes, and evaluation rules for security policy","evidence":["docs/tasks/evidence/T-03024-security-policy-specification.md"]}

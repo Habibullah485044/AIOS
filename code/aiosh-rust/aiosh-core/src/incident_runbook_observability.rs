@@ -108,9 +108,16 @@ impl RunbookObservabilityService {
             return Err(format!("{}: step_executions_by_phase exceeds max entries", IROBS_ERR_VALIDATION));
         }
 
-        if snapshot.active_sessions_utilization_percent < 0.0 || snapshot.active_sessions_utilization_percent > 100.0 {
-            return Err(format!("{}: active_sessions_utilization_percent out of bounds [0, 100]", IROBS_ERR_VALIDATION));
+        if snapshot.active_sessions_utilization_percent < 0.0
+            || !snapshot.active_sessions_utilization_percent.is_finite()
+            || snapshot.active_sessions_utilization_percent > 10_000.0
+        {
+            return Err(format!(
+                "{}: active_sessions_utilization_percent out of bounds [0, 10000]",
+                IROBS_ERR_VALIDATION
+            ));
         }
+
 
         let serialized = serde_json::to_string(snapshot)
             .map_err(|e| format!("{}: Serialization failed: {}", IROBS_ERR_VALIDATION, e))?;

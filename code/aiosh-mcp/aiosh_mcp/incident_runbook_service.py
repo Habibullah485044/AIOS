@@ -252,6 +252,10 @@ class RunbookExecutionSession:
         self.operator_confirmed = True
         self.status = RunbookExecutionStatus.RUNNING
 
+    def confirm(self, token: str = "token-auto-approved", operator_id: str = "operator-default") -> None:
+        """Alias for confirm_current_step to support ergonomic confirmation."""
+        self.confirm_current_step(operator_id=operator_id, token=token)
+
     def abort(self, reason: str = "") -> None:
         if self.is_terminal():
             raise ValueError(f"{RUNBOOK_ERR_INVALID_TRANSITION}: Session already in terminal state")

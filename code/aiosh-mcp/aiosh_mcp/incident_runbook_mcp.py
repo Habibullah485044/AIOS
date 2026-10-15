@@ -40,6 +40,8 @@ from .incident_runbook_service import (
 
 from .runbook_config import resolve_runbook_config
 from .incident_runbook_policy import RunbookSecurityPolicy
+from .incident_runbook_observability import RunbookObservabilityService
+
 
 # Constants & Bounds Clamping
 MAX_SCAN_TARGET_LEN = 256
@@ -232,6 +234,21 @@ def execute_runbook_core(
             "max_active_sessions": _ACTIVE_POLICY.max_active_sessions,
             "require_pep_grant": _ACTIVE_POLICY.require_pep_grant,
         }
+
+    if action == "stats":
+        with _SESSION_STORE_LOCK:
+            active_copy = dict(_ACTIVE_SESSIONS)
+        snapshot = RunbookObservabilityService.generate_snapshot(
+            catalog=_CATALOG_SNAPSHOT,
+            active_sessions=active_copy,
+            policy=_ACTIVE_POLICY,
+        )
+        return {
+            "ok": True,
+            "action": "stats",
+            "stats": snapshot.to_dict(),
+        }
+
 
     if action == "init":
         _CATALOG_SNAPSHOT = RunbookCatalogSnapshot.canonical_baseline()

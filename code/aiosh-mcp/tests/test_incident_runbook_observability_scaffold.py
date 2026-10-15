@@ -23,14 +23,17 @@ def test_observability_scaffold_constants_and_types() -> None:
 
     snapshot = RunbookObservabilitySnapshot(
         generated_at_utc="2026-10-15T14:00:00Z",
-        total_catalog_runbooks=4,
+        total_catalog_runbooks=2,
         total_executions=10,
         policy_mode=RunbookEnforcementMode.ENFORCING,
     )
-    assert snapshot.total_catalog_runbooks == 4
+    assert snapshot.total_catalog_runbooks == 2
     assert snapshot.is_healthy is True
 
 
-def test_observability_scaffold_fails_loudly() -> None:
-    with pytest.raises(NotImplementedError, match="pending T-03036"):
-        RunbookObservabilityService.generate_snapshot()
+def test_observability_scaffold_default_generation() -> None:
+    snap = RunbookObservabilityService.generate_snapshot()
+    assert snap.total_catalog_runbooks == 2
+    assert snap.is_healthy is True
+
+

@@ -675,7 +675,7 @@ def register_runbook_tools(mcp: FastMCP) -> None:
         grant_id: str | None = None,
     ) -> dict[str, Any]:
         """Incident Response Runbooks control surface (SPEC-INCIDENT-RUNBOOK-MCP):
-        Actions: list | show | init | start | step | confirm | status | abort | config.
+        Actions: list | show | init | start | step | confirm | status | abort | config | policy | stats.
         """
         return execute_runbook_action(
             action=action,

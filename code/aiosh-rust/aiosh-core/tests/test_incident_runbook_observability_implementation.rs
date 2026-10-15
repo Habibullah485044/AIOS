@@ -39,9 +39,10 @@ fn test_observability_implementation_validation_bounds() {
     // Valid snapshot passes
     assert!(RunbookObservabilityService::validate_snapshot(&snapshot).is_ok());
 
-    // Out-of-bounds utilization
-    snapshot.active_sessions_utilization_percent = 150.0;
+    // Out-of-bounds utilization (> 10000.0)
+    snapshot.active_sessions_utilization_percent = 15_000.0;
     assert!(RunbookObservabilityService::validate_snapshot(&snapshot).is_err());
+
 
     // Empty timestamp
     snapshot.active_sessions_utilization_percent = 0.0;

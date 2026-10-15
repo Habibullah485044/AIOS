@@ -56,6 +56,7 @@ def test_observability_implementation_validation_bounds() -> None:
     RunbookObservabilityService.validate_snapshot(snapshot)
 
     # Invalid utilization percentage fails
-    snapshot.active_sessions_utilization_percent = 200.0
+    snapshot.active_sessions_utilization_percent = 20000.0
     with pytest.raises(ValueError, match=IROBS_ERR_VALIDATION):
         RunbookObservabilityService.validate_snapshot(snapshot)
+

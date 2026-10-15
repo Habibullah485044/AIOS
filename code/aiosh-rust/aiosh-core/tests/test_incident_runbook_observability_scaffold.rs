@@ -36,7 +36,14 @@ fn test_observability_scaffold_constants_and_types() {
 }
 
 #[test]
-#[should_panic(expected = "pending T-03036")]
-fn test_observability_scaffold_fails_loudly() {
-    let _ = RunbookObservabilityService::generate_snapshot();
+fn test_observability_scaffold_default_generation() {
+    let baseline = aiosh_core::incident_runbook_data_model::RunbookCatalogSnapshot::canonical_baseline();
+    let policy = aiosh_core::incident_runbook_policy::RunbookSecurityPolicy::default();
+    let res = RunbookObservabilityService::generate_snapshot(&baseline, &policy, 0);
+    assert!(res.is_ok());
+    let snap = res.unwrap();
+    assert_eq!(snap.total_catalog_runbooks, 2);
+    assert!(snap.is_healthy);
 }
+
+

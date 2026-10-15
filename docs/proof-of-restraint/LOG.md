@@ -1051,3 +1051,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Invariants certified: RBCONF-INV1..RBCONF-INV3, PoR Invariant I-2.
 - Hardening & PEP dispatch verified: 4-level precedence ladder, 64 KiB config file bounds, standardized result envelopes (`SafeResolvedRunbookConfig`), and fail-closed audit logging on all rejection paths.
 - Evidence: docs/tasks/evidence/T-03012-verify.md, docs/tasks/evidence/T-03012-configuration-verification-evidenc.md.
+
+## T-03032 - Incident Response Runbooks / security policy: Verification & Evidence (2026-10-15)
+- Milestone closeout for Incident Response Runbooks security policy subsystem (T-03023..T-03032).
+- Verification battery:
+  - Python MCP policy suite (`test_incident_runbook_policy_*.py`): 15/15 tests PASSED.
+  - Rust Core policy suite (`test_incident_runbook_policy_*.rs`): 14/14 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: RUNBOOKPOL-INV1..RUNBOOKPOL-INV4, PoR Invariant I-2.
+- Governance verified:
+  - Enforcing, Permissive, and Disabled evaluation modes.
+  - Fail-closed confirmation gating on high-risk containment actions.
+  - Standardized `PolicyResultEnvelope` with mandatory honest audit rows on permissive bypass (ADR-0035 AF-2).
+  - Safe atomic file persistence with bounded 64 KiB cap and zero temporary descriptor leaks.
+- Evidence: docs/tasks/evidence/T-03032-verify.md, docs/tasks/evidence/T-03032-security-policy-verification-evidenc.md.
+

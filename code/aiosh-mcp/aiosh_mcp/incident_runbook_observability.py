@@ -118,8 +118,9 @@ class RunbookObservabilityService:
         if len(snapshot.step_executions_by_phase) > MAX_OBSERVABILITY_ENTRIES:
             raise ValueError(f"{IROBS_ERR_VALIDATION}: step_executions_by_phase exceeds max entries")
 
-        if not (0.0 <= snapshot.active_sessions_utilization_percent <= 100.0):
-            raise ValueError(f"{IROBS_ERR_VALIDATION}: active_sessions_utilization_percent out of bounds [0, 100]")
+        if not (0.0 <= snapshot.active_sessions_utilization_percent <= 10000.0):
+            raise ValueError(f"{IROBS_ERR_VALIDATION}: active_sessions_utilization_percent out of bounds [0, 10000]")
+
 
         serialized = json.dumps(snapshot.to_dict())
         if len(serialized.encode("utf-8")) > MAX_OBSERVABILITY_PAYLOAD_BYTES:

@@ -88,6 +88,7 @@ pub mod incident_runbook_data_model;
 pub mod incident_runbook_service;
 pub mod sec_tools;
 pub mod runbook_config;
+pub mod incident_runbook_policy;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

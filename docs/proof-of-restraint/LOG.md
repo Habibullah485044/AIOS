@@ -1040,3 +1040,14 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Invariants certified: IRMCP-INV1..IRMCP-INV5, PoR Invariant I-2.
 - Dual-gate dispatch verified: classifier rule-pack checking (C-1..C-4) and PEP capability redemption required for all consequential operations; atomic audit row emitted on every path.
 - Evidence: docs/tasks/evidence/T-03002-verify.md, docs/tasks/evidence/T-03002-mcp-api-surface-verification-evidenc.md.
+
+## T-03012 - Incident Response Runbooks / configuration: Verification & Evidence (2026-10-13)
+- Milestone closeout for Incident Response Runbooks configuration subsystem (T-03003..T-03012).
+- Verification battery:
+  - Python MCP configuration suite (`test_runbook_config_*.py`): 17/17 tests PASSED.
+  - Python MCP runbook integration suite (`test_incident_runbook_mcp_integration.py`): 2/2 tests PASSED.
+  - Rust Core configuration suite (`test_runbook_config_*.rs`): 15/15 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: RBCONF-INV1..RBCONF-INV3, PoR Invariant I-2.
+- Hardening & PEP dispatch verified: 4-level precedence ladder, 64 KiB config file bounds, standardized result envelopes (`SafeResolvedRunbookConfig`), and fail-closed audit logging on all rejection paths.
+- Evidence: docs/tasks/evidence/T-03012-verify.md, docs/tasks/evidence/T-03012-configuration-verification-evidenc.md.

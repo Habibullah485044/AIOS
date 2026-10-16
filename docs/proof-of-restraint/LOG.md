@@ -1066,3 +1066,17 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Safe atomic file persistence with bounded 64 KiB cap and zero temporary descriptor leaks.
 - Evidence: docs/tasks/evidence/T-03032-verify.md, docs/tasks/evidence/T-03032-security-policy-verification-evidenc.md.
 
+## T-03042 - Incident Response Runbooks / observability: Verification & Evidence (2026-10-15)
+- Milestone closeout for Incident Response Runbooks observability subsystem (T-03033..T-03042).
+- Verification battery:
+  - Python MCP observability suite (`test_incident_runbook_observability_*.py`): 15/15 tests PASSED.
+  - Rust Core observability suite (`test_incident_runbook_observability_*.rs`): 13/13 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: IROBS-INV1..IROBS-INV4, PoR Invariant I-2.
+- Observability verified:
+  - Real-time catalog metrics and phase progression aggregation.
+  - Standardized `ObservabilityResultEnvelope` guaranteeing explicit, auditable errors (no silent failure).
+  - Honest audit row emission on degraded/over-capacity states per ADR-0035 §AF-2.
+  - Safe atomic file persistence with 64 KiB payload boundary enforcement and guaranteed temp file cleanup.
+- Evidence: docs/tasks/evidence/T-03042-verify.md, docs/tasks/evidence/T-03042-observability-verification-evidenc.md.
+

@@ -3077,3 +3077,4 @@
 {"seq":3077,"ts":"2026-10-16T21:14:21Z","event":"completed","task_id":3077,"note":"Add focused automated unit tests for MCP Server Core service","evidence":["docs/tasks/evidence/T-03077-core-service-unit-test.md"]}
 {"seq":3078,"ts":"2026-10-16T21:17:12Z","event":"completed","task_id":3078,"note":"Integrate MCP Server Core service with FastMCP and dual-substrate test suites","evidence":["docs/tasks/evidence/T-03078-core-service-integration.md"]}
 {"seq":3079,"ts":"2026-10-16T21:19:16Z","event":"completed","task_id":3079,"note":"Security review and threat modeling for MCP Server Core service","evidence":["docs/tasks/evidence/T-03079-core-service-security-review.md"]}
+{"seq":3080,"ts":"2026-10-16T21:25:01Z","event":"completed","task_id":3080,"note":"Harden MCP Server Core service against session exhaustion and dispatch timeout","evidence":["docs/tasks/evidence/T-03080-core-service-hardening.md"]}

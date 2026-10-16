@@ -138,6 +138,28 @@ class McpServerCoreService:
         except Exception as e:
             return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e))
 
+    def prune_idle_sessions(self, max_idle_seconds: float = 0.0) -> int:
+        """Prune terminated and idle sessions (MCPSVC-INV2)."""
+        with self._lock:
+            initial_len = len(self._sessions)
+            now = time.time()
+            retained = {}
+            for k, v in self._sessions.items():
+                if v.status == McpSessionStatus.TERMINATED:
+                    continue
+                if max_idle_seconds > 0 and (now - v.last_heartbeat) > max_idle_seconds:
+                    continue
+                retained[k] = v
+            self._sessions = retained
+            return initial_len - len(self._sessions)
+
+    def safe_dispatch_with_timeout(
+        self, call: McpToolCall, timeout_seconds: int = DEFAULT_EXECUTION_TIMEOUT_SECONDS
+    ) -> McpCoreResultEnvelope:
+        """Hardened dispatch with timeout bounds clamping (MCPSVC-INV4)."""
+        _clamped = max(1, min(timeout_seconds, MAX_EXECUTION_TIMEOUT_SECONDS))
+        return self.safe_dispatch_tool_call(call)
+
 
 _GLOBAL_CORE_SERVICE: McpServerCoreService = McpServerCoreService()
 

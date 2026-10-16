@@ -1094,4 +1094,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP tool surface (`doc_list`, `doc_get`, `doc_search`) fully gated behind `_recorded_mcp_call` ensuring immutable audit logging on every invocation.
 - Evidence: docs/tasks/evidence/T-03052-verify.md, docs/tasks/evidence/T-03052-documentation-verification-evidenc.md.
 
+## T-03062 - Incident Response Runbooks / recovery & validation: Verification & Evidence (2026-10-17)
+- Milestone closeout for Incident Response Runbooks recovery & validation subsystem (T-03053..T-03062) and overall Incident Response Runbooks subsystem closeout (T-02983..T-03062), concluding Phase 2 — Security Kernel & PEP Fabric.
+- Verification battery:
+  - Python MCP recovery suite (`test_incident_runbook_recovery_*.py`): 10/10 tests PASSED.
+  - Rust Core recovery suite (`test_incident_runbook_recovery_*.rs`): 9/9 tests PASSED.
+  - Full Python runbook battery: 49/49 tests PASSED.
+  - Full Rust core runbook battery: 42/42 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: IRREC-INV1..IRREC-INV5, PoR Invariant I-2.
+- Recovery, Quarantine & Safety verified:
+  - Non-destructive integrity checks detecting syntax errors, duplicate runbook IDs, and path traversal attempts.
+  - Crash-consistent atomic file replacement via temporary siblings (`.{name}.tmp.{pid}.{nanos}`) and atomic `rename(2)`.
+  - Mandatory forensic isolation: corrupted files preserved in timestamped quarantine files (`.corrupt.{pid}.{nanos}`).
+  - Bounded storage footprint: automatic pruning caps quarantine files to `MAX_QUARANTINE_FILES = 10`.
+  - Fail-open and repair actions gated behind `_recorded_mcp_call` emitting immutable audit rows to the SQLite WAL ring.
+- Evidence: docs/tasks/evidence/T-03062-verify.md, docs/tasks/evidence/T-03062-recovery-validation-verification-evidenc.md.
+
+
 

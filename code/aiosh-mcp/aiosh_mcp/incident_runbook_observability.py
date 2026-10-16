@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
+import os
+from pathlib import Path
 from typing import Any
 
 from .incident_runbook_data_model import IncidentCategory, RunbookCatalogSnapshot, RunbookPhase
@@ -16,9 +18,43 @@ from .incident_runbook_policy import RunbookEnforcementMode, RunbookSecurityPoli
 MAX_OBSERVABILITY_PAYLOAD_BYTES: int = 64 * 1024
 MAX_OBSERVABILITY_ENTRIES: int = 128
 MAX_OBSERVABILITY_TEXT_LEN: int = 256
+MAX_OBSERVABILITY_ACTIVE_SESSIONS: int = 100_000
 
 IROBS_ERR_VALIDATION: str = "IROBS_ERR_VALIDATION"
 IROBS_ERR_INACCESSIBLE: str = "IROBS_ERR_INACCESSIBLE"
+IROBS_ERR_IO: str = "IROBS_ERR_IO"
+
+
+@dataclass
+class ObservabilityResultEnvelope:
+    ok: bool
+    snapshot: RunbookObservabilitySnapshot | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    audit_row_required: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "snapshot": self.snapshot.to_dict() if self.snapshot else None,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "audit_row_required": self.audit_row_required,
+        }
+
+    @classmethod
+    def success(cls, snapshot: RunbookObservabilitySnapshot) -> ObservabilityResultEnvelope:
+        return cls(ok=True, snapshot=snapshot, audit_row_required=False)
+
+    @classmethod
+    def permissive_degraded(
+        cls, snapshot: RunbookObservabilitySnapshot, reason: str
+    ) -> ObservabilityResultEnvelope:
+        return cls(ok=True, snapshot=snapshot, error_message=reason, audit_row_required=True)
+
+    @classmethod
+    def failure(cls, code: str, message: str) -> ObservabilityResultEnvelope:
+        return cls(ok=False, error_code=code, error_message=message, audit_row_required=True)
 
 
 @dataclass
@@ -105,6 +141,30 @@ class RunbookObservabilityService:
         return snapshot
 
     @classmethod
+    def generate_snapshot_safe(
+        cls,
+        catalog: RunbookCatalogSnapshot | None = None,
+        active_sessions: dict[str, Any] | None = None,
+        policy: RunbookSecurityPolicy | None = None,
+    ) -> ObservabilityResultEnvelope:
+        sessions = active_sessions or {}
+        if len(sessions) > MAX_OBSERVABILITY_ACTIVE_SESSIONS:
+            return ObservabilityResultEnvelope.failure(
+                IROBS_ERR_VALIDATION,
+                f"active_sessions count {len(sessions)} exceeds sanity limit {MAX_OBSERVABILITY_ACTIVE_SESSIONS}",
+            )
+        try:
+            snapshot = cls.generate_snapshot(catalog=catalog, active_sessions=sessions, policy=policy)
+            if not snapshot.is_healthy:
+                return ObservabilityResultEnvelope.permissive_degraded(
+                    snapshot,
+                    "Active session count exceeds configured policy limit",
+                )
+            return ObservabilityResultEnvelope.success(snapshot)
+        except Exception as e:
+            return ObservabilityResultEnvelope.failure(IROBS_ERR_VALIDATION, str(e))
+
+    @classmethod
     def validate_snapshot(cls, snapshot: RunbookObservabilitySnapshot) -> None:
         if not snapshot.generated_at_utc or len(snapshot.generated_at_utc) > MAX_OBSERVABILITY_TEXT_LEN:
             raise ValueError(f"{IROBS_ERR_VALIDATION}: generated_at_utc length invalid")
@@ -121,9 +181,65 @@ class RunbookObservabilityService:
         if not (0.0 <= snapshot.active_sessions_utilization_percent <= 10000.0):
             raise ValueError(f"{IROBS_ERR_VALIDATION}: active_sessions_utilization_percent out of bounds [0, 10000]")
 
-
         serialized = json.dumps(snapshot.to_dict())
         if len(serialized.encode("utf-8")) > MAX_OBSERVABILITY_PAYLOAD_BYTES:
             raise ValueError(
                 f"{IROBS_ERR_VALIDATION}: Snapshot payload exceeds maximum {MAX_OBSERVABILITY_PAYLOAD_BYTES} bytes"
             )
+
+    @classmethod
+    def save_snapshot_atomic(cls, path: str | Path, snapshot: RunbookObservabilitySnapshot) -> None:
+        cls.validate_snapshot(snapshot)
+        p = Path(path)
+        data = snapshot.to_dict()
+        serialized = json.dumps(data, indent=2)
+        if len(serialized.encode("utf-8")) > MAX_OBSERVABILITY_PAYLOAD_BYTES:
+            raise ValueError(
+                f"{IROBS_ERR_IO}: Serialized snapshot size exceeds {MAX_OBSERVABILITY_PAYLOAD_BYTES} bytes"
+            )
+
+        temp_path = p.with_name(f"{p.name}.tmp.{os.getpid()}")
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                f.write(serialized)
+            os.replace(temp_path, p)
+        except Exception:
+            if temp_path.exists():
+                temp_path.unlink()
+            raise
+
+    @classmethod
+    def load_snapshot_file(cls, path: str | Path) -> RunbookObservabilitySnapshot:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"{IROBS_ERR_INACCESSIBLE}: Snapshot file not found: {path}")
+
+        if p.stat().st_size > MAX_OBSERVABILITY_PAYLOAD_BYTES:
+            raise ValueError(
+                f"{IROBS_ERR_VALIDATION}: Snapshot file size exceeds {MAX_OBSERVABILITY_PAYLOAD_BYTES} bytes"
+            )
+
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        mode_val = data.get("policy_mode", RunbookEnforcementMode.ENFORCING.value)
+        snapshot = RunbookObservabilitySnapshot(
+            generated_at_utc=data.get("generated_at_utc", ""),
+            total_catalog_runbooks=data.get("total_catalog_runbooks", 0),
+            total_executions=data.get("total_executions", 0),
+            executions_by_category=data.get("executions_by_category", {}),
+            executions_by_status=data.get("executions_by_status", {}),
+            step_executions_by_phase=data.get("step_executions_by_phase", {}),
+            total_ports_scanned=data.get("total_ports_scanned", 0),
+            total_files_scanned=data.get("total_files_scanned", 0),
+            total_web_paths_scanned=data.get("total_web_paths_scanned", 0),
+            policy_mode=RunbookEnforcementMode(mode_val),
+            high_risk_confirmations_total=data.get("high_risk_confirmations_total", 0),
+            policy_rejections_total=data.get("policy_rejections_total", 0),
+            active_sessions_count=data.get("active_sessions_count", 0),
+            active_sessions_utilization_percent=float(data.get("active_sessions_utilization_percent", 0.0)),
+            is_healthy=data.get("is_healthy", True),
+            recent_audit_events_count=data.get("recent_audit_events_count", 0),
+        )
+        cls.validate_snapshot(snapshot)
+        return snapshot

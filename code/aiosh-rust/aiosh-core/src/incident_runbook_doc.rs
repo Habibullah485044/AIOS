@@ -149,6 +149,15 @@ impl RunbookDocRepository {
         repo
     }
 
+    /// Adds or updates a documentation topic in the repository.
+    pub fn add_topic(&mut self, topic: RunbookDocTopic) {
+        if let Some(idx) = self.topics.iter().position(|t| t.id == topic.id) {
+            self.topics[idx] = topic;
+        } else {
+            self.topics.push(topic);
+        }
+    }
+
     /// Lists all registered documentation topics.
     pub fn list_topics(&self) -> &[RunbookDocTopic] {
         &self.topics
@@ -203,10 +212,17 @@ impl RunbookDocRepository {
             let mut score = 0;
             let mut matched_snippet = String::new();
 
+            let id_lower = topic.id.to_lowercase();
             let title_lower = topic.title.to_lowercase();
             let summary_lower = topic.summary.to_lowercase();
 
             for token in &tokens {
+                if id_lower.contains(token) {
+                    score += 15;
+                    if matched_snippet.is_empty() {
+                        matched_snippet = topic.summary.clone();
+                    }
+                }
                 if title_lower.contains(token) {
                     score += 10;
                 }

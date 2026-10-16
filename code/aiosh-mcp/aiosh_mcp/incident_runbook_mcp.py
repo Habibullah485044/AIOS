@@ -798,7 +798,7 @@ def register_runbook_tools(mcp: FastMCP) -> None:
         grant_id: str | None = None,
     ) -> dict[str, Any]:
         """Incident Response Runbooks control surface (SPEC-INCIDENT-RUNBOOK-MCP):
-        Actions: list | show | init | start | step | confirm | status | abort | config | policy | stats | doc_list | doc_get | doc_search.
+        Actions: list | show | init | start | step | confirm | status | abort | config | policy | stats | doc_list | doc_get | doc_search | recovery_check | recovery_repair | recovery_snapshot.
         """
         return execute_runbook_action(
             action=action,

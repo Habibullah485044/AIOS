@@ -424,3 +424,22 @@ impl<T> McpCoreResultEnvelope<T> {
         }
     }
 }
+
+/// Hardened safe parser returning ADR-0035 envelope directly without panics (MCPDM-INV4).
+pub fn safe_parse_request_envelope(raw: &str) -> McpCoreResultEnvelope<McpJsonRpcRequest> {
+    if raw.len() > MAX_PAYLOAD_SIZE {
+        return McpCoreResultEnvelope::error(ERR_BOUNDS_EXCEEDED, "payload exceeds size limit");
+    }
+    match McpJsonRpcRequest::from_json_str(raw) {
+        Ok(req) => McpCoreResultEnvelope::success(req),
+        Err(e) => McpCoreResultEnvelope::error(e.code, e.message),
+    }
+}
+
+/// Hardened safe tool validation returning ADR-0035 envelope (MCPDM-INV4).
+pub fn safe_validate_tool_envelope(name: &str, description: &str, schema: serde_json::Value) -> McpCoreResultEnvelope<McpToolDefinition> {
+    match McpToolDefinition::new(name, description, schema) {
+        Ok(tool) => McpCoreResultEnvelope::success(tool),
+        Err(e) => McpCoreResultEnvelope::error(e.code, e.message),
+    }
+}

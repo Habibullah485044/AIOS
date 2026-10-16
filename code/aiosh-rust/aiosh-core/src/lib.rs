@@ -92,6 +92,7 @@ pub mod incident_runbook_policy;
 pub mod incident_runbook_observability;
 pub mod incident_runbook_doc;
 pub mod incident_runbook_recovery;
+pub mod mcp_server_core_data_model;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

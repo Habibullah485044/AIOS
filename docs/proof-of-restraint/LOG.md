@@ -1125,3 +1125,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - ADR-0035 §AF-2 result envelope compliance ensuring panic-free error propagation.
   - Gated PEP capability grant token verification with immutable audit logging.
 - Evidence: docs/tasks/evidence/T-03072-verify.md, docs/tasks/evidence/T-03072-data-model-verification-evidenc.md.
+
+## T-03082 - AI Control Plane MCP Server Core / core service: Verification & Evidence (2026-10-17)
+- Milestone closeout for MCP Server Core core service subsystem (T-03073..T-03082).
+- Verification battery:
+  - Python MCP core service suite (`test_mcp_server_core_service_*.py`): 9/9 tests PASSED.
+  - Rust Core MCP core service suite (`test_mcp_server_core_service_*.rs`): 8/8 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: MCPSVC-INV1..MCPSVC-INV5, PoR Invariant I-2.
+- Core Service & Safety verified:
+  - Thread-safe tool catalog bounded to `MAX_TOOLS_COUNT = 256` preventing uncontrolled memory inflation.
+  - Active session pool bounded to `MAX_ACTIVE_SESSIONS = 64` with automatic eviction of terminated sessions under pressure.
+  - Fail-closed dispatch routing returning `-32601` for unknown tools and `-32001` for unauthenticated administrative calls (`aios.admin.*`).
+  - Standardized `McpCoreResultEnvelope` output wrapping success and failure modes with clamped timeout bounds (`[1s, 300s]`).
+  - FastMCP production integration exposing `aios_mcp_core_list_tools` and `aios_mcp_core_dispatch`.
+- Evidence: docs/tasks/evidence/T-03082-verify.md, docs/tasks/evidence/T-03082-core-service-verification-evidenc.md.
+

@@ -57,8 +57,9 @@ fn test_recovery_scaffold_types_and_constants() {
 }
 
 #[test]
-#[should_panic(expected = "Scaffold: validate_state_path implemented in T-03056")]
-fn test_recovery_scaffold_stubs_fail_loudly() {
-    let p = Path::new("/dummy/path.json");
-    RunbookRecoveryService::validate_state_path(p);
+fn test_recovery_implementation_basic_validation() {
+    let p = Path::new("/dummy/nonexistent/runbook_state.json");
+    let rep = RunbookRecoveryService::validate_state_path(p);
+    assert_eq!(rep.status, RunbookCatalogStatus::Missing);
+    assert!(!rep.issues.is_empty());
 }

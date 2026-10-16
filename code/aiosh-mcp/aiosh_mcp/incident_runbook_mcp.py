@@ -47,6 +47,13 @@ from .incident_runbook_doc import (
     IRDOC_ERR_NOT_FOUND,
     IRDOC_ERR_QUERY_BOUNDS,
 )
+from .incident_runbook_recovery import (
+    RunbookRecoveryService,
+    RunbookCatalogStatus,
+    RunbookRecoveryResultEnvelope,
+    IRREC_ERR_IO,
+    IRREC_ERR_VALIDATION,
+)
 
 
 # Constants & Bounds Clamping
@@ -337,6 +344,33 @@ def execute_runbook_core(
                 }
                 for r in results
             ],
+        }
+
+    if action == "recovery_check":
+        state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
+        rep = RunbookRecoveryService.validate_state_path(state_path)
+        return {
+            "ok": rep.status == RunbookCatalogStatus.HEALTHY,
+            "action": "recovery_check",
+            "report": rep.to_dict(),
+        }
+
+    if action == "recovery_repair":
+        state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
+        rep = RunbookRecoveryService.repair_runbook_state(state_path)
+        return {
+            "ok": rep.ok,
+            "action": "recovery_repair",
+            "report": rep.to_dict(),
+        }
+
+    if action == "recovery_snapshot":
+        state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
+        b_path = RunbookRecoveryService.create_backup(state_path)
+        return {
+            "ok": True,
+            "action": "recovery_snapshot",
+            "backup_path": str(b_path),
         }
 
     if action == "init":

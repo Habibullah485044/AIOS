@@ -1,6 +1,7 @@
 """AI Control Plane MCP Server Core Service (MCPSVC-INV1..MCPSVC-INV5).
 
-Provides execution engine, tool registry, and session lifecycle management for AIOS Phase 3.
+Provides execution engine, tool registry, session lifecycle management,
+and ADR-0035 envelope dispatch for AIOS Phase 3.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from .mcp_server_core_data_model import (
     MAX_TOOLS_COUNT,
     ERR_INTERNAL_ERROR,
     ERR_BOUNDS_EXCEEDED,
+    ERR_UNAUTHORIZED,
 )
 
 MAX_ACTIVE_SESSIONS: int = 64
@@ -72,22 +74,39 @@ class McpServerCoreService:
                 raise McpJsonRpcError(MCPSVC_ERR_TOOL_ALREADY_EXISTS, f"tool '{tool_def.name}' already registered")
             self._tools[tool_def.name] = tool_def
 
+    def unregister_tool(self, name: str) -> bool:
+        with self._lock:
+            return self._tools.pop(name, None) is not None
+
     def get_tool(self, name: str) -> Optional[McpToolDefinition]:
         with self._lock:
             return self._tools.get(name)
 
     def list_tools(self) -> List[McpToolDefinition]:
         with self._lock:
-            return list(self._tools.values())
+            return sorted(list(self._tools.values()), key=lambda t: t.name)
 
     def create_session(self, session_id: str, client_name: str, client_version: str) -> McpSessionRecord:
         with self._lock:
             if len(self._sessions) >= MAX_ACTIVE_SESSIONS:
-                raise McpJsonRpcError(MCPSVC_ERR_SESSION_CAPACITY_EXCEEDED, "maximum active sessions reached")
+                # Prune terminated
+                self._sessions = {k: v for k, v in self._sessions.items() if v.status != McpSessionStatus.TERMINATED}
+                if len(self._sessions) >= MAX_ACTIVE_SESSIONS:
+                    raise McpJsonRpcError(MCPSVC_ERR_SESSION_CAPACITY_EXCEEDED, "maximum active sessions reached")
             info = McpSessionInfo(session_id=session_id, client_name=client_name, client_version=client_version)
             rec = McpSessionRecord(info=info, status=McpSessionStatus.ACTIVE)
             self._sessions[session_id] = rec
             return rec
+
+    def heartbeat_session(self, session_id: str) -> None:
+        with self._lock:
+            rec = self._sessions.get(session_id)
+            if not rec:
+                raise McpJsonRpcError(MCPSVC_ERR_SESSION_NOT_FOUND, f"session '{session_id}' not found")
+            if rec.status == McpSessionStatus.TERMINATED:
+                raise McpJsonRpcError(MCPSVC_ERR_SESSION_NOT_FOUND, "session is terminated")
+            rec.status = McpSessionStatus.ACTIVE
+            rec.last_heartbeat = time.time()
 
     def get_session(self, session_id: str) -> Optional[McpSessionRecord]:
         with self._lock:
@@ -103,7 +122,12 @@ class McpServerCoreService:
         tool = self.get_tool(call.name)
         if not tool:
             raise McpJsonRpcError(MCPSVC_ERR_TOOL_NOT_FOUND, f"tool '{call.name}' not found")
-        return McpToolResult.text(f"Executed {tool.name}")
+
+        # Fail-closed grant verification if tool requires grant
+        if tool.name.startswith("aios.admin.") and not call.grant_id:
+            raise McpJsonRpcError(ERR_UNAUTHORIZED, "capability grant required for privileged tool")
+
+        return McpToolResult.text(f"Executed {tool.name}: ok")
 
     def safe_dispatch_tool_call(self, call: McpToolCall) -> McpCoreResultEnvelope:
         try:

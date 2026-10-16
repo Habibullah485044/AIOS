@@ -3074,3 +3074,4 @@
 {"seq":3074,"ts":"2026-10-16T21:02:44Z","event":"completed","task_id":3074,"note":"Specify exact contract for MCP Server Core service","evidence":["docs/tasks/evidence/T-03074-core-service-specification.md"]}
 {"seq":3075,"ts":"2026-10-16T21:07:41Z","event":"completed","task_id":3075,"note":"Create module skeleton and interfaces for MCP Server Core service","evidence":["docs/tasks/evidence/T-03075-core-service-scaffold.md"]}
 {"seq":3076,"ts":"2026-10-16T21:11:13Z","event":"completed","task_id":3076,"note":"Implement minimal working behavior for MCP Server Core service","evidence":["docs/tasks/evidence/T-03076-core-service-implementation.md"]}
+{"seq":3077,"ts":"2026-10-16T21:14:21Z","event":"completed","task_id":3077,"note":"Add focused automated unit tests for MCP Server Core service","evidence":["docs/tasks/evidence/T-03077-core-service-unit-test.md"]}

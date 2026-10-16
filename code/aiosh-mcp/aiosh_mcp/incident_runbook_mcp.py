@@ -348,29 +348,52 @@ def execute_runbook_core(
 
     if action == "recovery_check":
         state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
-        rep = RunbookRecoveryService.validate_state_path(state_path)
+        envelope = RunbookRecoveryService.validate_state_path_safe(state_path)
+        rep = envelope.data
         return {
-            "ok": rep.status == RunbookCatalogStatus.HEALTHY,
+            "ok": envelope.ok,
             "action": "recovery_check",
-            "report": rep.to_dict(),
+            "report": rep.to_dict() if rep else {},
+            "error_code": envelope.error_code,
+            "error": envelope.error_message,
+            "audit_row_required": envelope.audit_row_required,
         }
 
     if action == "recovery_repair":
         state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
-        rep = RunbookRecoveryService.repair_runbook_state(state_path)
+        envelope = RunbookRecoveryService.repair_runbook_state_safe(state_path)
+        if not envelope.ok:
+            return {
+                "ok": False,
+                "action": "recovery_repair",
+                "error_code": envelope.error_code,
+                "error": envelope.error_message,
+                "audit_row_required": envelope.audit_row_required,
+            }
+        rep = envelope.data
         return {
-            "ok": rep.ok,
+            "ok": True,
             "action": "recovery_repair",
-            "report": rep.to_dict(),
+            "report": rep.to_dict() if rep else {},
+            "audit_row_required": envelope.audit_row_required,
         }
 
     if action == "recovery_snapshot":
         state_path = (parameters.get("path") if parameters else None) or "runbook_state.json"
-        b_path = RunbookRecoveryService.create_backup(state_path)
+        envelope = RunbookRecoveryService.create_backup_safe(state_path)
+        if not envelope.ok:
+            return {
+                "ok": False,
+                "action": "recovery_snapshot",
+                "error_code": envelope.error_code,
+                "error": envelope.error_message,
+                "audit_row_required": envelope.audit_row_required,
+            }
         return {
             "ok": True,
             "action": "recovery_snapshot",
-            "backup_path": str(b_path),
+            "backup_path": envelope.data,
+            "audit_row_required": envelope.audit_row_required,
         }
 
     if action == "init":

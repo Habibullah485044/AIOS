@@ -523,4 +523,44 @@ impl RunbookRecoveryService {
             }
         }
     }
+
+    /// Safe envelope wrapper for state path validation.
+    pub fn validate_state_path_safe(path: &Path) -> RunbookRecoveryResultEnvelope<RunbookValidationReport> {
+        let rep = Self::validate_state_path(path);
+        if rep.status == RunbookCatalogStatus::Healthy {
+            RunbookRecoveryResultEnvelope::success(rep)
+        } else {
+            RunbookRecoveryResultEnvelope {
+                ok: false,
+                data: Some(rep),
+                error_code: Some("IRREC_ERR_UNHEALTHY".to_string()),
+                error_message: Some("State validation detected issues".to_string()),
+                audit_row_required: true,
+            }
+        }
+    }
+
+    /// Safe envelope wrapper for repair operations.
+    pub fn repair_runbook_state_safe(path: &Path) -> RunbookRecoveryResultEnvelope<RunbookRecoveryReport> {
+        match Self::repair_runbook_state(path) {
+            Ok(rep) => RunbookRecoveryResultEnvelope::success(rep),
+            Err(e) => RunbookRecoveryResultEnvelope::failure(IRREC_ERR_VALIDATION, &e),
+        }
+    }
+
+    /// Safe envelope wrapper for backup snapshot creation.
+    pub fn create_backup_safe(path: &Path) -> RunbookRecoveryResultEnvelope<String> {
+        match Self::create_backup(path) {
+            Ok(p) => RunbookRecoveryResultEnvelope::success(p.to_string_lossy().to_string()),
+            Err(e) => RunbookRecoveryResultEnvelope::failure(IRREC_ERR_IO, &e),
+        }
+    }
+
+    /// Safe envelope wrapper for snapshot restoration.
+    pub fn restore_snapshot_safe(snapshot_path: &Path, target_path: &Path) -> RunbookRecoveryResultEnvelope<RunbookRecoveryReport> {
+        match Self::restore_snapshot(snapshot_path, target_path) {
+            Ok(rep) => RunbookRecoveryResultEnvelope::success(rep),
+            Err(e) => RunbookRecoveryResultEnvelope::failure(IRREC_ERR_VALIDATION, &e),
+        }
+    }
 }

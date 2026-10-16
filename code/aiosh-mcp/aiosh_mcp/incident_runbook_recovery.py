@@ -567,3 +567,40 @@ class RunbookRecoveryService:
             restored_runbooks_count=len(canonical.runbooks),
             action_taken="canonical_reinitialized",
         )
+
+    @classmethod
+    def validate_state_path_safe(cls, path: str | Path) -> RunbookRecoveryResultEnvelope:
+        rep = cls.validate_state_path(path)
+        if rep.status == RunbookCatalogStatus.HEALTHY:
+            return RunbookRecoveryResultEnvelope.success(rep)
+        return RunbookRecoveryResultEnvelope(
+            ok=False,
+            data=rep,
+            error_code="IRREC_ERR_UNHEALTHY",
+            error_message=f"State validation failed with status {rep.status.value}",
+            audit_row_required=True,
+        )
+
+    @classmethod
+    def repair_runbook_state_safe(cls, path: str | Path) -> RunbookRecoveryResultEnvelope:
+        try:
+            rep = cls.repair_runbook_state(path)
+            return RunbookRecoveryResultEnvelope.success(rep)
+        except Exception as exc:
+            return RunbookRecoveryResultEnvelope.failure(IRREC_ERR_VALIDATION, str(exc))
+
+    @classmethod
+    def create_backup_safe(cls, path: str | Path) -> RunbookRecoveryResultEnvelope:
+        try:
+            p = cls.create_backup(path)
+            return RunbookRecoveryResultEnvelope.success(str(p))
+        except Exception as exc:
+            return RunbookRecoveryResultEnvelope.failure(IRREC_ERR_IO, str(exc))
+
+    @classmethod
+    def restore_snapshot_safe(cls, snapshot_path: str | Path, target_path: str | Path) -> RunbookRecoveryResultEnvelope:
+        try:
+            rep = cls.restore_snapshot(snapshot_path, target_path)
+            return RunbookRecoveryResultEnvelope.success(rep)
+        except Exception as exc:
+            return RunbookRecoveryResultEnvelope.failure(IRREC_ERR_VALIDATION, str(exc))

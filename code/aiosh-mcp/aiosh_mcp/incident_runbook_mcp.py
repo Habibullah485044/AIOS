@@ -760,7 +760,7 @@ def register_runbook_tools(mcp: FastMCP) -> None:
         grant_id: str | None = None,
     ) -> dict[str, Any]:
         """Incident Response Runbooks control surface (SPEC-INCIDENT-RUNBOOK-MCP):
-        Actions: list | show | init | start | step | confirm | status | abort | config | policy | stats.
+        Actions: list | show | init | start | step | confirm | status | abort | config | policy | stats | doc_list | doc_get | doc_search.
         """
         return execute_runbook_action(
             action=action,

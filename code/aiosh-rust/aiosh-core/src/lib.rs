@@ -91,6 +91,7 @@ pub mod runbook_config;
 pub mod incident_runbook_policy;
 pub mod incident_runbook_observability;
 pub mod incident_runbook_doc;
+pub mod incident_runbook_recovery;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

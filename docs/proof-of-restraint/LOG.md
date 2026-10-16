@@ -1111,5 +1111,17 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Fail-open and repair actions gated behind `_recorded_mcp_call` emitting immutable audit rows to the SQLite WAL ring.
 - Evidence: docs/tasks/evidence/T-03062-verify.md, docs/tasks/evidence/T-03062-recovery-validation-verification-evidenc.md.
 
-
-
+## T-03072 - AI Control Plane MCP Server Core / data model: Verification & Evidence (2026-10-17)
+- Milestone closeout for MCP Server Core data model subsystem (T-03063..T-03072), initiating Phase 3 — AI Control Plane (Pillar C Spine).
+- Verification battery:
+  - Python MCP core suite (`test_mcp_server_core_data_model_*.py`): 10/10 tests PASSED.
+  - Rust Core MCP core suite (`test_mcp_server_core_data_model_*.rs`): 8/8 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: MCPDM-INV1..MCPDM-INV5, PoR Invariant I-2.
+- Protocol & Safety verified:
+  - Standard JSON-RPC 2.0 framing with pinned protocol version 2025-06-18.
+  - Strict size bounds enforced pre-parsing (payload <= 10 MiB, args <= 1 MiB, tool names <= 64 chars).
+  - Trojan Source and Unicode bidirectional override rejection preventing identifier spoofing.
+  - ADR-0035 §AF-2 result envelope compliance ensuring panic-free error propagation.
+  - Gated PEP capability grant token verification with immutable audit logging.
+- Evidence: docs/tasks/evidence/T-03072-verify.md, docs/tasks/evidence/T-03072-data-model-verification-evidenc.md.

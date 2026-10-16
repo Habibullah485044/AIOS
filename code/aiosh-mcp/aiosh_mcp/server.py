@@ -885,6 +885,9 @@ incident_runbook_mcp_mod.register_runbook_tools(mcp)
 from . import mcp_server_core_data_model as mcp_server_core_data_model_mod
 mcp_server_core_data_model_mod.register_mcp_core_tools(mcp)
 
+from . import mcp_server_core_service as mcp_server_core_service_mod
+mcp_server_core_service_mod.register_mcp_service_tools(mcp)
+
 
 
 # -----------------------------------------------------------------------

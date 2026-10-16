@@ -3071,3 +3071,4 @@
 {"seq":3071,"ts":"2026-10-16T20:53:39Z","event":"completed","task_id":3071,"note":"Document MCP Server Core data model in docs/SPEC-MCP-SERVER-CORE-DATA-MODEL.md","evidence":["docs/tasks/evidence/T-03071-data-model-documentation.md"]}
 {"seq":3072,"ts":"2026-10-16T20:58:17Z","event":"completed","task_id":3072,"note":"Milestone verification and closeout for MCP Server Core data model","evidence":["docs/tasks/evidence/T-03072-data-model-verification-evidenc.md"]}
 {"seq":3073,"ts":"2026-10-16T21:01:00Z","event":"completed","task_id":3073,"note":"Establish facts, constraints, and prior art for MCP Server Core service","evidence":["docs/tasks/evidence/T-03073-core-service-research.md"]}
+{"seq":3074,"ts":"2026-10-16T21:02:44Z","event":"completed","task_id":3074,"note":"Specify exact contract for MCP Server Core service","evidence":["docs/tasks/evidence/T-03074-core-service-specification.md"]}

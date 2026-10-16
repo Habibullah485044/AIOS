@@ -41,6 +41,12 @@ from .incident_runbook_service import (
 from .runbook_config import resolve_runbook_config
 from .incident_runbook_policy import RunbookSecurityPolicy
 from .incident_runbook_observability import RunbookObservabilityService
+from .incident_runbook_doc import (
+    RunbookDocRepository,
+    RunbookDocCategory,
+    IRDOC_ERR_NOT_FOUND,
+    IRDOC_ERR_QUERY_BOUNDS,
+)
 
 
 # Constants & Bounds Clamping
@@ -54,9 +60,11 @@ MAX_WEB_PATHS = 1000
 SEC_ERR_INVALID_TARGET = "SEC_ERR_INVALID_TARGET"
 SEC_ERR_BOUNDS_EXCEEDED = "SEC_ERR_BOUNDS_EXCEEDED"
 
-RUNBOOK_READ_ACTIONS = {"list", "show", "status", "config", "policy"}
+RUNBOOK_READ_ACTIONS = {"list", "show", "status", "config", "policy", "stats", "doc_list", "doc_get", "doc_search"}
 RUNBOOK_WRITE_ACTIONS = {"start", "step", "confirm", "abort", "init"}
 SCAN_ACTIONS = {"net", "files", "web"}
+
+_RUNBOOK_DOC_REPO = RunbookDocRepository()
 
 # Active session store with lock for thread safety
 _SESSION_STORE_LOCK = threading.Lock()
@@ -258,6 +266,74 @@ def execute_runbook_core(
             "audit_row_required": envelope.audit_row_required,
         }
 
+    if action == "doc_list":
+        cat_filter = None
+        if category:
+            try:
+                cat_filter = RunbookDocCategory(category)
+            except ValueError:
+                pass
+        topics = _RUNBOOK_DOC_REPO.list_by_category(cat_filter) if cat_filter else _RUNBOOK_DOC_REPO.list_topics()
+        return {
+            "ok": True,
+            "action": "doc_list",
+            "topics": [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "category": t.category.value,
+                    "summary": t.summary,
+                    "related_topics": t.related_topics,
+                }
+                for t in topics
+            ],
+        }
+
+    if action == "doc_get":
+        target_id = runbook_id or (parameters.get("id") if parameters else None)
+        if not target_id:
+            raise ValueError(f"{IRDOC_ERR_NOT_FOUND}: topic id is required")
+        topic = _RUNBOOK_DOC_REPO.get_topic(target_id)
+        if not topic:
+            raise ValueError(f"{IRDOC_ERR_NOT_FOUND}: topic '{target_id}' not found")
+        return {
+            "ok": True,
+            "action": "doc_get",
+            "topic": {
+                "id": topic.id,
+                "title": topic.title,
+                "category": topic.category.value,
+                "summary": topic.summary,
+                "sections": [{"title": s.title, "content": s.content} for s in topic.sections],
+                "related_topics": topic.related_topics,
+                "markdown": topic.to_markdown(),
+            },
+        }
+
+    if action == "doc_search":
+        q = (parameters.get("query") if parameters else None) or reason or ""
+        cat_filter = None
+        if category:
+            try:
+                cat_filter = RunbookDocCategory(category)
+            except ValueError:
+                pass
+        results = _RUNBOOK_DOC_REPO.search(q, category=cat_filter)
+        return {
+            "ok": True,
+            "action": "doc_search",
+            "query": q,
+            "results": [
+                {
+                    "topic_id": r.topic_id,
+                    "title": r.title,
+                    "category": r.category.value,
+                    "score": r.score,
+                    "snippet": r.snippet,
+                }
+                for r in results
+            ],
+        }
 
     if action == "init":
         _CATALOG_SNAPSHOT = RunbookCatalogSnapshot.canonical_baseline()

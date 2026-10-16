@@ -113,6 +113,13 @@ class RunbookDocRepository:
         self.topics: list[RunbookDocTopic] = []
         self._populate_canonical_topics()
 
+    def add_topic(self, topic: RunbookDocTopic) -> None:
+        for idx, t in enumerate(self.topics):
+            if t.id == topic.id:
+                self.topics[idx] = topic
+                return
+        self.topics.append(topic)
+
     def list_topics(self) -> list[RunbookDocTopic]:
         return list(self.topics)
 
@@ -147,10 +154,15 @@ class RunbookDocRepository:
 
             score = 0
             matched_snippet = ""
+            id_lower = topic.id.lower()
             title_lower = topic.title.lower()
             summary_lower = topic.summary.lower()
 
             for token in tokens:
+                if token in id_lower:
+                    score += 15
+                    if not matched_snippet:
+                        matched_snippet = topic.summary
                 if token in title_lower:
                     score += 10
                 if token in summary_lower:

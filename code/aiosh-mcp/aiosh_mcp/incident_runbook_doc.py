@@ -14,9 +14,38 @@ from typing import Any
 MAX_RUNBOOK_DOC_QUERY_LEN = 128
 MAX_RUNBOOK_DOC_SEARCH_RESULTS = 10
 MAX_RUNBOOK_DOC_SNIPPET_LEN = 200
+MAX_RUNBOOK_DOC_TOPICS_COUNT = 256
+MAX_RUNBOOK_DOC_TEXT_LEN = 8192
 
 IRDOC_ERR_NOT_FOUND = "IRDOC_ERR_NOT_FOUND"
 IRDOC_ERR_QUERY_BOUNDS = "IRDOC_ERR_QUERY_BOUNDS"
+IRDOC_ERR_CAPACITY_EXCEEDED = "IRDOC_ERR_CAPACITY_EXCEEDED"
+
+
+@dataclass
+class RunbookDocResultEnvelope:
+    ok: bool
+    data: Any | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+    audit_row_required: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "data": self.data,
+            "error_code": self.error_code,
+            "error_message": self.error_message,
+            "audit_row_required": self.audit_row_required,
+        }
+
+    @classmethod
+    def success(cls, data: Any) -> RunbookDocResultEnvelope:
+        return cls(ok=True, data=data, audit_row_required=False)
+
+    @classmethod
+    def failure(cls, code: str, message: str) -> RunbookDocResultEnvelope:
+        return cls(ok=False, error_code=code, error_message=message, audit_row_required=True)
 
 
 BIDI_AND_INVISIBLE_CODEPOINTS = {
@@ -113,12 +142,22 @@ class RunbookDocRepository:
         self.topics: list[RunbookDocTopic] = []
         self._populate_canonical_topics()
 
-    def add_topic(self, topic: RunbookDocTopic) -> None:
+    def add_topic_safe(self, topic: RunbookDocTopic) -> None:
+        if len(topic.summary) > MAX_RUNBOOK_DOC_TEXT_LEN:
+            raise ValueError(f"{IRDOC_ERR_QUERY_BOUNDS}: summary text exceeds limit")
+        for sec in topic.sections:
+            if len(sec.content) > MAX_RUNBOOK_DOC_TEXT_LEN or len(sec.title) > MAX_RUNBOOK_DOC_QUERY_LEN:
+                raise ValueError(f"{IRDOC_ERR_QUERY_BOUNDS}: section text exceeds limit")
+        if len(self.topics) >= MAX_RUNBOOK_DOC_TOPICS_COUNT and not any(t.id == topic.id for t in self.topics):
+            raise ValueError(f"{IRDOC_ERR_CAPACITY_EXCEEDED}: topics capacity exceeded")
         for idx, t in enumerate(self.topics):
             if t.id == topic.id:
                 self.topics[idx] = topic
                 return
         self.topics.append(topic)
+
+    def add_topic(self, topic: RunbookDocTopic) -> None:
+        self.add_topic_safe(topic)
 
     def list_topics(self) -> list[RunbookDocTopic]:
         return list(self.topics)
@@ -135,6 +174,16 @@ class RunbookDocRepository:
             if t.id == topic_id:
                 return t
         return None
+
+    def get_topic_safe(self, topic_id: str) -> RunbookDocResultEnvelope:
+        try:
+            validate_topic_id(topic_id)
+        except ValueError as e:
+            return RunbookDocResultEnvelope.failure(IRDOC_ERR_NOT_FOUND, str(e))
+        topic = self.get_topic(topic_id)
+        if topic:
+            return RunbookDocResultEnvelope.success(topic)
+        return RunbookDocResultEnvelope.failure(IRDOC_ERR_NOT_FOUND, f"Topic '{topic_id}' not found")
 
     def search(
         self, query: str, category: RunbookDocCategory | None = None
@@ -201,6 +250,16 @@ class RunbookDocRepository:
 
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:MAX_RUNBOOK_DOC_SEARCH_RESULTS]
+
+    def search_safe(
+        self, query: str, category: RunbookDocCategory | None = None
+    ) -> RunbookDocResultEnvelope:
+        try:
+            res = self.search(query, category)
+            return RunbookDocResultEnvelope.success(res)
+        except ValueError as e:
+            code = IRDOC_ERR_QUERY_BOUNDS if IRDOC_ERR_QUERY_BOUNDS in str(e) else IRDOC_ERR_NOT_FOUND
+            return RunbookDocResultEnvelope.failure(code, str(e))
 
     def _populate_canonical_topics(self) -> None:
         self.topics = [

@@ -293,9 +293,10 @@ def execute_runbook_core(
         target_id = runbook_id or (parameters.get("id") if parameters else None)
         if not target_id:
             raise ValueError(f"{IRDOC_ERR_NOT_FOUND}: topic id is required")
-        topic = _RUNBOOK_DOC_REPO.get_topic(target_id)
-        if not topic:
-            raise ValueError(f"{IRDOC_ERR_NOT_FOUND}: topic '{target_id}' not found")
+        envelope = _RUNBOOK_DOC_REPO.get_topic_safe(target_id)
+        if not envelope.ok:
+            raise ValueError(f"{envelope.error_code}: {envelope.error_message}")
+        topic = envelope.data
         return {
             "ok": True,
             "action": "doc_get",
@@ -318,7 +319,10 @@ def execute_runbook_core(
                 cat_filter = RunbookDocCategory(category)
             except ValueError:
                 pass
-        results = _RUNBOOK_DOC_REPO.search(q, category=cat_filter)
+        envelope = _RUNBOOK_DOC_REPO.search_safe(q, category=cat_filter)
+        if not envelope.ok:
+            raise ValueError(f"{envelope.error_code}: {envelope.error_message}")
+        results = envelope.data or []
         return {
             "ok": True,
             "action": "doc_search",

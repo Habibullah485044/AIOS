@@ -9,9 +9,44 @@ use serde::{Deserialize, Serialize};
 pub const MAX_RUNBOOK_DOC_QUERY_LEN: usize = 128;
 pub const MAX_RUNBOOK_DOC_SEARCH_RESULTS: usize = 10;
 pub const MAX_RUNBOOK_DOC_SNIPPET_LEN: usize = 200;
+pub const MAX_RUNBOOK_DOC_TOPICS_COUNT: usize = 256;
+pub const MAX_RUNBOOK_DOC_TEXT_LEN: usize = 8192;
 
 pub const IRDOC_ERR_NOT_FOUND: &str = "IRDOC_ERR_NOT_FOUND";
 pub const IRDOC_ERR_QUERY_BOUNDS: &str = "IRDOC_ERR_QUERY_BOUNDS";
+pub const IRDOC_ERR_CAPACITY_EXCEEDED: &str = "IRDOC_ERR_CAPACITY_EXCEEDED";
+
+/// Standard result envelope for Incident Response documentation operations (ADR-0035 §AF-2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunbookDocResultEnvelope<T> {
+    pub ok: bool,
+    pub data: Option<T>,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+    pub audit_row_required: bool,
+}
+
+impl<T> RunbookDocResultEnvelope<T> {
+    pub fn success(data: T) -> Self {
+        Self {
+            ok: true,
+            data: Some(data),
+            error_code: None,
+            error_message: None,
+            audit_row_required: false,
+        }
+    }
+
+    pub fn failure(code: &str, message: &str) -> Self {
+        Self {
+            ok: false,
+            data: None,
+            error_code: Some(code.to_string()),
+            error_message: Some(message.to_string()),
+            audit_row_required: true,
+        }
+    }
+}
 
 /// Identifies bidirectional override or zero-width formatting codepoints.
 pub fn is_bidi_or_invisible(c: char) -> bool {
@@ -149,13 +184,30 @@ impl RunbookDocRepository {
         repo
     }
 
-    /// Adds or updates a documentation topic in the repository.
-    pub fn add_topic(&mut self, topic: RunbookDocTopic) {
+    /// Adds or updates a documentation topic in the repository with bounds checking.
+    pub fn add_topic_safe(&mut self, topic: RunbookDocTopic) -> Result<(), &'static str> {
+        if topic.summary.len() > MAX_RUNBOOK_DOC_TEXT_LEN {
+            return Err(IRDOC_ERR_QUERY_BOUNDS);
+        }
+        for sec in &topic.sections {
+            if sec.content.len() > MAX_RUNBOOK_DOC_TEXT_LEN || sec.title.len() > MAX_RUNBOOK_DOC_QUERY_LEN {
+                return Err(IRDOC_ERR_QUERY_BOUNDS);
+            }
+        }
+        if self.topics.len() >= MAX_RUNBOOK_DOC_TOPICS_COUNT && !self.topics.iter().any(|t| t.id == topic.id) {
+            return Err(IRDOC_ERR_CAPACITY_EXCEEDED);
+        }
         if let Some(idx) = self.topics.iter().position(|t| t.id == topic.id) {
             self.topics[idx] = topic;
         } else {
             self.topics.push(topic);
         }
+        Ok(())
+    }
+
+    /// Adds or updates a documentation topic in the repository (unwrapping safe helper).
+    pub fn add_topic(&mut self, topic: RunbookDocTopic) {
+        let _ = self.add_topic_safe(topic);
     }
 
     /// Lists all registered documentation topics.
@@ -174,6 +226,17 @@ impl RunbookDocRepository {
             return None;
         }
         self.topics.iter().find(|t| t.id == id)
+    }
+
+    /// Safe envelope wrapper for retrieving a specific topic by topic ID.
+    pub fn get_topic_safe(&self, id: &str) -> RunbookDocResultEnvelope<RunbookDocTopic> {
+        if let Err(e) = validate_topic_id(id) {
+            return RunbookDocResultEnvelope::failure(e, &format!("Invalid topic ID format: '{}'", id));
+        }
+        match self.topics.iter().find(|t| t.id == id) {
+            Some(t) => RunbookDocResultEnvelope::success(t.clone()),
+            None => RunbookDocResultEnvelope::failure(IRDOC_ERR_NOT_FOUND, &format!("Topic '{}' not found", id)),
+        }
     }
 
     /// Searches documentation topics with ranked scoring.
@@ -275,6 +338,18 @@ impl RunbookDocRepository {
         }
 
         Ok(results)
+    }
+
+    /// Safe envelope wrapper for searching documentation topics.
+    pub fn search_safe(
+        &self,
+        query: &str,
+        category: Option<RunbookDocCategory>,
+    ) -> RunbookDocResultEnvelope<Vec<RunbookDocSearchResult>> {
+        match self.search(query, category) {
+            Ok(res) => RunbookDocResultEnvelope::success(res),
+            Err(e) => RunbookDocResultEnvelope::failure(e, &format!("Doc search query error: {}", e)),
+        }
     }
 
     /// Populates repository with the canonical set of topics.

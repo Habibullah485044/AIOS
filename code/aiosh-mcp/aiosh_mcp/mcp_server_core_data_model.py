@@ -303,3 +303,29 @@ class McpCoreResultEnvelope:
         if self.error_message is not None:
             d["error_message"] = self.error_message
         return d
+
+
+def register_mcp_core_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core diagnostic and inspection tools with FastMCP."""
+    @mcp_app.tool()
+    def aios_mcp_core_status(session_id: str = "default_session") -> dict:
+        """Inspect the AI Control Plane MCP Server Core data model and capabilities."""
+        try:
+            session = McpSessionInfo(
+                session_id=session_id,
+                client_name="aios-control-plane",
+                client_version="0.1.0",
+            )
+            data = {
+                "session_id": session.session_id,
+                "protocol_version": session.protocol_version,
+                "capabilities": session.capabilities.to_dict(),
+                "created_at": session.created_at,
+            }
+            env = McpCoreResultEnvelope.success(data)
+            return env.to_dict()
+        except McpJsonRpcError as e:
+            return McpCoreResultEnvelope.error(e.code, e.message).to_dict()
+        except Exception as e:
+            return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e)).to_dict()
+

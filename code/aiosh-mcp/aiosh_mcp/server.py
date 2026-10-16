@@ -879,6 +879,12 @@ release_mod.register_release_tools(mcp)
 from . import incident_runbook_mcp as incident_runbook_mcp_mod
 incident_runbook_mcp_mod.register_runbook_tools(mcp)
 
+# -----------------------------------------------------------------------
+# Phase 3: Register AI Control Plane MCP Server Core diagnostic tools
+# -----------------------------------------------------------------------
+from . import mcp_server_core_data_model as mcp_server_core_data_model_mod
+mcp_server_core_data_model_mod.register_mcp_core_tools(mcp)
+
 
 
 # -----------------------------------------------------------------------

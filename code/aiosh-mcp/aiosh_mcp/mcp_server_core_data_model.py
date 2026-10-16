@@ -329,3 +329,28 @@ def register_mcp_core_tools(mcp_app: Any) -> None:
         except Exception as e:
             return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e)).to_dict()
 
+
+def safe_parse_request_envelope(raw: str) -> McpCoreResultEnvelope:
+    """Hardened safe parser returning ADR-0035 envelope directly without exceptions."""
+    if len(raw.encode("utf-8")) > MAX_PAYLOAD_SIZE:
+        return McpCoreResultEnvelope.error(ERR_BOUNDS_EXCEEDED, "payload exceeds size limit")
+    try:
+        req = McpJsonRpcRequest.from_json_str(raw)
+        return McpCoreResultEnvelope.success(req.to_dict())
+    except McpJsonRpcError as e:
+        return McpCoreResultEnvelope.error(e.code, e.message)
+    except Exception as e:
+        return McpCoreResultEnvelope.error(ERR_PARSE_ERROR, str(e))
+
+
+def safe_validate_tool_envelope(name: str, description: str, schema: Dict[str, Any]) -> McpCoreResultEnvelope:
+    """Hardened safe tool validation returning ADR-0035 envelope."""
+    try:
+        tool = McpToolDefinition(name=name, description=description, input_schema=schema)
+        return McpCoreResultEnvelope.success(tool.to_dict())
+    except McpJsonRpcError as e:
+        return McpCoreResultEnvelope.error(e.code, e.message)
+    except Exception as e:
+        return McpCoreResultEnvelope.error(ERR_INVALID_PARAMS, str(e))
+
+

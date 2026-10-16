@@ -1080,3 +1080,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Safe atomic file persistence with 64 KiB payload boundary enforcement and guaranteed temp file cleanup.
 - Evidence: docs/tasks/evidence/T-03042-verify.md, docs/tasks/evidence/T-03042-observability-verification-evidenc.md.
 
+## T-03052 - Incident Response Runbooks / documentation: Verification & Evidence (2026-10-16)
+- Milestone closeout for Incident Response Runbooks documentation subsystem (T-03043..T-03052).
+- Verification battery:
+  - Python MCP documentation suite (`test_incident_runbook_doc_*.py`): 10/10 tests PASSED.
+  - Rust Core documentation suite (`test_incident_runbook_doc_*.rs`): 9/9 tests PASSED.
+  - Proof of Restraint Continuous Restraint Conformance Suite (`CRCS` C1..C6): ALL PASSED.
+- Invariants certified: IRDOC-INV1..IRDOC-INV5, PoR Invariant I-2.
+- Documentation & Safety verified:
+  - Bounded in-memory catalog with canonical reference topics covering architecture, data models, state lifecycle, RustSec tools, and policies.
+  - Strict input sanitization stripping bidirectional override codepoints and null bytes.
+  - Standardized `RunbookDocResultEnvelope` guaranteeing deterministic safety without panics or silent drops (ADR-0035 §AF-2).
+  - FastMCP tool surface (`doc_list`, `doc_get`, `doc_search`) fully gated behind `_recorded_mcp_call` ensuring immutable audit logging on every invocation.
+- Evidence: docs/tasks/evidence/T-03052-verify.md, docs/tasks/evidence/T-03052-documentation-verification-evidenc.md.
+
+

@@ -137,3 +137,35 @@ class McpServerCoreService:
             return McpCoreResultEnvelope.error(e.code, e.message)
         except Exception as e:
             return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e))
+
+
+_GLOBAL_CORE_SERVICE: McpServerCoreService = McpServerCoreService()
+
+
+def get_core_service() -> McpServerCoreService:
+    return _GLOBAL_CORE_SERVICE
+
+
+def register_mcp_service_tools(mcp_app: Any, service: Optional[McpServerCoreService] = None) -> None:
+    """Register MCP Server Core service tools with FastMCP."""
+    svc = service or _GLOBAL_CORE_SERVICE
+
+    @mcp_app.tool()
+    def aios_mcp_core_list_tools() -> dict:
+        """List all registered tools in the MCP Server Core service catalog."""
+        try:
+            tools = [t.to_dict() for t in svc.list_tools()]
+            return McpCoreResultEnvelope.success(tools).to_dict()
+        except Exception as e:
+            return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e)).to_dict()
+
+    @mcp_app.tool()
+    def aios_mcp_core_dispatch(name: str, arguments: Optional[dict] = None, grant_id: Optional[str] = None) -> dict:
+        """Dispatch a tool call through the MCP Server Core service."""
+        try:
+            call = McpToolCall(name=name, arguments=arguments or {}, grant_id=grant_id)
+            env = svc.safe_dispatch_tool_call(call)
+            return env.to_dict()
+        except Exception as e:
+            return McpCoreResultEnvelope.error(ERR_INTERNAL_ERROR, str(e)).to_dict()
+

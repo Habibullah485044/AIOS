@@ -3068,3 +3068,4 @@
 {"seq":3068,"ts":"2026-10-16T20:42:07Z","event":"completed","task_id":3068,"note":"Integrate MCP Server Core data model with FastMCP and dual-substrate test suites","evidence":["docs/tasks/evidence/T-03068-data-model-integration.md"]}
 {"seq":3069,"ts":"2026-10-16T20:47:14Z","event":"completed","task_id":3069,"note":"Security review and threat modeling for MCP Server Core data model","evidence":["docs/tasks/evidence/T-03069-data-model-security-review.md"]}
 {"seq":3070,"ts":"2026-10-16T20:51:30Z","event":"completed","task_id":3070,"note":"Harden MCP Server Core data model against panic and bounds violations","evidence":["docs/tasks/evidence/T-03070-data-model-hardening.md"]}
+{"seq":3071,"ts":"2026-10-16T20:53:39Z","event":"completed","task_id":3071,"note":"Document MCP Server Core data model in docs/SPEC-MCP-SERVER-CORE-DATA-MODEL.md","evidence":["docs/tasks/evidence/T-03071-data-model-documentation.md"]}

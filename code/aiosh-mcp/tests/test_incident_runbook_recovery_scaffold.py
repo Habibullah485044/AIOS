@@ -52,9 +52,7 @@ def test_recovery_scaffold_types_and_constants():
     assert env.audit_row_required is False
 
 
-def test_recovery_scaffold_stubs_raise_not_implemented():
-    with pytest.raises(NotImplementedError, match="validate_state_path"):
-        RunbookRecoveryService.validate_state_path("/tmp/state.json")
-
-    with pytest.raises(NotImplementedError, match="repair_runbook_state"):
-        RunbookRecoveryService.repair_runbook_state("/tmp/state.json")
+def test_recovery_implementation_basic_validation():
+    rep = RunbookRecoveryService.validate_state_path("/dummy/nonexistent/state.json")
+    assert rep.status == RunbookCatalogStatus.MISSING
+    assert len(rep.issues) > 0

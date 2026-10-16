@@ -238,15 +238,24 @@ def execute_runbook_core(
     if action == "stats":
         with _SESSION_STORE_LOCK:
             active_copy = dict(_ACTIVE_SESSIONS)
-        snapshot = RunbookObservabilityService.generate_snapshot(
+        envelope = RunbookObservabilityService.generate_snapshot_safe(
             catalog=_CATALOG_SNAPSHOT,
             active_sessions=active_copy,
             policy=_ACTIVE_POLICY,
         )
+        if not envelope.ok:
+            return {
+                "ok": False,
+                "action": "stats",
+                "error": envelope.error_message,
+                "error_code": envelope.error_code,
+                "audit_row_required": envelope.audit_row_required,
+            }
         return {
             "ok": True,
             "action": "stats",
-            "stats": snapshot.to_dict(),
+            "stats": envelope.snapshot.to_dict() if envelope.snapshot else {},
+            "audit_row_required": envelope.audit_row_required,
         }
 
 

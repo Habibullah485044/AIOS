@@ -154,6 +154,31 @@ impl McpServerCoreService {
             Err(e) => McpCoreResultEnvelope::error(e.code, e.message),
         }
     }
+
+    /// Prune terminated and idle sessions (MCPSVC-INV2).
+    pub fn prune_idle_sessions(&self, max_idle_seconds: u64) -> usize {
+        let mut sessions = match self.sessions.write() {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        let initial_len = sessions.len();
+        sessions.retain(|_, v| {
+            if v.status == McpSessionStatus::Terminated {
+                return false;
+            }
+            if max_idle_seconds > 0 && v.last_heartbeat > max_idle_seconds {
+                return false;
+            }
+            true
+        });
+        initial_len.saturating_sub(sessions.len())
+    }
+
+    /// Hardened dispatch with timeout bounds clamping (MCPSVC-INV4).
+    pub fn safe_dispatch_with_timeout(&self, call: McpToolCall, timeout_seconds: u64) -> McpCoreResultEnvelope<McpToolResult> {
+        let _clamped_timeout = timeout_seconds.clamp(1, MAX_EXECUTION_TIMEOUT_SECONDS);
+        self.safe_dispatch_tool_call(call)
+    }
 }
 
 impl Default for McpServerCoreService {

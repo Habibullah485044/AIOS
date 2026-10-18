@@ -3131,3 +3131,4 @@
 {"seq":3131,"ts":"2026-10-18T21:10:45Z","event":"completed","task_id":3131,"note":"Document MCP Server Core security policy subsystem with examples and constraints in code/aiosh-mcp/README.md","evidence":["docs/tasks/evidence/T-03131-security-policy-documentation.md"]}
 {"seq":3132,"ts":"2026-10-18T21:13:32Z","event":"completed","task_id":3132,"note":"Verify MCP Server Core security policy milestone and update PoR log","evidence":["docs/tasks/evidence/T-03132-security-policy-verification-evidenc.md"]}
 {"seq":3133,"ts":"2026-10-18T21:15:30Z","event":"completed","task_id":3133,"note":"Establish facts, constraints, and prior art for MCP Server Core observability","evidence":["docs/tasks/evidence/T-03133-observability-research.md"]}
+{"seq":3134,"ts":"2026-10-18T21:17:14Z","event":"completed","task_id":3134,"note":"Specify exact contract and invariants for MCP Server Core observability","evidence":["docs/tasks/evidence/T-03134-observability-specification.md"]}

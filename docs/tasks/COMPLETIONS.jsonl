@@ -3083,3 +3083,4 @@
 {"seq":3083,"ts":"2026-10-18T12:17:56Z","event":"completed","task_id":3083,"note":"Research CLI surface grammar, capability gating, and audit emission for MCP Server Core","evidence":["docs/tasks/evidence/T-03083-cli-surface-research.md"]}
 {"seq":3084,"ts":"2026-10-18T12:22:48Z","event":"completed","task_id":3084,"note":"Author specification for MCP Server Core CLI surface","evidence":["docs/tasks/evidence/T-03084-cli-surface-specification.md"]}
 {"seq":3085,"ts":"2026-10-18T13:42:08Z","event":"completed","task_id":3085,"note":"Scaffold CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03085-cli-surface-scaffold.md"]}
+{"seq":3086,"ts":"2026-10-18T14:24:42Z","event":"completed","task_id":3086,"note":"Implement CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03086-cli-surface-implementation.md"]}

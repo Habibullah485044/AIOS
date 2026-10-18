@@ -1247,6 +1247,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_doc_lookup` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03152-documentation-verification-evidenc.md.
 
+## T-03162 - AI Control Plane MCP Server Core / recovery & validation: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core recovery & validation subsystem (T-03153..T-03162).
+- Verification battery:
+  - Python MCP Recovery suite (`test_mcp_server_core_recovery_*.py`): 21/21 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPRECV-INV1..MCPRECV-INV5, PoR Invariant I-2.
+- Recovery Subsystem & Safety verified:
+  - Deep validation against JSON parse errors, truncated payloads, missing files, and size bounds (10 MiB ceiling).
+  - Non-destructive forensics quarantine: preserves corrupted state to `<path>.bak.<timestamp>` with `0600` permissions.
+  - Atomic state initialization via tempfile + `os.replace`.
+  - Path traversal (`..`), NUL byte, ADS colon, and reserved Windows device names (`CON`, `PRN`, etc.) rejected fail-closed.
+  - Information disclosure prevention: error payloads redact absolute local path hierarchies.
+  - FastMCP production integration: `aios_mcp_recovery_check` (read-only) and `aios_mcp_recovery_repair` (gated mutation) registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03162-recovery-validation-verification-evidenc.md.
+
+
 
 
 

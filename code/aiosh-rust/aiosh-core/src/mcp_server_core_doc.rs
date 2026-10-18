@@ -193,3 +193,80 @@ impl McpServerCoreDocCatalog {
         ids
     }
 }
+
+pub fn build_default_doc_catalog() -> McpServerCoreDocCatalog {
+    let mut catalog = McpServerCoreDocCatalog::new();
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.overview".into(),
+        title: "MCP Server Core Overview".into(),
+        category: "architecture".into(),
+        summary: "Architecture and role of the AI Control Plane MCP Server Core (ADR-0035).".into(),
+        content: "# MCP Server Core Overview\n\nThe Model Context Protocol (MCP) server core operates as Pillar C's spine.".into(),
+        keywords: vec!["overview".into(), "architecture".into(), "fastmcp".into(), "adr-0035".into(), "spine".into()],
+        cross_references: vec!["core.api".into(), "core.config".into(), "core.policy".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.api".into(),
+        title: "MCP Server Core Wire API".into(),
+        category: "api".into(),
+        summary: "JSON-RPC 2.0 framing, wire protocol routing, and tool dispatch.".into(),
+        content: "# MCP Server Core Wire API\n\nHandles wire-level JSON-RPC 2.0 framing and method routing.".into(),
+        keywords: vec!["api".into(), "jsonrpc".into(), "wire".into(), "dispatch".into(), "ping".into()],
+        cross_references: vec!["core.overview".into(), "core.policy".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.config".into(),
+        title: "MCP Server Core Configuration".into(),
+        category: "configuration".into(),
+        summary: "Resolution hierarchy, validation invariants, and parameter bounds.".into(),
+        content: "# MCP Server Core Configuration\n\nManages hierarchical resolution and bounds enforcement.".into(),
+        keywords: vec!["config".into(), "configuration".into(), "hierarchy".into(), "store_path".into()],
+        cross_references: vec!["core.overview".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.tests".into(),
+        title: "MCP Server Core Automated Test Runner".into(),
+        category: "testing".into(),
+        summary: "On-demand internal diagnostics and multi-layer health verification.".into(),
+        content: "# MCP Server Core Automated Test Runner\n\nExposes aios_mcp_test_run for diagnostics.".into(),
+        keywords: vec!["tests".into(), "testing".into(), "diagnostics".into(), "runner".into()],
+        cross_references: vec!["core.policy".into(), "core.observability".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.policy".into(),
+        title: "MCP Server Core Security Policy".into(),
+        category: "security".into(),
+        summary: "Policy Enforcement Point (PEP) gating and Proof-of-Restraint Invariant I-2.".into(),
+        content: "# MCP Server Core Security Policy\n\nEnforces declarative authorization and Zero Escalation.".into(),
+        keywords: vec!["policy".into(), "security".into(), "pep".into(), "authorization".into(), "por".into()],
+        cross_references: vec!["core.overview".into(), "core.api".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.observability".into(),
+        title: "MCP Server Core Observability".into(),
+        category: "observability".into(),
+        summary: "Real-time health telemetry, request throughput, and latency percentiles.".into(),
+        content: "# MCP Server Core Observability\n\nExposes aios_mcp_observability_snapshot for telemetry.".into(),
+        keywords: vec!["observability".into(), "metrics".into(), "telemetry".into(), "health".into()],
+        cross_references: vec!["core.overview".into(), "core.tests".into()],
+    });
+
+    let _ = catalog.register(McpDocTopic {
+        topic_id: "core.doc".into(),
+        title: "MCP Server Core Documentation Subsystem".into(),
+        category: "documentation".into(),
+        summary: "Self-contained reference repository and topic search index.".into(),
+        content: "# MCP Server Core Documentation Subsystem\n\nProvides self-documentation and search.".into(),
+        keywords: vec!["doc".into(), "documentation".into(), "lookup".into(), "search".into()],
+        cross_references: vec!["core.overview".into(), "core.api".into()],
+    });
+
+    catalog
+}
+

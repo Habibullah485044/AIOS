@@ -3154,3 +3154,4 @@
 {"seq":3154,"ts":"2026-10-18T22:52:07Z","event":"completed","task_id":3154,"note":"Specify contracts and invariants for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03154-recovery-validation-specification.md"]}
 {"seq":3155,"ts":"2026-10-18T22:57:38Z","event":"completed","task_id":3155,"note":"Create module skeleton and interfaces for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03155-recovery-validation-scaffold.md"]}
 {"seq":3156,"ts":"2026-10-18T23:00:10Z","event":"completed","task_id":3156,"note":"Implement store validation and non-destructive quarantine recovery","evidence":["docs/tasks/evidence/T-03156-recovery-validation-implementation.md"]}
+{"seq":3157,"ts":"2026-10-18T23:06:01Z","event":"completed","task_id":3157,"note":"Add focused unit tests for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03157-recovery-validation-unit-test.md"]}

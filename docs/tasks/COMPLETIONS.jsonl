@@ -3132,3 +3132,4 @@
 {"seq":3132,"ts":"2026-10-18T21:13:32Z","event":"completed","task_id":3132,"note":"Verify MCP Server Core security policy milestone and update PoR log","evidence":["docs/tasks/evidence/T-03132-security-policy-verification-evidenc.md"]}
 {"seq":3133,"ts":"2026-10-18T21:15:30Z","event":"completed","task_id":3133,"note":"Establish facts, constraints, and prior art for MCP Server Core observability","evidence":["docs/tasks/evidence/T-03133-observability-research.md"]}
 {"seq":3134,"ts":"2026-10-18T21:17:14Z","event":"completed","task_id":3134,"note":"Specify exact contract and invariants for MCP Server Core observability","evidence":["docs/tasks/evidence/T-03134-observability-specification.md"]}
+{"seq":3135,"ts":"2026-10-18T21:20:48Z","event":"completed","task_id":3135,"note":"Create module skeleton and interfaces for MCP Server Core observability in Python and Rust","evidence":["docs/tasks/evidence/T-03135-observability-scaffold.md"]}

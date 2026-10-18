@@ -119,4 +119,26 @@ impl McpServerCoreConfig {
     pub fn to_json_str(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self).map_err(|e| format!("serialization error: {}", e))
     }
+
+    pub fn load_from_file(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let p = path.as_ref();
+        let metadata = std::fs::metadata(p).map_err(|e| format!("failed to read file metadata: {}", e))?;
+        if metadata.len() > MAX_CONFIG_FILE_BYTES {
+            return Err(format!("config file exceeds {} bytes", MAX_CONFIG_FILE_BYTES));
+        }
+        let content = std::fs::read_to_string(p).map_err(|e| format!("failed to read config file: {}", e))?;
+        Self::from_json_str(&content)
+    }
+
+    pub fn save_to_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        self.validate()?;
+        let p = path.as_ref();
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("failed to create dir: {}", e))?;
+        }
+        let s = self.to_json_str()?;
+        std::fs::write(p, s).map_err(|e| format!("failed to write config: {}", e))?;
+        Ok(())
+    }
 }
+

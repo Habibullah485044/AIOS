@@ -116,6 +116,17 @@ class McpServerCoreConfig:
         cfg.validate()
         return cfg
 
+    def save_to_file(self, path: str) -> None:
+        """Atomically persist configuration to path using temporary file and atomic rename."""
+        self.validate()
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(f"{p.name}.tmp.{os.getpid()}")
+        data_str = json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(data_str)
+        os.replace(tmp, p)
+
     @classmethod
     def load_from_file(cls, path: str) -> McpServerCoreConfig:
         p = Path(path)

@@ -3100,3 +3100,4 @@
 {"seq":3100,"ts":"2026-10-18T19:28:19Z","event":"completed","task_id":3100,"note":"Harden MCP Server Core MCP/API surface against failure and misuse","evidence":["docs/tasks/evidence/T-03100-mcp-api-surface-hardening.md"]}
 {"seq":3101,"ts":"2026-10-18T19:30:18Z","event":"completed","task_id":3101,"note":"Document MCP Server Core MCP/API surface for operators and agents","evidence":["docs/tasks/evidence/T-03101-mcp-api-surface-documentation.md"]}
 {"seq":3102,"ts":"2026-10-18T19:33:59Z","event":"completed","task_id":3102,"note":"Verify MCP Server Core MCP/API surface, capture PASS evidence and close milestone","evidence":["docs/tasks/evidence/T-03102-mcp-api-surface-verification-evidenc.md"]}
+{"seq":3103,"ts":"2026-10-18T19:36:15Z","event":"completed","task_id":3103,"note":"Establish facts, constraints, security audit, and prior art for MCP Server Core configuration","evidence":["docs/tasks/evidence/T-03103-configuration-research.md"]}

@@ -3141,3 +3141,4 @@
 {"seq":3141,"ts":"2026-10-18T21:37:22Z","event":"completed","task_id":3141,"note":"Document MCP Server Core observability subsystem","evidence":["docs/tasks/evidence/T-03141-observability-documentation.md"]}
 {"seq":3142,"ts":"2026-10-18T22:10:53Z","event":"completed","task_id":3142,"note":"Milestone verification and evidence for MCP Server Core Observability","evidence":["docs/tasks/evidence/T-03142-observability-verification-evidenc.md"]}
 {"seq":3143,"ts":"2026-10-18T22:13:33Z","event":"completed","task_id":3143,"note":"Establish facts, constraints, and prior art for MCP Server Core Documentation","evidence":["docs/tasks/evidence/T-03143-documentation-research.md"]}
+{"seq":3144,"ts":"2026-10-18T22:15:14Z","event":"completed","task_id":3144,"note":"Specify contracts and invariants for MCP Server Core Documentation","evidence":["docs/tasks/evidence/T-03144-documentation-specification.md"]}

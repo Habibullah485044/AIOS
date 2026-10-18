@@ -1188,4 +1188,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_config_get` and `aios_mcp_config_validate` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03112-verify.md, docs/tasks/evidence/T-03112-configuration-verification-evidenc.md.
 
+## T-03122 - AI Control Plane MCP Server Core / automated tests: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core automated tests subsystem (T-03113..T-03122).
+- Verification battery:
+  - Python MCP Automated Tests suite (`test_mcp_server_core_tests_*.py`): 8/8 tests PASSED.
+  - Rust Core MCP Automated Tests suite (`test_mcp_server_core_tests_unit.rs`): 4/4 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPTEST-INV1..MCPTEST-INV6, PoR Invariant I-2.
+- Automated Tests Subsystem & Safety verified:
+  - Unified multi-layer diagnostic harness covering Data Model, Wire API, Service Dispatch, Configuration, and Security categories.
+  - Fail-safe isolation: diagnostic tests execute with strictly in-memory transient fixtures; no operational state or audit databases are mutated.
+  - PoR Invariant I-2 verification: explicitly asserts that unauthenticated requests to `aios.admin.*` tools fail closed with `ERR_UNAUTHORIZED` (-32002).
+  - Hardening & containment: category inputs validated against whitelist with 64-character ceiling; error messages truncated to 1,024 characters; reports enveloped in standardized `McpTestSuiteReport`.
+  - FastMCP production integration: `aios_mcp_test_run` registered in live server catalog for operator and programmatic health auditing.
+- Evidence: docs/tasks/evidence/T-03122-verify.md, docs/tasks/evidence/T-03122-automated-tests-verification-evidenc.md.
+
+
 

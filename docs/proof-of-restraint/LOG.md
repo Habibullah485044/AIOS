@@ -1217,6 +1217,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_policy_evaluate` and `aios_mcp_policy_status` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03132-verify.md, docs/tasks/evidence/T-03132-security-policy-verification-evidenc.md.
 
+## T-03142 - AI Control Plane MCP Server Core / observability: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core observability subsystem (T-03133..T-03142).
+- Verification battery:
+  - Python MCP Observability suite (`test_mcp_server_core_observability_*.py`): 11/11 tests PASSED.
+  - Rust workspace test suite: PASSED (0 failures across all crates).
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: OBS-INV1..OBS-INV6, PoR Invariant I-2.
+- Observability Subsystem & Safety verified:
+  - Aggregated runtime metrics snapshot (`McpCoreMetricsSnapshot`) tracking request throughput, error rate percentages, and latency percentiles.
+  - Invariant validation: `total_requests == successful_requests + failed_requests`.
+  - Zero-division defense: `error_rate_pct` safely returns 0.0 when request count is zero.
+  - Control-character & zero-width space sanitization: `sanitize_telemetry_text` strips control codes (`\x00..\x1f`) and invisible unicode markers (`\u200b`, `\ufeff`).
+  - FastMCP production integration: `aios_mcp_observability_snapshot` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03142-observability-verification-evidenc.md.
+
+
 
 
 

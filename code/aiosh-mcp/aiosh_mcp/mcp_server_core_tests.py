@@ -308,3 +308,19 @@ def run_all_mcp_tests() -> McpTestSuiteReport:
         duration_seconds=t1 - t0,
         cases=all_cases,
     )
+
+
+def register_mcp_tests_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core automated tests diagnostic tools with FastMCP (T-03118)."""
+    @mcp_app.tool()
+    def aios_mcp_test_run(category: Optional[str] = None) -> dict:
+        """Run MCP Server Core automated test suite and return structured report."""
+        try:
+            if category:
+                report = run_category_tests(category)
+            else:
+                report = run_all_mcp_tests()
+            return {"ok": True, "report": report.to_dict()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+

@@ -903,6 +903,10 @@ mcp_server_core_policy_mod.register_mcp_policy_tools(mcp)
 from . import mcp_server_core_observability as mcp_server_core_observability_mod
 mcp_server_core_observability_mod.register_mcp_observability_tools(mcp)
 
+from . import mcp_server_core_doc as mcp_server_core_doc_mod
+mcp_server_core_doc_mod.register_mcp_doc_tools(mcp)
+
+
 
 
 

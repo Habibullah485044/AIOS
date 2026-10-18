@@ -3095,3 +3095,4 @@
 {"seq":3095,"ts":"2026-10-18T19:04:49Z","event":"completed","task_id":3095,"note":"Create module skeleton and interfaces for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03095-mcp-api-surface-scaffold.md"]}
 {"seq":3096,"ts":"2026-10-18T19:15:24Z","event":"completed","task_id":3096,"note":"Implement minimal working behavior for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03096-mcp-api-surface-implementation.md"]}
 {"seq":3097,"ts":"2026-10-18T19:20:45Z","event":"completed","task_id":3097,"note":"Add focused automated tests for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03097-mcp-api-surface-unit-test.md"]}
+{"seq":3098,"ts":"2026-10-18T19:23:57Z","event":"completed","task_id":3098,"note":"Integrate MCP Server Core MCP/API surface with FastMCP server","evidence":["docs/tasks/evidence/T-03098-mcp-api-surface-integration.md"]}

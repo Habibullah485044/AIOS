@@ -3153,3 +3153,4 @@
 {"seq":3153,"ts":"2026-10-18T22:49:44Z","event":"completed","task_id":3153,"note":"Establish facts, constraints, and prior art for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03153-recovery-validation-research.md"]}
 {"seq":3154,"ts":"2026-10-18T22:52:07Z","event":"completed","task_id":3154,"note":"Specify contracts and invariants for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03154-recovery-validation-specification.md"]}
 {"seq":3155,"ts":"2026-10-18T22:57:38Z","event":"completed","task_id":3155,"note":"Create module skeleton and interfaces for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03155-recovery-validation-scaffold.md"]}
+{"seq":3156,"ts":"2026-10-18T23:00:10Z","event":"completed","task_id":3156,"note":"Implement store validation and non-destructive quarantine recovery","evidence":["docs/tasks/evidence/T-03156-recovery-validation-implementation.md"]}

@@ -46,15 +46,29 @@ pub fn validate_store_path(path: &Path) -> Result<PathBuf, McpRecoveryError> {
     if trimmed.contains('\0') {
         return Err(McpRecoveryError::InvalidPath("NUL byte in path".into()));
     }
+    let rest = if trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':' && trimmed.as_bytes()[0].is_ascii_alphabetic() {
+        &trimmed[2..]
+    } else {
+        trimmed
+    };
+    if rest.contains(':') {
+        return Err(McpRecoveryError::InvalidPath("alternate data stream detected in path".into()));
+    }
     for comp in path.components() {
         if comp.as_os_str() == ".." {
             return Err(McpRecoveryError::InvalidPath(
                 "directory traversal sequence detected".into(),
             ));
         }
+        let comp_str = comp.as_os_str().to_string_lossy().to_uppercase();
+        let stem = comp_str.split('.').next().unwrap_or("");
+        if matches!(stem, "CON" | "PRN" | "AUX" | "NUL" | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9" | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9") {
+            return Err(McpRecoveryError::InvalidPath(format!("reserved device name detected: {}", stem)));
+        }
     }
     Ok(PathBuf::from(trimmed))
 }
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpValidationIssue {

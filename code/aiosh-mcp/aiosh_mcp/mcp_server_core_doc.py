@@ -137,3 +137,124 @@ class McpServerCoreDocCatalog:
 
     def list_topics(self) -> List[str]:
         return sorted(list(self._topics.keys()))
+
+
+def build_default_doc_catalog() -> McpServerCoreDocCatalog:
+    """Builds and populates the default documentation catalog with canonical topics."""
+    catalog = McpServerCoreDocCatalog()
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.overview",
+            title="MCP Server Core Overview",
+            category="architecture",
+            summary="Architecture and role of the AI Control Plane MCP Server Core (ADR-0035).",
+            content=(
+                "# MCP Server Core Overview\n\n"
+                "The Model Context Protocol (MCP) server core operates as Pillar C's spine "
+                "within AIOS. It serves as the unified tool-call interface for autonomous "
+                "agents and operators, communicating over stdio and FastMCP."
+            ),
+            keywords=["overview", "architecture", "fastmcp", "adr-0035", "control plane", "spine"],
+            cross_references=["core.api", "core.config", "core.policy"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.api",
+            title="MCP Server Core Wire API",
+            category="api",
+            summary="JSON-RPC 2.0 framing, wire protocol routing, and tool dispatch.",
+            content=(
+                "# MCP Server Core Wire API\n\n"
+                "Handles wire-level JSON-RPC 2.0 framing, method routing, and direct tool dispatch. "
+                "Exposes `aios_mcp_api_ping` and `aios_mcp_api_jsonrpc` with strict 1 MiB payload bounds."
+            ),
+            keywords=["api", "jsonrpc", "wire", "dispatch", "ping", "initialize"],
+            cross_references=["core.overview", "core.policy"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.config",
+            title="MCP Server Core Configuration",
+            category="configuration",
+            summary="Resolution hierarchy, validation invariants, and parameter bounds.",
+            content=(
+                "# MCP Server Core Configuration\n\n"
+                "Manages hierarchical resolution: CLI arguments > Environment variables > "
+                "Config file > Built-in secure defaults. Enforces traversal rejection and size ceilings."
+            ),
+            keywords=["config", "configuration", "hierarchy", "environment", "store_path"],
+            cross_references=["core.overview"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.tests",
+            title="MCP Server Core Automated Test Runner",
+            category="testing",
+            summary="On-demand internal diagnostics and multi-layer health verification.",
+            content=(
+                "# MCP Server Core Automated Test Runner\n\n"
+                "Exposes `aios_mcp_test_run` across diagnostic categories: data_model, api, "
+                "service, config, and security (verifying PoR Invariant I-2)."
+            ),
+            keywords=["tests", "testing", "diagnostics", "suite", "runner"],
+            cross_references=["core.policy", "core.observability"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.policy",
+            title="MCP Server Core Security Policy",
+            category="security",
+            summary="Policy Enforcement Point (PEP) gating and Proof-of-Restraint Invariant I-2.",
+            content=(
+                "# MCP Server Core Security Policy\n\n"
+                "Enforces declarative authorization and Zero Escalation (PoR Invariant I-2). "
+                "Exposes `aios_mcp_policy_evaluate` and `aios_mcp_policy_status`."
+            ),
+            keywords=["policy", "security", "pep", "authorization", "por", "invariant i-2"],
+            cross_references=["core.overview", "core.api"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.observability",
+            title="MCP Server Core Observability",
+            category="observability",
+            summary="Real-time health telemetry, request throughput, and latency percentiles.",
+            content=(
+                "# MCP Server Core Observability\n\n"
+                "Exposes `aios_mcp_observability_snapshot` for runtime operational status, "
+                "enforcing counter invariants and zero-division protection."
+            ),
+            keywords=["observability", "metrics", "telemetry", "health", "latency"],
+            cross_references=["core.overview", "core.tests"],
+        )
+    )
+
+    catalog.register(
+        McpDocTopic(
+            topic_id="core.doc",
+            title="MCP Server Core Documentation Subsystem",
+            category="documentation",
+            summary="Self-contained reference repository and topic search index.",
+            content=(
+                "# MCP Server Core Documentation Subsystem\n\n"
+                "Provides self-documentation, keyword search, and schema discovery. "
+                "Guarantees pure read-only execution, traversal immunity, and sanitization."
+            ),
+            keywords=["doc", "documentation", "lookup", "search", "catalog", "help"],
+            cross_references=["core.overview", "core.api", "core.policy"],
+        )
+    )
+
+    return catalog
+

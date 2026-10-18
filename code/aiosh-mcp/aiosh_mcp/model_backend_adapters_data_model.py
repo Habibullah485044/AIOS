@@ -211,3 +211,138 @@ class ModelResponse:
             "finish_reason": self.finish_reason,
             "latency_ms": self.latency_ms,
         }
+
+
+MAX_ENDPOINTS = 64
+
+
+class ModelEndpointRegistry:
+    """In-memory repository for configured model backend endpoints."""
+
+    def __init__(self) -> None:
+        self._endpoints: Dict[str, ModelEndpointConfig] = {}
+
+    def register(self, config: ModelEndpointConfig) -> None:
+        config.validate()
+        if len(self._endpoints) >= MAX_ENDPOINTS and config.backend_id not in self._endpoints:
+            raise ValueError(f"{MODADAPT_ERR_BOUNDS}: endpoint capacity ceiling of {MAX_ENDPOINTS} exceeded")
+        self._endpoints[config.backend_id] = config
+
+    def get(self, backend_id: str) -> ModelEndpointConfig:
+        if backend_id not in self._endpoints:
+            raise KeyError(f"Endpoint '{backend_id}' not found")
+        return self._endpoints[backend_id]
+
+    def list_endpoints(self) -> List[ModelEndpointConfig]:
+        return list(self._endpoints.values())
+
+    def remove(self, backend_id: str) -> bool:
+        if backend_id in self._endpoints:
+            del self._endpoints[backend_id]
+            return True
+        return False
+
+
+def build_default_model_registry() -> ModelEndpointRegistry:
+    """Builds and populates the default endpoint registry with standard backends."""
+    registry = ModelEndpointRegistry()
+
+    # Mock deterministic backend
+    registry.register(
+        ModelEndpointConfig(
+            backend_id="mock-default",
+            provider=ModelProviderType.MOCK,
+            model_name="mock-model-v1",
+            api_key_env="MOCK_API_KEY",
+            capabilities=ModelCapabilities(streaming=True, tool_calling=True, vision=False),
+        )
+    )
+
+    # OpenAI-compatible default
+    registry.register(
+        ModelEndpointConfig(
+            backend_id="openai-primary",
+            provider=ModelProviderType.OPENAI_COMPATIBLE,
+            model_name="gpt-4o",
+            api_key_env="OPENAI_API_KEY",
+            capabilities=ModelCapabilities(streaming=True, tool_calling=True, vision=True),
+        )
+    )
+
+    # Anthropic default
+    registry.register(
+        ModelEndpointConfig(
+            backend_id="anthropic-primary",
+            provider=ModelProviderType.ANTHROPIC,
+            model_name="claude-3-7-sonnet",
+            api_key_env="ANTHROPIC_API_KEY",
+            capabilities=ModelCapabilities(streaming=True, tool_calling=True, vision=True),
+        )
+    )
+
+    # Gemini default
+    registry.register(
+        ModelEndpointConfig(
+            backend_id="gemini-primary",
+            provider=ModelProviderType.GEMINI,
+            model_name="gemini-2.5-flash",
+            api_key_env="GEMINI_API_KEY",
+            capabilities=ModelCapabilities(streaming=True, tool_calling=True, vision=True),
+        )
+    )
+
+    # Ollama local daemon
+    registry.register(
+        ModelEndpointConfig(
+            backend_id="ollama-local",
+            provider=ModelProviderType.OLLAMA,
+            model_name="llama3.2",
+            base_url="http://localhost:11434",
+            capabilities=ModelCapabilities(streaming=True, tool_calling=True, vision=False),
+        )
+    )
+
+    return registry
+
+
+_GLOBAL_MODEL_REGISTRY = build_default_model_registry()
+
+
+def get_model_registry() -> ModelEndpointRegistry:
+    return _GLOBAL_MODEL_REGISTRY
+
+
+def model_message_from_dict(d: Dict[str, Any]) -> ModelMessage:
+    return ModelMessage(
+        role=d["role"],
+        content=d.get("content", ""),
+        name=d.get("name"),
+        tool_calls=d.get("tool_calls"),
+        tool_call_id=d.get("tool_call_id"),
+    )
+
+
+def model_endpoint_from_dict(d: Dict[str, Any]) -> ModelEndpointConfig:
+    provider_str = d.get("provider", "mock")
+    provider = ModelProviderType(provider_str)
+    caps_data = d.get("capabilities", {})
+    caps = ModelCapabilities(
+        streaming=caps_data.get("streaming", True),
+        tool_calling=caps_data.get("tool_calling", True),
+        vision=caps_data.get("vision", False),
+        json_mode=caps_data.get("json_mode", True),
+        max_context_window=caps_data.get("max_context_window", 128000),
+        max_output_tokens=caps_data.get("max_output_tokens", 4096),
+    )
+    return ModelEndpointConfig(
+        backend_id=d["backend_id"],
+        provider=provider,
+        model_name=d["model_name"],
+        base_url=d.get("base_url"),
+        api_key_env=d.get("api_key_env"),
+        timeout_ms=d.get("timeout_ms", 30000),
+        max_retries=d.get("max_retries", 3),
+        capabilities=caps,
+        is_active=d.get("is_active", True),
+    )
+

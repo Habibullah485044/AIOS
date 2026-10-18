@@ -35,9 +35,6 @@ def test_mcp_tests_scaffold_types():
     assert "TEST-01" in md
 
 
-def test_mcp_tests_scaffold_functions_fail_loudly():
-    with pytest.raises(NotImplementedError):
-        run_all_mcp_tests()
-
-    with pytest.raises(NotImplementedError):
-        run_category_tests("data_model")
+def test_mcp_tests_invalid_category_fails():
+    with pytest.raises(ValueError):
+        run_category_tests("unknown_category")

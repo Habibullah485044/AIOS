@@ -31,8 +31,10 @@ fn test_mcp_tests_scaffold_types() {
 }
 
 #[test]
-fn test_mcp_tests_scaffold_functions_fail_loudly() {
+fn test_mcp_tests_run_all() {
     let res = run_all_mcp_tests();
-    assert!(res.is_err());
-    assert!(res.unwrap_err().contains("scaffold"));
+    assert!(res.is_ok());
+    let report = res.unwrap();
+    assert!(report.is_success());
+    assert!(report.total_cases >= 5);
 }

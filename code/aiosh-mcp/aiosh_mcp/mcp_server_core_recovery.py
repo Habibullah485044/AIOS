@@ -24,8 +24,20 @@ MCPRECV_ERR_UNAUTHORIZED = "MCPRECV_ERR_UNAUTHORIZED"
 MCPRECV_ERR_IO = "MCPRECV_ERR_IO"
 
 
+RESERVED_DEVICE_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+
+
+def sanitize_error_message(msg: str) -> str:
+    """Redacts absolute filesystem paths from error messages."""
+    return re.sub(r"[a-zA-Z]:\\[^\s]+|/[^\s]+", "[REDACTED_PATH]", msg)
+
+
 def validate_store_path(path: str) -> Path:
-    """Validates target store path against path traversal, NUL bytes, and length bounds."""
+    """Validates target store path against path traversal, NUL bytes, length bounds, and reserved device names."""
     if not path or not path.strip():
         raise ValueError(f"{MCPRECV_ERR_INVALID_PATH}: empty store path")
     trimmed = path.strip()
@@ -37,7 +49,15 @@ def validate_store_path(path: str) -> Path:
     parts = p.parts
     if ".." in parts:
         raise ValueError(f"{MCPRECV_ERR_INVALID_PATH}: directory traversal sequence detected")
+    for part in parts:
+        stem = Path(part).stem.upper()
+        if stem in RESERVED_DEVICE_NAMES:
+            raise ValueError(f"{MCPRECV_ERR_INVALID_PATH}: reserved device name detected: {part}")
+    rest = trimmed[2:] if (len(trimmed) >= 2 and trimmed[1] == ":" and trimmed[0].isalpha()) else trimmed
+    if ":" in rest:
+        raise ValueError(f"{MCPRECV_ERR_INVALID_PATH}: alternate data stream detected in path")
     return p
+
 
 
 @dataclass(frozen=True)

@@ -7,13 +7,12 @@ Conforms to SPEC-MCP-SERVER-CORE-API, ADR-0035 §D-2, ADR-0035 §AF-2, and PoR I
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from .mcp_server_core_data_model import (
     McpToolDefinition,
     McpToolCall,
-    McpSessionInfo,
+    McpToolResult,
     MAX_ARGUMENTS_SIZE,
     ERR_INVALID_REQUEST,
     ERR_METHOD_NOT_FOUND,
@@ -93,16 +92,7 @@ class McpApiHandler:
     ) -> Dict[str, Any]:
         """Handle tools/list method."""
         tools = self.service.list_tools()
-        catalog = [
-            {
-                "name": t.name,
-                "description": t.description,
-                "inputSchema": t.input_schema,
-                "requiresGrant": t.requires_grant,
-                "tags": t.tags,
-            }
-            for t in tools
-        ]
+        catalog = [t.to_dict() for t in tools]
         return make_jsonrpc_result(req_id, {"tools": catalog})
 
     def handle_tools_call(
@@ -136,23 +126,17 @@ class McpApiHandler:
             return make_jsonrpc_error(req_id, ERR_UNAUTHORIZED, f"tool '{tool_name}' requires capability grant")
 
         # Dispatch via core service
-        tool_call = McpToolCall(tool_name=tool_name, arguments=arguments, grant=grant)
-        exec_result = self.service.dispatch_tool_call(tool_call)
-
-        if not exec_result.success:
-            err_code = exec_result.error_code or ERR_INTERNAL_ERROR
-            return make_jsonrpc_error(req_id, err_code, exec_result.error_message or "execution failed")
+        try:
+            tool_call = McpToolCall(name=tool_name, arguments=arguments, grant_id=grant)
+            tool_res = self.service.dispatch_tool_call(tool_call)
+        except Exception as e:
+            return make_jsonrpc_error(req_id, MCPSVC_ERR_TOOL_NOT_FOUND, str(e))
 
         return make_jsonrpc_result(
             req_id,
             {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(exec_result.result_payload or {}),
-                    }
-                ],
-                "isError": False,
+                "content": [b.to_dict() for b in tool_res.content],
+                "isError": tool_res.is_error,
             },
         )
 

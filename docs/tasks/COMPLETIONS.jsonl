@@ -3080,3 +3080,4 @@
 {"seq":3080,"ts":"2026-10-16T21:25:01Z","event":"completed","task_id":3080,"note":"Harden MCP Server Core service against session exhaustion and dispatch timeout","evidence":["docs/tasks/evidence/T-03080-core-service-hardening.md"]}
 {"seq":3081,"ts":"2026-10-16T21:27:51Z","event":"completed","task_id":3081,"note":"Author MCP Server Core service technical specification and documentation","evidence":["docs/tasks/evidence/T-03081-core-service-documentation.md"]}
 {"seq":3082,"ts":"2026-10-16T21:31:13Z","event":"completed","task_id":3082,"note":"Milestone verification and closeout for MCP Server Core core service","evidence":["docs/tasks/evidence/T-03082-core-service-verification-evidenc.md"]}
+{"seq":3083,"ts":"2026-10-18T12:17:56Z","event":"completed","task_id":3083,"note":"Research CLI surface grammar, capability gating, and audit emission for MCP Server Core","evidence":["docs/tasks/evidence/T-03083-cli-surface-research.md"]}

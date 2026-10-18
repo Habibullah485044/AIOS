@@ -897,6 +897,10 @@ mcp_server_core_config_mod.register_mcp_config_tools(mcp)
 from . import mcp_server_core_tests as mcp_server_core_tests_mod
 mcp_server_core_tests_mod.register_mcp_tests_tools(mcp)
 
+from . import mcp_server_core_policy as mcp_server_core_policy_mod
+mcp_server_core_policy_mod.register_mcp_policy_tools(mcp)
+
+
 
 
 

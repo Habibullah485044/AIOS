@@ -265,3 +265,49 @@ class McpServerCorePolicyEngine:
             "rules": [r.to_dict() for r in self._rules],
         }
 
+
+_GLOBAL_POLICY_ENGINE = McpServerCorePolicyEngine()
+_GLOBAL_POLICY_ENGINE.load_default_policy()
+
+
+def register_mcp_policy_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core Security Policy tools with FastMCP (T-03128)."""
+    @mcp_app.tool()
+    def aios_mcp_policy_evaluate(
+        subject_role: str,
+        tool_name: str,
+        action_category: str = "read_only",
+        capability_token: str = "",
+    ) -> dict:
+        """Evaluate security policy for an MCP tool invocation under Invariant I-2."""
+        try:
+            category_enum = PolicyActionCategory(action_category.lower())
+            request = PolicyEvaluationRequest(
+                subject_role=subject_role,
+                tool_name=tool_name,
+                action_category=category_enum,
+                capability_token=capability_token if capability_token else None,
+            )
+            decision = _GLOBAL_POLICY_ENGINE.evaluate(request)
+            audit = _GLOBAL_POLICY_ENGINE.create_audit_entry(request, decision)
+            return {
+                "ok": True,
+                "allowed": decision.allowed,
+                "decision": decision.to_dict(),
+                "audit": audit,
+            }
+        except Exception as exc:
+            return {"ok": False, "allowed": False, "error": str(exc)}
+
+    @mcp_app.tool()
+    def aios_mcp_policy_status() -> dict:
+        """Return status and active rules in MCP Server Core Policy Engine."""
+        try:
+            return {
+                "ok": True,
+                "status": _GLOBAL_POLICY_ENGINE.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+

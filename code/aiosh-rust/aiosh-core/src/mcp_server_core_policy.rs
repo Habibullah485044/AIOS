@@ -219,4 +219,56 @@ impl McpServerCorePolicyEngine {
             }
         }
     }
+
+    pub fn load_default_policy(&mut self) -> Result<(), String> {
+        self.rules.clear();
+        self.add_rule(PolicyRule::new(
+            "rule:deny-anonymous-admin",
+            "anonymous",
+            "aios.admin.*",
+            PolicyActionCategory::Administrative,
+            PolicyEffect::Deny,
+            400,
+        )?)?;
+        self.add_rule(PolicyRule::new(
+            "rule:admin-require-token",
+            "admin",
+            "aios.admin.*",
+            PolicyActionCategory::Administrative,
+            PolicyEffect::RequireCapability,
+            300,
+        )?)?;
+        self.add_rule(PolicyRule::new(
+            "rule:state-changing-require-token",
+            "*",
+            "aios_mcp_config_set",
+            PolicyActionCategory::StateChanging,
+            PolicyEffect::RequireCapability,
+            200,
+        )?)?;
+        self.add_rule(PolicyRule::new(
+            "rule:diagnostics-allow",
+            "*",
+            "aios_mcp_test_run",
+            PolicyActionCategory::Diagnostics,
+            PolicyEffect::Allow,
+            100,
+        )?)?;
+        self.add_rule(PolicyRule::new(
+            "rule:read-only-allow",
+            "*",
+            "aios_mcp_config_get",
+            PolicyActionCategory::ReadOnly,
+            PolicyEffect::Allow,
+            100,
+        )?)?;
+        Ok(())
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "rules_count": self.rules.len(),
+            "rules": self.rules,
+        })
+    }
 }

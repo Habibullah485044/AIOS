@@ -3092,3 +3092,4 @@
 {"seq":3092,"ts":"2026-10-18T18:23:18Z","event":"completed","task_id":3092,"note":"Verify MCP Server Core CLI surface with 100% green Rust/Python suites and PoR demonstration","evidence":["docs/tasks/evidence/T-03092-cli-surface-verification-evidenc.md"]}
 {"seq":3093,"ts":"2026-10-18T18:59:42Z","event":"completed","task_id":3093,"note":"Establish facts, constraints, security audit, and prior art for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03093-mcp-api-surface-research.md"]}
 {"seq":3094,"ts":"2026-10-18T19:02:05Z","event":"completed","task_id":3094,"note":"Specify exact wire contract for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03094-mcp-api-surface-specification.md"]}
+{"seq":3095,"ts":"2026-10-18T19:04:49Z","event":"completed","task_id":3095,"note":"Create module skeleton and interfaces for MCP Server Core MCP/API surface","evidence":["docs/tasks/evidence/T-03095-mcp-api-surface-scaffold.md"]}

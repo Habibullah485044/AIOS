@@ -1203,5 +1203,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_test_run` registered in live server catalog for operator and programmatic health auditing.
 - Evidence: docs/tasks/evidence/T-03122-verify.md, docs/tasks/evidence/T-03122-automated-tests-verification-evidenc.md.
 
+## T-03132 - AI Control Plane MCP Server Core / security policy: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core security policy subsystem (T-03123..T-03132).
+- Verification battery:
+  - Python MCP Security Policy suite (`test_mcp_server_core_policy_*.py`): 14/14 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: POL-INV1..POL-INV8, PoR Invariant I-2.
+- Security Policy Subsystem & Safety verified:
+  - Policy Enforcement Point (PEP) gating for all tool dispatches with declarative rule engine and strict priority evaluation.
+  - Invariant I-2 enforcement: `STATE_CHANGING` and `ADMINISTRATIVE` actions strictly require unexpired, non-empty capability tokens.
+  - Default-closed fallback: unauthenticated or unrecognized actions fail closed.
+  - Input hardening: embedded NUL byte checks across rule IDs, role strings, tool patterns, and capability tokens.
+  - FastMCP production integration: `aios_mcp_policy_evaluate` and `aios_mcp_policy_status` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03132-verify.md, docs/tasks/evidence/T-03132-security-policy-verification-evidenc.md.
+
+
 
 

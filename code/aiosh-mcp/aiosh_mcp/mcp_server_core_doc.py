@@ -258,3 +258,29 @@ def build_default_doc_catalog() -> McpServerCoreDocCatalog:
 
     return catalog
 
+
+_GLOBAL_DOC_CATALOG = build_default_doc_catalog()
+
+
+def get_doc_catalog() -> McpServerCoreDocCatalog:
+    return _GLOBAL_DOC_CATALOG
+
+
+def register_mcp_doc_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core Documentation tools with FastMCP (T-03148)."""
+    @mcp_app.tool()
+    def aios_mcp_doc_lookup(topic_id: Optional[str] = None, query: Optional[str] = None) -> dict:
+        """Look up reference documentation or search topics across the AI Control Plane MCP Server Core (ADR-0035)."""
+        try:
+            if topic_id:
+                topic = _GLOBAL_DOC_CATALOG.get(topic_id)
+                return {"ok": True, "topic": topic.to_dict()}
+            elif query:
+                results = _GLOBAL_DOC_CATALOG.search(query)
+                return {"ok": True, "results": [r.to_dict() for r in results]}
+            else:
+                return {"ok": True, "topics": _GLOBAL_DOC_CATALOG.list_topics()}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+

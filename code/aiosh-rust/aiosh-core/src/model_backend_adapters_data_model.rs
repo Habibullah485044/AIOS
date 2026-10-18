@@ -8,6 +8,40 @@ pub const MODADAPT_ERR_SECRET_LEAK: &str = "MODADAPT_ERR_SECRET_LEAK";
 
 pub const MIN_TIMEOUT_MS: u64 = 1000;
 pub const MAX_TIMEOUT_MS: u64 = 300000;
+pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024; // 1 MiB
+
+pub fn validate_backend_id(id: &str) -> Result<String, String> {
+    let cleaned = id.trim();
+    if cleaned.is_empty() || cleaned.len() > 64 {
+        return Err(format!("{}: backend_id must be between 1 and 64 characters", MODADAPT_ERR_BOUNDS));
+    }
+    if !cleaned.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        return Err(format!("{}: backend_id contains invalid characters", MODADAPT_ERR_BOUNDS));
+    }
+    if cleaned.contains("..") || cleaned.contains('/') || cleaned.contains('\\') || cleaned.contains('\0') {
+        return Err(format!("{}: directory traversal character detected in backend_id", MODADAPT_ERR_BOUNDS));
+    }
+    Ok(cleaned.to_string())
+}
+
+pub fn validate_base_url(url: Option<&str>) -> Result<Option<String>, String> {
+    match url {
+        None => Ok(None),
+        Some(u) => {
+            let cleaned = u.trim();
+            if cleaned.is_empty() {
+                return Ok(None);
+            }
+            if !(cleaned.starts_with("http://") || cleaned.starts_with("https://") || cleaned.starts_with("ws://") || cleaned.starts_with("wss://")) {
+                return Err(format!("{}: base_url must start with http:// or https://", MODADAPT_ERR_BOUNDS));
+            }
+            if cleaned.chars().any(|c| (c as u32) < 32 || (c as u32) == 127) {
+                return Err(format!("{}: control character detected in base_url", MODADAPT_ERR_BOUNDS));
+            }
+            Ok(Some(cleaned.to_string()))
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -79,11 +113,12 @@ pub struct ModelEndpointConfig {
 
 impl ModelEndpointConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.backend_id.trim().is_empty() {
-            return Err(format!("{}: backend_id must be non-empty", MODADAPT_ERR_BOUNDS));
-        }
+        validate_backend_id(&self.backend_id)?;
         if self.model_name.trim().is_empty() {
             return Err(format!("{}: model_name must be non-empty", MODADAPT_ERR_BOUNDS));
+        }
+        if let Some(ref url) = self.base_url {
+            validate_base_url(Some(url.as_str()))?;
         }
         if self.timeout_ms < MIN_TIMEOUT_MS || self.timeout_ms > MAX_TIMEOUT_MS {
             return Err(format!(
@@ -121,6 +156,9 @@ pub struct ModelMessage {
 impl ModelMessage {
     pub fn new(role: &str, content: &str) -> Result<Self, String> {
         let valid_role = validate_role(role)?;
+        if content.as_bytes().len() > MAX_MESSAGE_BYTES {
+            return Err(format!("{}: message content exceeds {} bytes", MODADAPT_ERR_BOUNDS, MAX_MESSAGE_BYTES));
+        }
         Ok(Self {
             role: valid_role,
             content: content.to_string(),

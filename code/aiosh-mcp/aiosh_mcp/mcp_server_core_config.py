@@ -177,3 +177,40 @@ class McpServerCoreConfig:
         cfg = cls.from_dict(base_data)
         cfg.validate()
         return cfg
+
+
+_GLOBAL_CONFIG: McpServerCoreConfig = McpServerCoreConfig()
+
+
+def get_core_config() -> McpServerCoreConfig:
+    """Return the active global McpServerCoreConfig instance."""
+    return _GLOBAL_CONFIG
+
+
+def set_core_config(cfg: McpServerCoreConfig) -> None:
+    """Update the active global McpServerCoreConfig instance after validation."""
+    global _GLOBAL_CONFIG
+    cfg.validate()
+    _GLOBAL_CONFIG = cfg
+
+
+def register_mcp_config_tools(mcp_app: Any, config: Optional[McpServerCoreConfig] = None) -> None:
+    """Register MCP Server Core configuration tools with FastMCP (T-03108)."""
+    if config:
+        set_core_config(config)
+
+    @mcp_app.tool()
+    def aios_mcp_config_get() -> dict:
+        """Get the active resolved MCP Server Core configuration."""
+        active = get_core_config()
+        return {"ok": True, "config": active.to_dict()}
+
+    @mcp_app.tool()
+    def aios_mcp_config_validate(candidate_config: dict) -> dict:
+        """Validate candidate configuration parameters against MCPCFG invariants."""
+        try:
+            cand = McpServerCoreConfig.from_dict(candidate_config)
+            return {"ok": True, "valid": True, "config": cand.to_dict()}
+        except Exception as exc:
+            return {"ok": False, "valid": False, "error": str(exc)}
+

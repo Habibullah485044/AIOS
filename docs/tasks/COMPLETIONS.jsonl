@@ -3151,3 +3151,4 @@
 {"seq":3151,"ts":"2026-10-18T22:42:27Z","event":"completed","task_id":3151,"note":"Document MCP Server Core Documentation Subsystem in README.md","evidence":["docs/tasks/evidence/T-03151-documentation-documentation.md"]}
 {"seq":3152,"ts":"2026-10-18T22:46:58Z","event":"completed","task_id":3152,"note":"Milestone verification and evidence for MCP Server Core Documentation","evidence":["docs/tasks/evidence/T-03152-documentation-verification-evidenc.md"]}
 {"seq":3153,"ts":"2026-10-18T22:49:44Z","event":"completed","task_id":3153,"note":"Establish facts, constraints, and prior art for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03153-recovery-validation-research.md"]}
+{"seq":3154,"ts":"2026-10-18T22:52:07Z","event":"completed","task_id":3154,"note":"Specify contracts and invariants for MCP Server Core Recovery & Validation","evidence":["docs/tasks/evidence/T-03154-recovery-validation-specification.md"]}

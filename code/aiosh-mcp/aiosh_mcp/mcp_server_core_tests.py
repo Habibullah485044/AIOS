@@ -258,6 +258,8 @@ def _run_security_tests() -> List[McpTestCase]:
 
 def run_category_tests(category: str) -> McpTestSuiteReport:
     """Run tests for a single category per SPEC-MCP-SERVER-CORE-TESTS."""
+    if not category or len(category) > 64:
+        raise ValueError(f"Unknown category: '{category}'")
     cat_str = category.lower().strip()
     t0 = time.perf_counter()
     cases: List[McpTestCase] = []

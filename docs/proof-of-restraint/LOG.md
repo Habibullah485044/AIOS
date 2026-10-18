@@ -1262,6 +1262,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_recovery_check` (read-only) and `aios_mcp_recovery_repair` (gated mutation) registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03162-recovery-validation-verification-evidenc.md.
 
+## T-03172 - AI Control Plane Model Backend Adapters / data model: Verification & Evidence (2026-10-18)
+- Milestone closeout for Model Backend Adapters data model subsystem (T-03163..T-03172).
+- Verification battery:
+  - Python Model Backend Adapters Data Model suite (`test_model_backend_adapters_data_model_*.py`): 24/24 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODADAPT-INV1..MODADAPT-INV5, PoR Invariant I-2.
+- Data Model Subsystem & Safety verified:
+  - Strongly-typed endpoint configurations (`ModelEndpointConfig`) across OpenAI, Anthropic, Gemini, Ollama, and Mock providers.
+  - Strict parameter boundaries: temperature in [0.0, 2.0], timeout in [1000, 300000] ms, retries in [0, 10].
+  - Secret isolation: prevents plaintext tokens (`sk-`, `ghp_`, len > 64) in config records.
+  - Hardened input validation: backend ID regex validation (`^[a-zA-Z0-9_\-\.]{1,64}$`), path traversal immunity, base URL protocol checks (`http/https/ws/wss`), and 1 MiB message payload size bound.
+  - FastMCP production integration: `aios_model_endpoint_list` (read-only, zero tokens) and `aios_model_endpoint_register` (gated mutation) registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03172-data-model-verification-evidenc.md.
+
+
 
 
 

@@ -118,7 +118,16 @@ class McpApiHandler:
             return make_jsonrpc_error(req_id, ERR_BOUNDS_EXCEEDED, "arguments payload exceeds 1 MiB limit")
 
         # Security Check: NUL byte injection
-        if "\0" in tool_name or "\0" in args_str:
+        def _has_nul(v: Any) -> bool:
+            if isinstance(v, str):
+                return "\0" in v
+            if isinstance(v, dict):
+                return any(_has_nul(k) or _has_nul(val) for k, val in v.items())
+            if isinstance(v, list):
+                return any(_has_nul(item) for item in v)
+            return False
+
+        if "\0" in tool_name or _has_nul(arguments) or "\\u0000" in args_str:
             return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, "prohibited NUL byte detected")
 
         # Capability Gating: aios.admin.* tools require grant

@@ -3085,3 +3085,4 @@
 {"seq":3085,"ts":"2026-10-18T13:42:08Z","event":"completed","task_id":3085,"note":"Scaffold CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03085-cli-surface-scaffold.md"]}
 {"seq":3086,"ts":"2026-10-18T14:24:42Z","event":"completed","task_id":3086,"note":"Implement CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03086-cli-surface-implementation.md"]}
 {"seq":3087,"ts":"2026-10-18T14:28:52Z","event":"completed","task_id":3087,"note":"Unit test CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03087-cli-surface-unit-test.md"]}
+{"seq":3088,"ts":"2026-10-18T14:36:26Z","event":"completed","task_id":3088,"note":"Integration test CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03088-cli-surface-integration.md"]}

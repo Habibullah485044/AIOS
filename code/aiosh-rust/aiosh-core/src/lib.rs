@@ -95,6 +95,7 @@ pub mod incident_runbook_recovery;
 pub mod mcp_server_core_data_model;
 pub mod mcp_server_core_service;
 pub mod mcp_server_core_cli;
+pub mod mcp_server_core_api;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

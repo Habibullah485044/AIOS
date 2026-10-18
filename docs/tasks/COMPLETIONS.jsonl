@@ -3148,3 +3148,4 @@
 {"seq":3148,"ts":"2026-10-18T22:32:10Z","event":"completed","task_id":3148,"note":"Integrate MCP Server Core Documentation tool with FastMCP server","evidence":["docs/tasks/evidence/T-03148-documentation-integration.md"]}
 {"seq":3149,"ts":"2026-10-18T22:34:18Z","event":"completed","task_id":3149,"note":"Security review of MCP Server Core Documentation against 5 abuse scenarios","evidence":["docs/tasks/evidence/T-03149-documentation-security-review.md"]}
 {"seq":3150,"ts":"2026-10-18T22:39:34Z","event":"completed","task_id":3150,"note":"Harden MCP Server Core Documentation with NFKC normalization, capacity bounds, and error redaction","evidence":["docs/tasks/evidence/T-03150-documentation-hardening.md"]}
+{"seq":3151,"ts":"2026-10-18T22:42:27Z","event":"completed","task_id":3151,"note":"Document MCP Server Core Documentation Subsystem in README.md","evidence":["docs/tasks/evidence/T-03151-documentation-documentation.md"]}

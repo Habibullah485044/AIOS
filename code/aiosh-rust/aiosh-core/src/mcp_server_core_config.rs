@@ -63,10 +63,9 @@ impl McpServerCoreConfig {
         if path_str.contains('\0') {
             return Err("MCPCFG-INV1 violation: store_path cannot contain NUL bytes".into());
         }
-        for comp in self.store_path.components() {
-            if comp.as_os_str() == ".." {
-                return Err("MCPCFG-INV1 violation: store_path cannot contain directory traversal ('..')".into());
-            }
+        let normalized = path_str.replace('\\', "/");
+        if normalized.split('/').any(|c| c == "..") {
+            return Err("MCPCFG-INV1 violation: store_path cannot contain directory traversal ('..')".into());
         }
 
         if self.max_active_sessions < MIN_ACTIVE_SESSIONS || self.max_active_sessions > MAX_ALLOWED_ACTIVE_SESSIONS {

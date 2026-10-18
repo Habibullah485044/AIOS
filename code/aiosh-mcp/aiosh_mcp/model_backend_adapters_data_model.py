@@ -47,6 +47,34 @@ def validate_temperature(temperature: float) -> float:
     return float(temperature)
 
 
+BACKEND_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]{1,64}$")
+MAX_MESSAGE_BYTES = 1024 * 1024  # 1 MiB
+
+
+def validate_backend_id(backend_id: str) -> str:
+    """Validates backend_id syntax and length."""
+    if not backend_id or not isinstance(backend_id, str):
+        raise ValueError(f"{MODADAPT_ERR_BOUNDS}: empty or non-string backend_id")
+    cleaned = backend_id.strip()
+    if not BACKEND_ID_PATTERN.match(cleaned):
+        raise ValueError(f"{MODADAPT_ERR_BOUNDS}: backend_id '{cleaned}' does not match syntax ^[a-zA-Z0-9_\\-\\.]{{1,64}}$")
+    if ".." in cleaned or "/" in cleaned or "\\" in cleaned or "\0" in cleaned:
+        raise ValueError(f"{MODADAPT_ERR_BOUNDS}: directory traversal character detected in backend_id")
+    return cleaned
+
+
+def validate_base_url(url: Optional[str]) -> Optional[str]:
+    """Validates custom endpoint base URL."""
+    if not url:
+        return None
+    cleaned = url.strip()
+    if not (cleaned.startswith("http://") or cleaned.startswith("https://") or cleaned.startswith("ws://") or cleaned.startswith("wss://")):
+        raise ValueError(f"{MODADAPT_ERR_BOUNDS}: base_url must start with http:// or https://")
+    if any(ord(c) < 32 or ord(c) == 127 for c in cleaned):
+        raise ValueError(f"{MODADAPT_ERR_BOUNDS}: control character detected in base_url")
+    return cleaned
+
+
 @dataclass(frozen=True)
 class ModelCapabilities:
     streaming: bool = True
@@ -81,10 +109,11 @@ class ModelEndpointConfig:
 
     def validate(self) -> None:
         """Enforces MODADAPT-INV3 and MODADAPT-INV4."""
-        if not self.backend_id or not self.backend_id.strip():
-            raise ValueError(f"{MODADAPT_ERR_BOUNDS}: backend_id must be non-empty")
+        self.backend_id = validate_backend_id(self.backend_id)
         if not self.model_name or not self.model_name.strip():
             raise ValueError(f"{MODADAPT_ERR_BOUNDS}: model_name must be non-empty")
+        if self.base_url:
+            self.base_url = validate_base_url(self.base_url)
         if self.timeout_ms < MIN_TIMEOUT_MS or self.timeout_ms > MAX_TIMEOUT_MS:
             raise ValueError(
                 f"{MODADAPT_ERR_BOUNDS}: timeout_ms ({self.timeout_ms}) must be within [{MIN_TIMEOUT_MS}, {MAX_TIMEOUT_MS}]"
@@ -123,6 +152,9 @@ class ModelMessage:
 
     def __post_init__(self) -> None:
         self.role = validate_role(self.role)
+        if len(self.content.encode("utf-8")) > MAX_MESSAGE_BYTES:
+            raise ValueError(f"{MODADAPT_ERR_BOUNDS}: message content exceeds {MAX_MESSAGE_BYTES} bytes")
+
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {

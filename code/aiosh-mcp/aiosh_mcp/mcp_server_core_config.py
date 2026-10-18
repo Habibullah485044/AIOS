@@ -124,9 +124,17 @@ class McpServerCoreConfig:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(f"{p.name}.tmp.{os.getpid()}")
         data_str = json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(data_str)
-        os.replace(tmp, p)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(data_str)
+            os.replace(tmp, p)
+        except Exception:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            raise
 
     @classmethod
     def load_from_file(cls, path: str) -> McpServerCoreConfig:
@@ -135,8 +143,11 @@ class McpServerCoreConfig:
             raise FileNotFoundError(f"Config file not found: {path}")
         if p.stat().st_size > MAX_CONFIG_FILE_BYTES:
             raise McpConfigError(f"Config file size {p.stat().st_size} exceeds {MAX_CONFIG_FILE_BYTES} bytes")
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise McpConfigError(f"Malformed config JSON in {path}: {exc}") from exc
         if not isinstance(data, dict):
             raise McpConfigError("Config file must contain a JSON object")
         return cls.from_dict(data)

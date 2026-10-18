@@ -954,12 +954,67 @@ The **MCP Server Core Security Policy Subsystem** enforces Policy Enforcement Po
 - Hardening: [T-03130](../../docs/tasks/evidence/T-03130-security-policy-hardening.md)
 - Documentation: [T-03131](../../docs/tasks/evidence/T-03131-security-policy-documentation.md)
 
+---
 
+## MCP Server Core Observability Subsystem (Phase 3)
 
+The **MCP Server Core Observability Subsystem** provides real-time health telemetry, request throughput tracking, error classification, and runtime status snapshots for the AI Control Plane MCP Server Core (T-03133..T-03142).
 
+### Exposed FastMCP Tools
+
+1. **`aios_mcp_observability_snapshot`**: Returns an aggregated `McpCoreMetricsSnapshot` containing server status, request counters, error rate percentages, and latency percentiles.
+
+### Example Tool Invocation
+
+#### Inspect Telemetry Snapshot (`aios_mcp_observability_snapshot`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_observability_snapshot",
+    "arguments": {}
+  }
+}
+```
+
+Response payload (`content[0].text`, pretty-printed):
+```json
+{
+  "server_name": "aios-mcp-core",
+  "timestamp_utc": "2026-10-18T21:30:00Z",
+  "active_sessions": 1,
+  "total_requests": 42,
+  "successful_requests": 40,
+  "failed_requests": 2,
+  "error_rate_pct": 4.76,
+  "average_latency_ms": 12.5,
+  "health_status": "healthy"
+}
+```
+
+### Constraints & Known Limitations
+- Counter invariants strictly enforced: `total_requests == successful_requests + failed_requests`.
+- Zero-division protection: `error_rate_pct` is safely computed as `0.0` when `total_requests == 0`.
+- Telemetry text sanitization: Control characters (`\x00..\x1f`), NUL bytes, and zero-width spaces (`\u200b`, `\ufeff`) are stripped and strings truncated to safe maximum lengths.
+- In-memory collection: Telemetry metrics are tracked in-process without unbounded disk growth.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-OBSERVABILITY](../../docs/SPEC-MCP-SERVER-CORE-OBSERVABILITY.md)
+- Research: [T-03133](../../docs/tasks/evidence/T-03133-observability-research.md)
+- Spec Evidence: [T-03134](../../docs/tasks/evidence/T-03134-observability-specification.md)
+- Scaffold: [T-03135](../../docs/tasks/evidence/T-03135-observability-scaffold.md)
+- Implementation: [T-03136](../../docs/tasks/evidence/T-03136-observability-implementation.md)
+- Unit tests: [T-03137](../../docs/tasks/evidence/T-03137-observability-unit-test.md)
+- Integration: [T-03138](../../docs/tasks/evidence/T-03138-observability-integration.md)
+- Security review: [T-03139](../../docs/tasks/evidence/T-03139-observability-security-review.md)
+- Hardening: [T-03140](../../docs/tasks/evidence/T-03140-observability-hardening.md)
+- Documentation: [T-03141](../../docs/tasks/evidence/T-03141-observability-documentation.md)
 
 ## Tests
 
 ```bash
 python tests/test_smoke.py
 ```
+

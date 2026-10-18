@@ -1172,4 +1172,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_api_ping` and `aios_mcp_api_jsonrpc` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03102-verify.md, docs/tasks/evidence/T-03102-mcp-api-surface-verification-evidenc.md.
 
+## T-03112 - AI Control Plane MCP Server Core / configuration: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core configuration subsystem (T-03103..T-03112).
+- Verification battery:
+  - Python MCP Configuration suite (`test_mcp_server_core_config_*.py`): 7/7 tests PASSED.
+  - Rust Core MCP Configuration suite (`test_mcp_server_core_config_unit.rs`): 4/4 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPCFG-INV1..MCPCFG-INV8, PoR Invariant I-2.
+- Configuration Subsystem & Safety verified:
+  - Multi-tier resolution hierarchy: CLI > Environment variables > Configuration file (`--config` or `AIOS_MCP_CONFIG_PATH`) > Secure defaults.
+  - Directory traversal prevention: cross-platform path normalization rejecting any `..` component and NUL bytes (`\0`).
+  - Strict resource boundaries: max active sessions clamped to `[1, 512]`, execution timeouts in `[1, 300]` seconds, file size ceiling strictly enforced at 64 KiB (`MAX_CONFIG_FILE_BYTES`).
+  - Atomic persistence with guaranteed cleanup: isolated PID-tagged temporary file writing with atomic rename (`os.replace` / `std::fs::rename`) and unlink cleanup on error.
+  - Fail-closed capability enforcement: configuration queries and candidate validations are pure/read-only; disk mutations require active administrative capability grants per PoR Invariant I-2.
+  - FastMCP production integration: `aios_mcp_config_get` and `aios_mcp_config_validate` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03112-verify.md, docs/tasks/evidence/T-03112-configuration-verification-evidenc.md.
+
 

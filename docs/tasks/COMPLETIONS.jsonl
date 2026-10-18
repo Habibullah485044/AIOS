@@ -3088,3 +3088,4 @@
 {"seq":3088,"ts":"2026-10-18T14:36:26Z","event":"completed","task_id":3088,"note":"Integration test CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03088-cli-surface-integration.md"]}
 {"seq":3089,"ts":"2026-10-18T14:41:03Z","event":"completed","task_id":3089,"note":"Security review of CLI surface for MCP Server Core","evidence":["docs/tasks/evidence/T-03089-cli-surface-security-review.md"]}
 {"seq":3090,"ts":"2026-10-18T18:02:33Z","event":"completed","task_id":3090,"note":"Harden MCP Server Core CLI against NUL bytes, malformed JSON, and timeout bounds","evidence":["docs/tasks/evidence/T-03090-cli-surface-hardening.md"]}
+{"seq":3091,"ts":"2026-10-18T18:11:13Z","event":"completed","task_id":3091,"note":"Document MCP Server Core CLI surface with usage examples, invariant contracts, and limitations","evidence":["docs/tasks/evidence/T-03091-cli-surface-documentation.md"]}

@@ -186,9 +186,82 @@ class McpServerCorePolicyEngine:
                 allowed=False,
             )
 
-        return PolicyDecision(
-            effect=PolicyEffect.DENY,
-            rule_id="default:deny",
-            reason="Default closed fallback",
-            allowed=False,
+    def load_default_policy(self) -> None:
+        """Populates baseline declarative rules adhering to Invariant I-2."""
+        self._rules.clear()
+        # Rule 5: Explicit deny of admin tools for anonymous
+        self.add_rule(
+            PolicyRule(
+                rule_id="rule:deny-anonymous-admin",
+                role="anonymous",
+                tool_pattern="aios.admin.*",
+                action_category=PolicyActionCategory.ADMINISTRATIVE,
+                effect=PolicyEffect.DENY,
+                priority=400,
+            )
         )
+        # Rule 4: Admin tools require capability token for admin role
+        self.add_rule(
+            PolicyRule(
+                rule_id="rule:admin-require-token",
+                role="admin",
+                tool_pattern="aios.admin.*",
+                action_category=PolicyActionCategory.ADMINISTRATIVE,
+                effect=PolicyEffect.REQUIRE_CAPABILITY,
+                priority=300,
+            )
+        )
+        # Rule 3: State changing tools require capability token
+        self.add_rule(
+            PolicyRule(
+                rule_id="rule:state-changing-require-token",
+                role="*",
+                tool_pattern="aios_mcp_config_set",
+                action_category=PolicyActionCategory.STATE_CHANGING,
+                effect=PolicyEffect.REQUIRE_CAPABILITY,
+                priority=200,
+            )
+        )
+        # Rule 2: Diagnostic tools permitted for agents
+        self.add_rule(
+            PolicyRule(
+                rule_id="rule:diagnostics-allow",
+                role="*",
+                tool_pattern="aios_mcp_test_run",
+                action_category=PolicyActionCategory.DIAGNOSTICS,
+                effect=PolicyEffect.ALLOW,
+                priority=100,
+            )
+        )
+        # Rule 1: Read-only tools permitted
+        self.add_rule(
+            PolicyRule(
+                rule_id="rule:read-only-allow",
+                role="*",
+                tool_pattern="aios_mcp_config_get",
+                action_category=PolicyActionCategory.READ_ONLY,
+                effect=PolicyEffect.ALLOW,
+                priority=100,
+            )
+        )
+
+    def create_audit_entry(self, request: PolicyEvaluationRequest, decision: PolicyDecision) -> Dict[str, Any]:
+        """Creates an audit ring payload capturing the policy evaluation event."""
+        return {
+            "event": "mcp.policy.evaluate",
+            "subject_role": request.subject_role,
+            "tool_name": request.tool_name,
+            "action_category": request.action_category.value,
+            "effect": decision.effect.value,
+            "rule_id": decision.rule_id,
+            "reason": decision.reason,
+            "allowed": decision.allowed,
+            "has_token": bool(request.capability_token and request.capability_token.strip()),
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rules_count": len(self._rules),
+            "rules": [r.to_dict() for r in self._rules],
+        }
+

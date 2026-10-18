@@ -725,6 +725,34 @@ additionally `--id --control --target-type --target-ref --mitigation`).
 - Hardening (caps/TOCTOU/auditable failure modes): [T-02900](../../docs/tasks/evidence/T-02900-mcp-api-surface-hardening.md)
 - This documentation task: [T-02901](../../docs/tasks/evidence/T-02901-mcp-api-surface-documentation.md)
 
+## MCP Server Core Wire API (`aios_mcp_api_*`)
+
+Exposes wire-level JSON-RPC 2.0 routing and direct tool dispatch for Model Context Protocol clients.
+
+### Tools Exposed
+- `aios_mcp_api_ping`: Liveness check returning protocol version (`2025-06-18`).
+- `aios_mcp_api_jsonrpc`: Executes raw JSON-RPC 2.0 messages (`initialize`, `ping`, `tools/list`, `tools/call`).
+
+### Example Invocation
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.fs.read",
+    "arguments": {
+      "path": "/tmp/example.txt"
+    }
+  }
+}
+```
+
+### Constraints & Invariants
+- `MAX_ARGUMENTS_SIZE = 1 MiB` strict payload ceiling.
+- NUL bytes in argument keys/values rejected immediately with `-32602` (`ERR_INVALID_PARAMS`).
+- Privileged tools (`aios.admin.*`) require capability grant tokens per Proof-of-Restraint Invariant I-2.
+
 ## Tests
 
 ```bash

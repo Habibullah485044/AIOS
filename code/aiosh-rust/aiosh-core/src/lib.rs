@@ -102,6 +102,7 @@ pub mod mcp_server_core_policy;
 pub mod mcp_server_core_observability;
 pub mod mcp_server_core_doc;
 pub mod mcp_server_core_recovery;
+pub mod model_backend_adapters_data_model;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

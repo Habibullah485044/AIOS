@@ -753,6 +753,71 @@ Exposes wire-level JSON-RPC 2.0 routing and direct tool dispatch for Model Conte
 - NUL bytes in argument keys/values rejected immediately with `-32602` (`ERR_INVALID_PARAMS`).
 - Privileged tools (`aios.admin.*`) require capability grant tokens per Proof-of-Restraint Invariant I-2.
 
+## MCP Server Core Configuration (`aios_mcp_config_*`)
+
+Defines configuration parameters, resolution hierarchy, and validation invariants for the AI Control Plane MCP Server Core (T-03103..T-03112).
+
+### Tools Exposed
+- `aios_mcp_config_get`: Retrieves the active, resolved MCP Server Core configuration.
+- `aios_mcp_config_validate`: Validates candidate configuration parameters against invariants `MCPCFG-INV1..MCPCFG-INV8` without disk side-effects.
+
+### Resolution Hierarchy
+Parameters are resolved in strict hierarchical order:
+1. Explicit CLI arguments (`--store-path`, `--max-sessions`, etc.)
+2. Environment variables (`AIOS_MCP_STORE_PATH`, `AIOS_MCP_MAX_SESSIONS`, `AIOS_MCP_IDLE_TIMEOUT`, `AIOS_MCP_EXECUTION_TIMEOUT`, `AIOS_MCP_MAX_ARGS_SIZE`, `AIOS_MCP_REQUIRE_ADMIN_GRANT`)
+3. Configuration file (`--config` or `AIOS_MCP_CONFIG_PATH`, max 64 KiB)
+4. Built-in secure defaults
+
+### Copy-Pasteable Tool Call Examples
+
+#### 1. Inspect Active Configuration (`aios_mcp_config_get`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_config_get",
+    "arguments": {}
+  }
+}
+```
+
+#### 2. Validate Candidate Configuration (`aios_mcp_config_validate`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_config_validate",
+    "arguments": {
+      "candidate_config": {
+        "store_path": ".aios/custom_store.json",
+        "max_active_sessions": 32,
+        "default_execution_timeout_seconds": 45
+      }
+    }
+  }
+}
+```
+
+### Constraints & Known Limitations
+- `store_path` must not be empty, must not contain NUL bytes, and must not contain directory traversal sequences (`..`).
+- Active sessions clamped to range `[1, 512]` (`MCPCFG-INV2`).
+- Execution timeouts clamped to range `[1, 300]` seconds (`MCPCFG-INV4`).
+- Configuration files are capped at 64 KiB (`MAX_CONFIG_FILE_BYTES`).
+- State mutations require active administrative capability grants per PoR Invariant I-2.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-CONFIG](../../docs/SPEC-MCP-SERVER-CORE-CONFIG.md)
+- Unit tests: [T-03107](../../docs/tasks/evidence/T-03107-configuration-unit-test.md)
+- Integration: [T-03108](../../docs/tasks/evidence/T-03108-configuration-integration.md)
+- Security review: [T-03109](../../docs/tasks/evidence/T-03109-configuration-security-review.md)
+- Hardening: [T-03110](../../docs/tasks/evidence/T-03110-configuration-hardening.md)
+- Documentation: [T-03111](../../docs/tasks/evidence/T-03111-configuration-documentation.md)
+
+
 ## Tests
 
 ```bash

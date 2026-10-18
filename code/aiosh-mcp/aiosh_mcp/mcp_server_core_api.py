@@ -175,3 +175,26 @@ class McpApiHandler:
             return self.handle_tools_call(req_id, params)
         else:
             return make_jsonrpc_error(req_id, ERR_METHOD_NOT_FOUND, f"Method '{method}' not found")
+
+
+_GLOBAL_API_HANDLER: McpApiHandler = McpApiHandler()
+
+
+def get_api_handler() -> McpApiHandler:
+    return _GLOBAL_API_HANDLER
+
+
+def register_mcp_api_tools(mcp_app: Any, handler: Optional[McpApiHandler] = None) -> None:
+    """Register MCP Server Core API tools with FastMCP (T-03098)."""
+    api = handler or _GLOBAL_API_HANDLER
+
+    @mcp_app.tool()
+    def aios_mcp_api_ping() -> dict:
+        """Ping the MCP Server Core wire API endpoint."""
+        return api.handle_ping(1)
+
+    @mcp_app.tool()
+    def aios_mcp_api_jsonrpc(request: str) -> dict:
+        """Route a raw JSON-RPC 2.0 request through MCP Server Core API handler."""
+        return api.handle_raw_message(request)
+

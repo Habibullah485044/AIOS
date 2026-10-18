@@ -56,7 +56,8 @@ class McpServerCoreConfig:
             raise McpConfigError("MCPCFG-INV1 violation: store_path cannot be empty")
         if "\0" in self.store_path:
             raise McpConfigError("MCPCFG-INV1 violation: store_path cannot contain NUL bytes")
-        if ".." in Path(self.store_path).parts:
+        normalized_parts = self.store_path.replace("\\", "/").split("/")
+        if ".." in normalized_parts:
             raise McpConfigError("MCPCFG-INV1 violation: store_path cannot contain directory traversal ('..')")
 
         if not (MIN_ACTIVE_SESSIONS <= self.max_active_sessions <= MAX_ALLOWED_ACTIVE_SESSIONS):

@@ -1232,6 +1232,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_mcp_observability_snapshot` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03142-observability-verification-evidenc.md.
 
+## T-03152 - AI Control Plane MCP Server Core / documentation: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core documentation subsystem (T-03143..T-03152).
+- Verification battery:
+  - Python MCP Documentation suite (`test_mcp_server_core_doc_*.py`): 19/19 tests PASSED.
+  - Rust MCP Documentation suite (`test_mcp_server_core_doc_unit.rs`): 3/3 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPDOC-INV1..MCPDOC-INV5, PoR Invariant I-2.
+- Documentation Subsystem & Safety verified:
+  - Zero-dependency in-memory reference catalog with keyword search and relevance scoring across canonical topics.
+  - Input boundaries & normalization: queries clamped to 128 characters, results to 10 matches, and NFKC normalization applied.
+  - Fail-closed traversal immunity: paths containing `..`, `/`, `\`, or NUL bytes rejected with `MCPDOC_ERR_INVALID_ID`.
+  - Information disclosure defense: error outputs redact filesystem paths and limit error lengths.
+  - FastMCP production integration: `aios_mcp_doc_lookup` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03152-documentation-verification-evidenc.md.
+
+
 
 
 

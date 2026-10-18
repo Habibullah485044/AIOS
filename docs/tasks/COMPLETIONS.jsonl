@@ -3122,3 +3122,4 @@
 {"seq":3122,"ts":"2026-10-18T20:40:57Z","event":"completed","task_id":3122,"note":"Milestone closeout: MCP Server Core automated tests subsystem verified and certified","evidence":["docs/tasks/evidence/T-03122-automated-tests-verification-evidenc.md"]}
 {"seq":3123,"ts":"2026-10-18T20:47:18Z","event":"completed","task_id":3123,"note":"Establish facts, constraints, and prior art for MCP Server Core security policy","evidence":["docs/tasks/evidence/T-03123-security-policy-research.md"]}
 {"seq":3124,"ts":"2026-10-18T20:48:47Z","event":"completed","task_id":3124,"note":"Specify exact contract and invariants for MCP Server Core security policy","evidence":["docs/tasks/evidence/T-03124-security-policy-specification.md"]}
+{"seq":3125,"ts":"2026-10-18T20:56:13Z","event":"completed","task_id":3125,"note":"Create module skeleton and interfaces for MCP Server Core security policy in Python and Rust","evidence":["docs/tasks/evidence/T-03125-security-policy-scaffold.md"]}

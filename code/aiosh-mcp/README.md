@@ -1103,6 +1103,90 @@ Response payload (`content[0].text`, pretty-printed):
 - Hardening: [T-03150](../../docs/tasks/evidence/T-03150-documentation-hardening.md)
 - Documentation: [T-03151](../../docs/tasks/evidence/T-03151-documentation-documentation.md)
 
+---
+
+## MCP Server Core Recovery & Validation Subsystem (Phase 3)
+
+The **MCP Server Core Recovery & Validation Subsystem** guarantees resilience against state file corruption, unparseable JSON, truncated writes, and process crashes via deep validation and atomic quarantine (T-03153..T-03162).
+
+### Invariants & Guarantees
+- **`MCPRECV-INV1` (Accounting Sum)**: `total == valid + invalid` strictly conserved.
+- **`MCPRECV-INV2` (Binary Health Equivalence)**: `is_healthy == (len(issues) == 0 and invalid == 0)`.
+- **`MCPRECV-INV3` (Non-Destructive Quarantine)**: Corrupted files are atomically preserved as `<path>.bak.<timestamp>` with `0600` permissions.
+- **`MCPRECV-INV4` (Path Traversal & ADS Immunity)**: Traversal sequences (`..`), NUL bytes, reserved devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1..9`, `LPT1..9`), and ADS colons (`:`) fail closed.
+- **`MCPRECV-INV5` (PoR Invariant I-2 Gating)**: Read-only verification (`aios_mcp_recovery_check`) requires zero tokens; mutations (`aios_mcp_recovery_repair`) require explicit capability tokens.
+
+### Exposed FastMCP Tools
+
+1. **`aios_mcp_recovery_check`**: Validates state store health and records issues without mutating disk (Read-Only).
+2. **`aios_mcp_recovery_repair`**: Quarantines corrupted stores and reinitializes canonical state atomically (PEP Gated, Requires Capability Token).
+
+### Example Tool Invocations
+
+#### 1. Validate State Store (`aios_mcp_recovery_check`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_recovery_check",
+    "arguments": {
+      "path": "mcp_store.json"
+    }
+  }
+}
+```
+
+Response payload (`content[0].text`, pretty-printed):
+```json
+{
+  "ok": true,
+  "report": {
+    "store_path": "mcp_store.json",
+    "is_healthy": true,
+    "total_records": 10,
+    "valid_records": 10,
+    "invalid_records": 0,
+    "issues": [],
+    "validated_at_utc": "2026-10-19T04:00:00+00:00"
+  }
+}
+```
+
+#### 2. Recover Corrupted Store (`aios_mcp_recovery_repair`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_recovery_repair",
+    "arguments": {
+      "path": "mcp_store.json",
+      "capability_token": "cap_por_recovery_001"
+    }
+  }
+}
+```
+
+### Constraints & Known Limitations
+- File size limit: Store files bounded at `MAX_STORE_FILE_BYTES = 10 MiB`.
+- Path length limit: Path string length bounded at `MAX_PATH_LEN = 1024` chars.
+- Path sanitization: Absolute system directory structures are redacted (`[REDACTED_PATH]`) from user-facing error payloads.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-RECOVERY](../../docs/SPEC-MCP-SERVER-CORE-RECOVERY.md)
+- Research: [T-03153](../../docs/tasks/evidence/T-03153-recovery-validation-research.md)
+- Spec Evidence: [T-03154](../../docs/tasks/evidence/T-03154-recovery-validation-specification.md)
+- Scaffold: [T-03155](../../docs/tasks/evidence/T-03155-recovery-validation-scaffold.md)
+- Implementation: [T-03156](../../docs/tasks/evidence/T-03156-recovery-validation-implementation.md)
+- Unit tests: [T-03157](../../docs/tasks/evidence/T-03157-recovery-validation-unit-test.md)
+- Integration: [T-03158](../../docs/tasks/evidence/T-03158-recovery-validation-integration.md)
+- Security review: [T-03159](../../docs/tasks/evidence/T-03159-recovery-validation-security-review.md)
+- Hardening: [T-03160](../../docs/tasks/evidence/T-03160-recovery-validation-hardening.md)
+- Documentation: [T-03161](../../docs/tasks/evidence/T-03161-recovery-validation-documentation.md)
+
 ## Tests
 
 ```bash

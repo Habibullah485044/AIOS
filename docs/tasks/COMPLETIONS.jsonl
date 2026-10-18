@@ -3098,3 +3098,4 @@
 {"seq":3098,"ts":"2026-10-18T19:23:57Z","event":"completed","task_id":3098,"note":"Integrate MCP Server Core MCP/API surface with FastMCP server","evidence":["docs/tasks/evidence/T-03098-mcp-api-surface-integration.md"]}
 {"seq":3099,"ts":"2026-10-18T19:25:36Z","event":"completed","task_id":3099,"note":"Security-review MCP Server Core MCP/API surface, verify PoR Invariant I-2 and abuse scenarios","evidence":["docs/tasks/evidence/T-03099-mcp-api-surface-security-review.md"]}
 {"seq":3100,"ts":"2026-10-18T19:28:19Z","event":"completed","task_id":3100,"note":"Harden MCP Server Core MCP/API surface against failure and misuse","evidence":["docs/tasks/evidence/T-03100-mcp-api-surface-hardening.md"]}
+{"seq":3101,"ts":"2026-10-18T19:30:18Z","event":"completed","task_id":3101,"note":"Document MCP Server Core MCP/API surface for operators and agents","evidence":["docs/tasks/evidence/T-03101-mcp-api-surface-documentation.md"]}

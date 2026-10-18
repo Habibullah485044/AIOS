@@ -40,6 +40,8 @@ class PolicyRule:
     priority: int = 100
 
     def __post_init__(self) -> None:
+        if "\x00" in self.rule_id or "\x00" in self.role or "\x00" in self.tool_pattern:
+            raise ValueError("PolicyRule fields cannot contain NUL bytes")
         if not self.rule_id or len(self.rule_id) > MAX_RULE_ID_LEN:
             raise ValueError(f"rule_id must be between 1 and {MAX_RULE_ID_LEN} characters")
         if not self.role or len(self.role) > MAX_ROLE_LEN:
@@ -65,6 +67,19 @@ class PolicyEvaluationRequest:
     action_category: PolicyActionCategory
     capability_token: Optional[str] = None
 
+    def __post_init__(self) -> None:
+        if "\x00" in self.subject_role or "\x00" in self.tool_name:
+            raise ValueError("Evaluation request cannot contain NUL bytes")
+        if len(self.subject_role) > MAX_ROLE_LEN:
+            raise ValueError(f"subject_role exceeds {MAX_ROLE_LEN} characters")
+        if len(self.tool_name) > MAX_PATTERN_LEN:
+            raise ValueError(f"tool_name exceeds {MAX_PATTERN_LEN} characters")
+        if self.capability_token is not None:
+            if "\x00" in self.capability_token:
+                raise ValueError("capability_token cannot contain NUL bytes")
+            if len(self.capability_token) > 512:
+                raise ValueError("capability_token exceeds 512 characters")
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "subject_role": self.subject_role,
@@ -80,6 +95,11 @@ class PolicyDecision:
     rule_id: str
     reason: str
     allowed: bool
+
+    def __post_init__(self) -> None:
+        # Hardening: truncate long error/reason messages to 256 characters
+        if len(self.reason) > 256:
+            object.__setattr__(self, "reason", self.reason[:256])
 
     def to_dict(self) -> Dict[str, Any]:
         return {

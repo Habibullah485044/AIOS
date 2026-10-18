@@ -875,6 +875,87 @@ Provides on-demand programmatic diagnostics, health assessment, and invariant co
 - Hardening: [T-03120](../../docs/tasks/evidence/T-03120-automated-tests-hardening.md)
 - Documentation: [T-03121](../../docs/tasks/evidence/T-03121-automated-tests-documentation.md)
 
+---
+
+## MCP Server Core Security Policy Subsystem (Phase 3)
+
+The **MCP Server Core Security Policy Subsystem** enforces Policy Enforcement Point (PEP) gating and declarative authorization rules across all incoming MCP tool calls. It implements Proof-of-Restraint Invariant I-2 (`Zero Escalation`), strictly requiring capability tokens for state-changing or administrative actions.
+
+### Exposed FastMCP Tools
+
+1. **`aios_mcp_policy_evaluate`**: Evaluates policy rules against an incoming `(subject_role, tool_name, action_category, capability_token)` request.
+2. **`aios_mcp_policy_status`**: Returns active policy engine status and rule definitions.
+
+### Example Tool Invocations
+
+#### 1. Evaluate Policy for Read-Only Action
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_policy_evaluate",
+    "arguments": {
+      "subject_role": "agent:operator",
+      "tool_name": "aios_mcp_config_get",
+      "action_category": "read_only"
+    }
+  }
+}
+```
+
+#### 2. Evaluate Policy for State-Changing Action with Capability Token
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_policy_evaluate",
+    "arguments": {
+      "subject_role": "agent:operator",
+      "tool_name": "aios_mcp_config_set",
+      "action_category": "state_changing",
+      "capability_token": "token:valid-12345"
+    }
+  }
+}
+```
+
+#### 3. Inspect Active Policy Engine Rules
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_policy_status",
+    "arguments": {}
+  }
+}
+```
+
+### Constraints & Known Limitations
+- State-changing and administrative tools strictly evaluate to `allowed = false` when capability tokens are missing or whitespace-only.
+- Total rules are bounded to `MAX_RULES = 256` to prevent memory exhaustion.
+- Embedded NUL bytes (`\x00`) in strings are rejected fail-closed.
+- Reasons are truncated to 256 characters.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-POLICY](../../docs/SPEC-MCP-SERVER-CORE-POLICY.md)
+- Research: [T-03123](../../docs/tasks/evidence/T-03123-security-policy-research.md)
+- Spec Evidence: [T-03124](../../docs/tasks/evidence/T-03124-security-policy-specification.md)
+- Scaffold: [T-03125](../../docs/tasks/evidence/T-03125-security-policy-scaffold.md)
+- Implementation: [T-03126](../../docs/tasks/evidence/T-03126-security-policy-implementation.md)
+- Unit tests: [T-03127](../../docs/tasks/evidence/T-03127-security-policy-unit-test.md)
+- Integration: [T-03128](../../docs/tasks/evidence/T-03128-security-policy-integration.md)
+- Security review: [T-03129](../../docs/tasks/evidence/T-03129-security-policy-security-review.md)
+- Hardening: [T-03130](../../docs/tasks/evidence/T-03130-security-policy-hardening.md)
+- Documentation: [T-03131](../../docs/tasks/evidence/T-03131-security-policy-documentation.md)
+
+
+
 
 
 ## Tests

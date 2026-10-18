@@ -13,10 +13,23 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 
+MAX_TELEMETRY_TEXT_LEN: int = 256
+_FORBIDDEN_CHARS = {"\u200b", "\u200c", "\u200d", "\ufeff", "\x00"}
+
+
+def sanitize_telemetry_text(s: str) -> str:
+    """Sanitizes telemetry text by filtering control characters, zero-width chars, and enforcing bounds."""
+    if not s:
+        return ""
+    filtered = "".join(c for c in s if not (ord(c) < 32 or ord(c) == 127 or c in _FORBIDDEN_CHARS))
+    return filtered[:MAX_TELEMETRY_TEXT_LEN].strip()
+
+
 class HealthStatus(str, Enum):
     HEALTHY = "HEALTHY"
     DEGRADED = "DEGRADED"
     CRITICAL = "CRITICAL"
+
 
 
 @dataclass(frozen=True)

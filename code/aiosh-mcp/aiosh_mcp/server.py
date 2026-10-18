@@ -891,6 +891,9 @@ mcp_server_core_service_mod.register_mcp_service_tools(mcp)
 from . import mcp_server_core_api as mcp_server_core_api_mod
 mcp_server_core_api_mod.register_mcp_api_tools(mcp)
 
+from . import mcp_server_core_config as mcp_server_core_config_mod
+mcp_server_core_config_mod.register_mcp_config_tools(mcp)
+
 
 
 

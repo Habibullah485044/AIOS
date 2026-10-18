@@ -84,14 +84,20 @@ where
             error_message: None,
             duration_ms: duration,
         },
-        Err(err) => McpTestCase {
-            test_id: test_id.to_string(),
-            category,
-            name: name.to_string(),
-            passed: false,
-            error_message: Some(err),
-            duration_ms: duration,
-        },
+        Err(mut err) => {
+            if err.len() > 1024 {
+                err.truncate(1021);
+                err.push_str("...");
+            }
+            McpTestCase {
+                test_id: test_id.to_string(),
+                category,
+                name: name.to_string(),
+                passed: false,
+                error_message: Some(err),
+                duration_ms: duration,
+            }
+        }
     }
 }
 

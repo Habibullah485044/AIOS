@@ -3117,3 +3117,4 @@
 {"seq":3117,"ts":"2026-10-18T20:25:58Z","event":"completed","task_id":3117,"note":"Add focused 4-case automated unit tests for MCP Server Core automated tests runner","evidence":["docs/tasks/evidence/T-03117-automated-tests-unit-test.md"]}
 {"seq":3118,"ts":"2026-10-18T20:29:33Z","event":"completed","task_id":3118,"note":"Integrate MCP Server Core automated tests runner into FastMCP server","evidence":["docs/tasks/evidence/T-03118-automated-tests-integration.md"]}
 {"seq":3119,"ts":"2026-10-18T20:32:20Z","event":"completed","task_id":3119,"note":"Security review and abuse threat modeling for MCP Server Core automated tests","evidence":["docs/tasks/evidence/T-03119-automated-tests-security-review.md"]}
+{"seq":3120,"ts":"2026-10-18T20:35:58Z","event":"completed","task_id":3120,"note":"Hardening of MCP Server Core automated tests runner against errors and bloat","evidence":["docs/tasks/evidence/T-03120-automated-tests-hardening.md"]}

@@ -116,6 +116,8 @@ def _execute_test(test_id: str, category: McpTestCategory, name: str, fn) -> Mcp
     except Exception as exc:
         err_msg = f"Exception: {type(exc).__name__}: {exc}"
     t1 = time.perf_counter()
+    if err_msg and len(err_msg) > 1024:
+        err_msg = err_msg[:1021] + "..."
     return McpTestCase(
         test_id=test_id,
         category=category,

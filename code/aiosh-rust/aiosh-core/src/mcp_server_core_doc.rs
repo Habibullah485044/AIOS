@@ -8,12 +8,14 @@ use std::collections::HashMap;
 
 pub const MAX_MCP_DOC_QUERY_LEN: usize = 128;
 pub const MAX_MCP_DOC_SEARCH_RESULTS: usize = 10;
+pub const MAX_TOPICS_LIMIT: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum McpDocError {
     NotFound(String),
     InvalidId(String),
     QueryBounds(String),
+    Capacity(String),
 }
 
 impl std::fmt::Display for McpDocError {
@@ -22,7 +24,9 @@ impl std::fmt::Display for McpDocError {
             McpDocError::NotFound(s) => write!(f, "MCPDOC_ERR_NOT_FOUND: {}", s),
             McpDocError::InvalidId(s) => write!(f, "MCPDOC_ERR_INVALID_ID: {}", s),
             McpDocError::QueryBounds(s) => write!(f, "MCPDOC_ERR_QUERY_BOUNDS: {}", s),
+            McpDocError::Capacity(s) => write!(f, "MCPDOC_ERR_CAPACITY: {}", s),
         }
+
     }
 }
 
@@ -135,9 +139,16 @@ impl McpServerCoreDocCatalog {
 
     pub fn register(&mut self, topic: McpDocTopic) -> Result<(), McpDocError> {
         validate_topic_id(&topic.topic_id)?;
+        if self.topics.len() >= MAX_TOPICS_LIMIT && !self.topics.contains_key(&topic.topic_id) {
+            return Err(McpDocError::Capacity(format!(
+                "maximum topic capacity of {} exceeded",
+                MAX_TOPICS_LIMIT
+            )));
+        }
         self.topics.insert(topic.topic_id.clone(), topic);
         Ok(())
     }
+
 
     pub fn get(&self, topic_id: &str) -> Result<&McpDocTopic, McpDocError> {
         validate_topic_id(topic_id)?;

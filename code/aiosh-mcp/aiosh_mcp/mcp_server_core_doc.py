@@ -9,13 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 from typing import Any, Dict, List, Optional
+import unicodedata
 
 MAX_MCP_DOC_QUERY_LEN = 128
 MAX_MCP_DOC_SEARCH_RESULTS = 10
+MAX_TOPICS_LIMIT = 256
 
 MCPDOC_ERR_NOT_FOUND = "MCPDOC_ERR_NOT_FOUND"
 MCPDOC_ERR_INVALID_ID = "MCPDOC_ERR_INVALID_ID"
 MCPDOC_ERR_QUERY_BOUNDS = "MCPDOC_ERR_QUERY_BOUNDS"
+MCPDOC_ERR_CAPACITY = "MCPDOC_ERR_CAPACITY"
 
 BIDI_AND_INVISIBLE_CODEPOINTS = {
     0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
@@ -28,11 +31,12 @@ TOPIC_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]{1,64}$")
 
 
 def sanitize_doc_query(s: str) -> str:
-    """Strips control codes, invisible unicode codepoints, and clamps query length."""
+    """Strips control codes, invisible unicode codepoints, normalizes NFKC, and clamps query length."""
     if not s:
         return ""
+    normalized = unicodedata.normalize("NFKC", str(s))
     filtered = []
-    for c in s:
+    for c in normalized:
         cp = ord(c)
         if cp < 32 or (127 <= cp <= 159) or cp in BIDI_AND_INVISIBLE_CODEPOINTS:
             continue
@@ -43,13 +47,14 @@ def sanitize_doc_query(s: str) -> str:
 
 def validate_topic_id(topic_id: str) -> None:
     """Validates topic ID against traversal tokens, NUL bytes, and syntax bounds (MCPDOC-INV3)."""
-    trimmed = (topic_id or "").strip()
+    trimmed = unicodedata.normalize("NFKC", (topic_id or "").strip())
     if not trimmed:
         raise ValueError(f"{MCPDOC_ERR_INVALID_ID}: empty topic ID")
     if "\0" in trimmed or ".." in trimmed or "/" in trimmed or "\\" in trimmed:
         raise ValueError(f"{MCPDOC_ERR_INVALID_ID}: forbidden path or traversal character in topic ID")
     if not TOPIC_ID_PATTERN.match(trimmed):
         raise ValueError(f"{MCPDOC_ERR_INVALID_ID}: topic ID does not match valid syntax")
+
 
 
 @dataclass(frozen=True)
@@ -102,7 +107,10 @@ class McpServerCoreDocCatalog:
 
     def register(self, topic: McpDocTopic) -> None:
         validate_topic_id(topic.topic_id)
+        if len(self._topics) >= MAX_TOPICS_LIMIT and topic.topic_id not in self._topics:
+            raise ValueError(f"{MCPDOC_ERR_CAPACITY}: maximum topic capacity of {MAX_TOPICS_LIMIT} exceeded")
         self._topics[topic.topic_id] = topic
+
 
     def get(self, topic_id: str) -> McpDocTopic:
         validate_topic_id(topic_id)
@@ -281,6 +289,9 @@ def register_mcp_doc_tools(mcp_app: Any) -> None:
             else:
                 return {"ok": True, "topics": _GLOBAL_DOC_CATALOG.list_topics()}
         except Exception as exc:
-            return {"ok": False, "error": str(exc)}
+            msg = str(exc).split("\n")[0][:200]
+            msg = re.sub(r"[a-zA-Z]:\\[^\s]+|/[^\s]+", "[REDACTED_PATH]", msg)
+            return {"ok": False, "error": msg}
+
 
 

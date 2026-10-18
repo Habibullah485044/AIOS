@@ -234,6 +234,7 @@ fn main() {
         Some("compliance") | Some("comp") => cmd_compliance(&args[1..]),
         Some("runbook") | Some("rb") => cmd_runbook(&args[1..]),
         Some("scan") => cmd_scan(&args[1..]),
+        Some("mcp") => cmd_mcp(&args[1..]),
         Some("--help") | Some("-h") | None => {
             println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox|privilege|secret|threat|compliance> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control\n  aiosh privilege <eval|status|policy-list|policy-add|policy-remove|report>  Privilege Escalation Prevention Control\n  aiosh secret <store|get|list|rotate|revoke>  Secrets Handling & Runtime Vault Control\n  aiosh threat <list|show|register|status|mitigate|assess|init>  Threat Model Maintenance & Risk Control\n  aiosh compliance <list|show|register|status|assess|check-pep|init> [--path P] [--config P]  Compliance Mapping & Control Frameworks");
             0
@@ -20722,6 +20723,44 @@ fn cmd_scan(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_mcp(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let service = aiosh_core::mcp_server_core_service::McpServerCoreService::new();
+
+    if args.is_empty() || args.first().map(|s| s.as_str()) == Some("--help") || args.first().map(|s| s.as_str()) == Some("-h") {
+        println!("aiosh mcp — Model Context Protocol Core CLI\n\nUsage: aiosh mcp <list|show|dispatch|sessions|ping> [OPTIONS]\n\nSubcommands:\n  list                [--filter <GLOB>] [--json]\n  show <TOOL>         [--json]\n  dispatch <TOOL>     [--args <JSON>] [--grant <TOKEN>] [--timeout <SECS>] [--json]\n  sessions            [--prune <SECS>] [--json]\n  ping                [--json]");
+        return 0;
+    }
+
+    match aiosh_core::mcp_server_core_cli::parse_mcp_cli_args(args) {
+        Ok(parsed) => {
+            let output = aiosh_core::mcp_server_core_cli::execute_mcp_cli(&parsed, &service);
+            if output.exit_code == 0 {
+                println!("{}", output.message);
+                classify_and_emit(
+                    &mut ctx, "mcp.core", "execute", json!({ "args": args }),
+                    "ok", None, None, "operator", None,
+                );
+            } else {
+                eprintln!("{}", output.message);
+                classify_and_emit(
+                    &mut ctx, "mcp.core", "execute", json!({ "args": args, "error": output.message }),
+                    "failure", None, Some(&output.message), "operator", None,
+                );
+            }
+            output.exit_code
+        }
+        Err((code, err_msg)) => {
+            eprintln!("{}", err_msg);
+            classify_and_emit(
+                &mut ctx, "mcp.core", "parse", json!({ "args": args, "error": err_msg }),
+                "failure", None, Some(&err_msg), "operator", None,
+            );
+            code
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod update_cli_tests {
@@ -21818,7 +21857,41 @@ mod runbook_scan_cli_tests {
         assert_eq!(cmd_scan(&s(&["web"])), 2);
         assert_eq!(cmd_scan(&s(&["web", "http://127.0.0.1:59999", "--timeout-s", "1"])), 0);
     }
+
+    #[test]
+    fn test_mcp_cli_commands() {
+        // 1. Help & usage
+        assert_eq!(cmd_mcp(&[]), 0);
+        assert_eq!(cmd_mcp(&s(&["--help"])), 0);
+        assert_eq!(cmd_mcp(&s(&["-h"])), 0);
+
+        // 2. Ping
+        assert_eq!(cmd_mcp(&s(&["ping"])), 0);
+        assert_eq!(cmd_mcp(&s(&["ping", "--json"])), 0);
+
+        // 3. List
+        assert_eq!(cmd_mcp(&s(&["list"])), 0);
+        assert_eq!(cmd_mcp(&s(&["list", "--json"])), 0);
+        assert_eq!(cmd_mcp(&s(&["list", "--filter", "nonexistent_filter"])), 0);
+
+        // 4. Show
+        assert_eq!(cmd_mcp(&s(&["show"])), 2); // missing tool name
+        assert_eq!(cmd_mcp(&s(&["show", "nonexistent.tool"])), 1);
+
+        // 5. Dispatch
+        assert_eq!(cmd_mcp(&s(&["dispatch"])), 2); // missing tool name
+        assert_eq!(cmd_mcp(&s(&["dispatch", "aios.admin.restart"])), 3); // missing grant -> unauthorized
+        assert_eq!(cmd_mcp(&s(&["dispatch", "aios.missing.tool"])), 1); // missing tool -> failure
+
+        // 6. Sessions
+        assert_eq!(cmd_mcp(&s(&["sessions"])), 0);
+        assert_eq!(cmd_mcp(&s(&["sessions", "--prune", "0", "--json"])), 0);
+
+        // 7. Unknown
+        assert_eq!(cmd_mcp(&s(&["unknown_mcp_cmd"])), 2);
+    }
 }
+
 
 
 

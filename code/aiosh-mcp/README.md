@@ -817,6 +817,65 @@ Parameters are resolved in strict hierarchical order:
 - Hardening: [T-03110](../../docs/tasks/evidence/T-03110-configuration-hardening.md)
 - Documentation: [T-03111](../../docs/tasks/evidence/T-03111-configuration-documentation.md)
 
+## MCP Server Core Automated Test Runner (`aios_mcp_test_run`)
+
+Provides on-demand programmatic diagnostics, health assessment, and invariant compliance checks for the AI Control Plane MCP Server Core (T-03113..T-03122).
+
+### Tools Exposed
+- `aios_mcp_test_run`: Executes internal diagnostic test suites and returns a structured `McpTestSuiteReport` envelope.
+
+### Supported Categories
+- `data_model`: Validates data structures, content blocks, and envelope serialization.
+- `api`: Validates JSON-RPC 2.0 ping, initialize, and method resolution.
+- `service`: Validates tool registry bounds and session lifecycles.
+- `config`: Validates multi-source resolution, traversal rejection, and bounds.
+- `security`: Verifies PoR Invariant I-2 (`aios.admin.*` token gating) and NUL byte sanitization.
+- *Default*: If `category` is omitted or empty, executes the complete test suite.
+
+### Copy-Pasteable Tool Call Examples
+
+#### 1. Run Complete Automated Test Battery
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_test_run",
+    "arguments": {}
+  }
+}
+```
+
+#### 2. Run Targeted Security Category Verification
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_test_run",
+    "arguments": {
+      "category": "security"
+    }
+  }
+}
+```
+
+### Constraints & Known Limitations
+- `category` parameter is constrained to known whitelist names and capped at 64 characters.
+- Diagnostic runs execute against transient, isolated in-memory test objects; they never mutate live production databases or configurations.
+- Execution duration is bounded and errors are safely contained in the result report.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-TESTS](../../docs/SPEC-MCP-SERVER-CORE-TESTS.md)
+- Unit tests: [T-03117](../../docs/tasks/evidence/T-03117-automated-tests-unit-test.md)
+- Integration: [T-03118](../../docs/tasks/evidence/T-03118-automated-tests-integration.md)
+- Security review: [T-03119](../../docs/tasks/evidence/T-03119-automated-tests-security-review.md)
+- Hardening: [T-03120](../../docs/tasks/evidence/T-03120-automated-tests-hardening.md)
+- Documentation: [T-03121](../../docs/tasks/evidence/T-03121-automated-tests-documentation.md)
+
+
 
 ## Tests
 

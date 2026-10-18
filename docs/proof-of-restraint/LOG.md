@@ -1141,3 +1141,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration exposing `aios_mcp_core_list_tools` and `aios_mcp_core_dispatch`.
 - Evidence: docs/tasks/evidence/T-03082-verify.md, docs/tasks/evidence/T-03082-core-service-verification-evidenc.md.
 
+## T-03092 - AI Control Plane MCP Server Core / CLI surface: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core CLI surface subsystem (T-03083..T-03092).
+- Verification battery:
+  - Python MCP CLI suite (`test_mcp_server_core_cli_*.py`): 7/7 tests PASSED.
+  - Rust Core MCP CLI suite (`test_mcp_server_core_cli_*.rs`): 6/6 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPCLI-INV1..MCPCLI-INV5, PoR Invariant I-2.
+- CLI Surface & Safety verified:
+  - Complete command suite (`aiosh mcp` with `ping`, `list`, `show`, `dispatch`, `sessions`) operating deterministically.
+  - Fail-closed capability enforcement: invocations of `aios.admin.*` strictly require valid `--grant <TOKEN>`, failing closed with exit code 3 (`EXIT_UNAUTHORIZED`).
+  - Robust hardening: rejection of NUL bytes across all command line flags and positional arguments.
+  - ADR-0035 §AF-2 JSON error envelopment for machine consumers when `--json` flag is provided.
+  - Bounded input arguments (`MAX_ARGUMENTS_SIZE = 1 MiB`) and clamped execution timeouts `[1, 300]` seconds.
+  - Proof-of-restraint audit trail integration: every CLI command emits an immutable audit record via `AuditRing`.
+- Evidence: docs/tasks/evidence/T-03092-verify.md, docs/tasks/evidence/T-03092-cli-surface-verification-evidenc.md.
+

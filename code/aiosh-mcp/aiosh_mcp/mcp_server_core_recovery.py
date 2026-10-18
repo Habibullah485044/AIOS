@@ -278,3 +278,37 @@ def recover_mcp_store(path: str, capability_token: str) -> McpRecoveryResult:
         backup_path=backup_path,
         report=new_report,
     )
+
+
+def register_mcp_recovery_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core Recovery tools with FastMCP (T-03158)."""
+
+    @mcp_app.tool()
+    def aios_mcp_recovery_check(path: Optional[str] = None) -> dict:
+        """Validate an MCP Server Core session or state store file (MCPRECV-INV1..MCPRECV-INV5). Pure read-only."""
+        try:
+            target_path = path if (path and path.strip()) else os.environ.get("AIOSH_MCP_STORE_PATH", "mcp_store.json")
+            report = validate_mcp_store(target_path)
+            return {
+                "ok": True,
+                "report": report.to_dict(),
+            }
+        except Exception as exc:
+            msg = str(exc).split("\n")[0][:256]
+            return {"ok": False, "error": msg}
+
+    @mcp_app.tool()
+    def aios_mcp_recovery_repair(path: str, capability_token: str) -> dict:
+        """Recover a corrupted MCP Server Core state store file via quarantine and reinitialization (MCPRECV-INV3, PoR Invariant I-2)."""
+        try:
+            result = recover_mcp_store(path, capability_token)
+            return {
+                "ok": result.ok,
+                "result": result.to_dict(),
+            }
+        except PermissionError as exc:
+            return {"ok": False, "error": str(exc), "unauthorized": True}
+        except Exception as exc:
+            msg = str(exc).split("\n")[0][:256]
+            return {"ok": False, "error": msg}
+

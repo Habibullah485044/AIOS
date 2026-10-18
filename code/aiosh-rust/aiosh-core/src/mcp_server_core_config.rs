@@ -136,7 +136,15 @@ impl McpServerCoreConfig {
             std::fs::create_dir_all(parent).map_err(|e| format!("failed to create dir: {}", e))?;
         }
         let s = self.to_json_str()?;
-        std::fs::write(p, s).map_err(|e| format!("failed to write config: {}", e))?;
+        let tmp = p.with_extension(format!("tmp.{}", std::process::id()));
+        if let Err(e) = std::fs::write(&tmp, &s) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("failed to write config temp file: {}", e));
+        }
+        if let Err(e) = std::fs::rename(&tmp, p) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("failed to atomically rename config file: {}", e));
+        }
         Ok(())
     }
 }

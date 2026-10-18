@@ -63,12 +63,41 @@ impl McpCliOutput {
             json_payload: None,
         }
     }
+
+    pub fn failure_with_json(code: i32, msg: impl Into<String>, json_mode: bool) -> Self {
+        let message = msg.into();
+        let payload = if json_mode {
+            Some(json!({
+                "status": "error",
+                "ok": false,
+                "error_code": code,
+                "error_message": message,
+            }))
+        } else {
+            None
+        };
+        Self {
+            exit_code: code,
+            message: if json_mode {
+                payload.as_ref().unwrap().to_string()
+            } else {
+                message
+            },
+            json_payload: payload,
+        }
+    }
 }
 
 /// Parses CLI arguments following `aiosh mcp <subcommand> [flags]`.
 pub fn parse_mcp_cli_args(args: &[String]) -> Result<McpCliSubcommand, (i32, String)> {
     if args.is_empty() {
         return Err((EXIT_USAGE, "Missing MCP subcommand (choose from list, show, dispatch, sessions, ping)".to_string()));
+    }
+
+    for arg in args {
+        if arg.contains('\0') {
+            return Err((EXIT_USAGE, "CLI argument contains prohibited NUL byte".to_string()));
+        }
     }
 
     let subcmd = args[0].as_str();
@@ -201,23 +230,23 @@ pub fn execute_mcp_cli(cmd: &McpCliSubcommand, service: &McpServerCoreService) -
                     };
                     McpCliOutput::success(msg, Some(tool_json))
                 }
-                None => McpCliOutput::failure(EXIT_FAILURE, format!("tool '{}' not found", tool)),
+                None => McpCliOutput::failure_with_json(EXIT_FAILURE, format!("tool '{}' not found", tool), *json),
             }
         }
         McpCliSubcommand::Dispatch { tool, args, grant, timeout, json: json_mode } => {
             // Check privilege grant requirements
             if tool.starts_with("aios.admin.") && grant.is_none() {
-                return McpCliOutput::failure(EXIT_UNAUTHORIZED, "capability grant required for privileged tool");
+                return McpCliOutput::failure_with_json(EXIT_UNAUTHORIZED, "capability grant required for privileged tool", *json_mode);
             }
 
             // Parse args payload
             let args_value: Value = if let Some(a) = args {
                 if a.len() > MAX_ARGUMENTS_SIZE {
-                    return McpCliOutput::failure(EXIT_USAGE, "arguments exceed MAX_ARGUMENTS_SIZE limit");
+                    return McpCliOutput::failure_with_json(EXIT_USAGE, "arguments exceed MAX_ARGUMENTS_SIZE limit", *json_mode);
                 }
                 match serde_json::from_str(a) {
                     Ok(v) => v,
-                    Err(e) => return McpCliOutput::failure(EXIT_USAGE, format!("invalid JSON in --args: {}", e)),
+                    Err(e) => return McpCliOutput::failure_with_json(EXIT_USAGE, format!("invalid JSON in --args: {}", e), *json_mode),
                 }
             } else {
                 json!({})
@@ -225,7 +254,7 @@ pub fn execute_mcp_cli(cmd: &McpCliSubcommand, service: &McpServerCoreService) -
 
             let tool_call = match McpToolCall::new(tool, args_value, grant.clone()) {
                 Ok(c) => c,
-                Err(e) => return McpCliOutput::failure(EXIT_USAGE, format!("invalid tool call: {:?}", e)),
+                Err(e) => return McpCliOutput::failure_with_json(EXIT_USAGE, format!("invalid tool call: {:?}", e), *json_mode),
             };
 
             let timeout_val = timeout.unwrap_or(DEFAULT_EXECUTION_TIMEOUT_SECONDS as u64);
@@ -247,7 +276,8 @@ pub fn execute_mcp_cli(cmd: &McpCliSubcommand, service: &McpServerCoreService) -
                 } else {
                     EXIT_FAILURE
                 };
-                McpCliOutput::failure(code, env.error_message.unwrap_or_else(|| "dispatch error".to_string()))
+                let err_msg = env.error_message.unwrap_or_else(|| "dispatch error".to_string());
+                McpCliOutput::failure_with_json(code, err_msg, *json_mode)
             }
         }
         McpCliSubcommand::Sessions { prune, json: json_mode } => {

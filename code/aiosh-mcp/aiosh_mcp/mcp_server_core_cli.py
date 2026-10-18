@@ -42,10 +42,26 @@ class McpCliOutput:
     def failure(cls, exit_code: int, message: str) -> "McpCliOutput":
         return cls(exit_code=exit_code, message=message, json_payload=None)
 
+    @classmethod
+    def failure_with_json(cls, exit_code: int, message: str, json_mode: bool = False) -> "McpCliOutput":
+        if json_mode:
+            payload = {
+                "status": "error",
+                "ok": False,
+                "error_code": exit_code,
+                "error_message": message,
+            }
+            return cls(exit_code=exit_code, message=json.dumps(payload), json_payload=payload)
+        return cls(exit_code=exit_code, message=message, json_payload=None)
+
 
 def parse_mcp_cli_args(args: List[str]) -> Tuple[str, Dict[str, Any]]:
     if not args:
         raise ValueError("Missing MCP subcommand (choose from list, show, dispatch, sessions, ping)")
+
+    for arg in args:
+        if "\0" in arg:
+            raise ValueError("CLI argument contains prohibited NUL byte")
 
     subcmd = args[0]
     options: Dict[str, Any] = {
@@ -124,11 +140,11 @@ def execute_mcp_cli(subcmd: str, options: Dict[str, Any], service: McpServerCore
     elif subcmd == "show":
         pos = options.get("positional", [])
         if not pos:
-            return McpCliOutput.failure(EXIT_USAGE, "show requires a tool name")
+            return McpCliOutput.failure_with_json(EXIT_USAGE, "show requires a tool name", json_mode=json_mode)
         tool_name = pos[0]
         tool = service.get_tool(tool_name)
         if not tool:
-            return McpCliOutput.failure(EXIT_FAILURE, f"tool '{tool_name}' not found")
+            return McpCliOutput.failure_with_json(EXIT_FAILURE, f"tool '{tool_name}' not found", json_mode=json_mode)
         tool_dict = tool.to_dict()
         msg = json.dumps(tool_dict) if json_mode else f"Tool: {tool.name}\nDescription: {tool.description}"
         return McpCliOutput.success(msg, tool_dict)
@@ -136,21 +152,21 @@ def execute_mcp_cli(subcmd: str, options: Dict[str, Any], service: McpServerCore
     elif subcmd == "dispatch":
         pos = options.get("positional", [])
         if not pos:
-            return McpCliOutput.failure(EXIT_USAGE, "dispatch requires a tool name")
+            return McpCliOutput.failure_with_json(EXIT_USAGE, "dispatch requires a tool name", json_mode=json_mode)
         tool_name = pos[0]
         grant = options.get("grant")
 
         if tool_name.startswith("aios.admin.") and not grant:
-            return McpCliOutput.failure(EXIT_UNAUTHORIZED, "capability grant required for privileged tool")
+            return McpCliOutput.failure_with_json(EXIT_UNAUTHORIZED, "capability grant required for privileged tool", json_mode=json_mode)
 
         raw_args = options.get("args")
         if raw_args:
             if len(raw_args) > MAX_ARGUMENTS_SIZE:
-                return McpCliOutput.failure(EXIT_USAGE, "arguments exceed MAX_ARGUMENTS_SIZE limit")
+                return McpCliOutput.failure_with_json(EXIT_USAGE, "arguments exceed MAX_ARGUMENTS_SIZE limit", json_mode=json_mode)
             try:
                 args_dict = json.loads(raw_args)
             except Exception as e:
-                return McpCliOutput.failure(EXIT_USAGE, f"invalid JSON in --args: {e}")
+                return McpCliOutput.failure_with_json(EXIT_USAGE, f"invalid JSON in --args: {e}", json_mode=json_mode)
         else:
             args_dict = {}
 
@@ -163,7 +179,7 @@ def execute_mcp_cli(subcmd: str, options: Dict[str, Any], service: McpServerCore
             return McpCliOutput.success(msg, env.to_dict())
         else:
             code = EXIT_UNAUTHORIZED if env.error_code == ERR_UNAUTHORIZED else EXIT_FAILURE
-            return McpCliOutput.failure(code, env.error_message or "dispatch error")
+            return McpCliOutput.failure_with_json(code, env.error_message or "dispatch error", json_mode=json_mode)
 
     elif subcmd == "sessions":
         prune_val = options.get("prune")
@@ -178,4 +194,4 @@ def execute_mcp_cli(subcmd: str, options: Dict[str, Any], service: McpServerCore
         return McpCliOutput.success(msg, payload)
 
     else:
-        return McpCliOutput.failure(EXIT_USAGE, f"unknown subcommand '{subcmd}'")
+        return McpCliOutput.failure_with_json(EXIT_USAGE, f"unknown subcommand '{subcmd}'", json_mode=json_mode)

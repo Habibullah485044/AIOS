@@ -1187,10 +1187,80 @@ Response payload (`content[0].text`, pretty-printed):
 - Hardening: [T-03160](../../docs/tasks/evidence/T-03160-recovery-validation-hardening.md)
 - Documentation: [T-03161](../../docs/tasks/evidence/T-03161-recovery-validation-documentation.md)
 
+---
+
+## Model Backend Adapters Data Model Subsystem
+
+The Model Backend Adapters Data Model provides standardized, strongly-typed endpoint configurations, chat message formats, token usage accounting, and capability descriptors for AIOS interactions with multiple model providers (OpenAI-compatible, Anthropic, Gemini, Ollama, Mock).
+
+### Invariants & Architectural Rules
+
+- **`MODADAPT-INV1` (Role Canonicalization)**: Roles are strictly restricted to `system`, `user`, `assistant`, or `tool`.
+- **`MODADAPT-INV2` (Token Accounting Sum)**: Token usage requires non-negative integers satisfying `total_tokens == prompt_tokens + completion_tokens`.
+- **`MODADAPT-INV3` (Secret Isolation)**: API keys must never be stored in plaintext. `api_key_env` stores only the environment variable name (max 64 chars, no `sk-` or `ghp_` prefixes).
+- **`MODADAPT-INV4` (Strict Parameter Bounds)**: Temperature is bounded in `[0.0, 2.0]`, timeout in `[1000, 300000]` ms, and retries in `[0, 10]`.
+- **`MODADAPT-INV5` (Proof-of-Restraint Invariant I-2 Gating)**: Read-only tool `aios_model_endpoint_list` requires 0 tokens; state-mutating tool `aios_model_endpoint_register` strictly requires a capability token.
+
+### Tool Invocation Examples
+
+#### 1. List Model Endpoints (`aios_model_endpoint_list`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_model_endpoint_list",
+    "arguments": {
+      "provider": "mock"
+    }
+  }
+}
+```
+
+#### 2. Register Model Endpoint (`aios_model_endpoint_register`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_model_endpoint_register",
+    "arguments": {
+      "backend_id": "gemini-pro-1.5",
+      "provider": "gemini",
+      "model_name": "gemini-1.5-pro",
+      "api_key_env": "GEMINI_API_KEY",
+      "timeout_ms": 30000,
+      "max_retries": 3,
+      "capability_token": "cap_por_model_register_001"
+    }
+  }
+}
+```
+
+### Constraints & Security Hardening
+- **Backend ID Validation**: Restricts ID to `^[a-zA-Z0-9_\-\.]{1,64}$` with directory traversal (`..`, `/`, `\`) and NUL byte defense.
+- **Base URL Protocol Restriction**: Restricts custom base URLs to `http://`, `https://`, `ws://`, or `wss://` and rejects ASCII control characters.
+- **Message Payload Bound**: Message content is bounded to `MAX_MESSAGE_BYTES = 1024 * 1024` (1 MiB) preventing memory exhaustion.
+
+### Evidence & Specifications
+- Specification: [SPEC-MODEL-BACKEND-ADAPTERS](../../docs/SPEC-MODEL-BACKEND-ADAPTERS.md)
+- Research: [T-03163](../../docs/tasks/evidence/T-03163-data-model-research.md)
+- Spec Evidence: [T-03164](../../docs/tasks/evidence/T-03164-data-model-specification.md)
+- Scaffold: [T-03165](../../docs/tasks/evidence/T-03165-data-model-scaffold.md)
+- Implementation: [T-03166](../../docs/tasks/evidence/T-03166-data-model-implementation.md)
+- Unit tests: [T-03167](../../docs/tasks/evidence/T-03167-data-model-unit-test.md)
+- Integration: [T-03168](../../docs/tasks/evidence/T-03168-data-model-integration.md)
+- Security review: [T-03169](../../docs/tasks/evidence/T-03169-data-model-security-review.md)
+- Hardening: [T-03170](../../docs/tasks/evidence/T-03170-data-model-hardening.md)
+- Documentation: [T-03171](../../docs/tasks/evidence/T-03171-data-model-documentation.md)
+
 ## Tests
 
 ```bash
 python tests/test_smoke.py
 ```
+
 
 

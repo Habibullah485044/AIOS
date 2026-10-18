@@ -3120,3 +3120,4 @@
 {"seq":3120,"ts":"2026-10-18T20:35:58Z","event":"completed","task_id":3120,"note":"Hardening of MCP Server Core automated tests runner against errors and bloat","evidence":["docs/tasks/evidence/T-03120-automated-tests-hardening.md"]}
 {"seq":3121,"ts":"2026-10-18T20:37:57Z","event":"completed","task_id":3121,"note":"Document MCP Server Core automated tests diagnostic runner in aiosh-mcp README","evidence":["docs/tasks/evidence/T-03121-automated-tests-documentation.md"]}
 {"seq":3122,"ts":"2026-10-18T20:40:57Z","event":"completed","task_id":3122,"note":"Milestone closeout: MCP Server Core automated tests subsystem verified and certified","evidence":["docs/tasks/evidence/T-03122-automated-tests-verification-evidenc.md"]}
+{"seq":3123,"ts":"2026-10-18T20:47:18Z","event":"completed","task_id":3123,"note":"Establish facts, constraints, and prior art for MCP Server Core security policy","evidence":["docs/tasks/evidence/T-03123-security-policy-research.md"]}

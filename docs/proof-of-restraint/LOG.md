@@ -1157,3 +1157,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Proof-of-restraint audit trail integration: every CLI command emits an immutable audit record via `AuditRing`.
 - Evidence: docs/tasks/evidence/T-03092-verify.md, docs/tasks/evidence/T-03092-cli-surface-verification-evidenc.md.
 
+## T-03102 - AI Control Plane MCP Server Core / MCP/API surface: Verification & Evidence (2026-10-18)
+- Milestone closeout for MCP Server Core MCP/API surface subsystem (T-03093..T-03102).
+- Verification battery:
+  - Python MCP API suite (`test_mcp_server_core_api_*.py`): 10/10 tests PASSED.
+  - Rust Core MCP API suite (`test_mcp_server_core_api_*.rs`): 4/4 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MCPAPI-INV1..MCPAPI-INV5, PoR Invariant I-2.
+- MCP/API Surface & Safety verified:
+  - Full Model Context Protocol wire handling with JSON-RPC 2.0 framing (`initialize`, `ping`, `tools/list`, `tools/call`).
+  - Fail-closed capability enforcement: invocations of `aios.admin.*` tools over JSON-RPC wire strictly require valid capability grants (`grant` / `grant_id`), failing closed with `-32002` (`ERR_UNAUTHORIZED`).
+  - Memory & Bounds enforcement: payload sizes strictly capped at 1 MiB (`MAX_ARGUMENTS_SIZE`), timeouts clamped to `[1, 300]` seconds.
+  - Robust defensive sanitization: recursive NUL byte and unicode control code inspection across nested payloads.
+  - FastMCP production integration: `aios_mcp_api_ping` and `aios_mcp_api_jsonrpc` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03102-verify.md, docs/tasks/evidence/T-03102-mcp-api-surface-verification-evidenc.md.
+
+

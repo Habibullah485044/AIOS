@@ -34,6 +34,25 @@ class McpCoreMetricsSnapshot:
     average_dispatch_latency_ms: float
     health_status: HealthStatus
 
+    def validate(self) -> None:
+        if not (self.generated_at_utc or "").strip():
+            raise ValueError("generated_at_utc cannot be empty")
+        try:
+            datetime.fromisoformat(self.generated_at_utc.replace("Z", "+00:00"))
+        except Exception as e:
+            raise ValueError(f"generated_at_utc must be valid ISO timestamp: {e}")
+
+        if not (0.0 <= self.capacity_utilization_percent <= 100.0):
+            raise ValueError(f"capacity_utilization_percent ({self.capacity_utilization_percent}) out of bounds [0.0, 100.0]")
+
+        if self.total_dispatches != (self.successful_dispatches + self.failed_dispatches):
+            raise ValueError(
+                f"total_dispatches ({self.total_dispatches}) != successful ({self.successful_dispatches}) + failed ({self.failed_dispatches})"
+            )
+
+        if self.uptime_seconds < 0.0:
+            raise ValueError(f"uptime_seconds ({self.uptime_seconds}) cannot be negative")
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "generated_at_utc": self.generated_at_utc,
@@ -107,7 +126,7 @@ class McpServerCoreObservabilityService:
             else 0.0
         )
 
-        return McpCoreMetricsSnapshot(
+        snapshot = McpCoreMetricsSnapshot(
             generated_at_utc=datetime.now(timezone.utc).isoformat(),
             uptime_seconds=uptime,
             total_tools_registered=tools_count,
@@ -121,3 +140,32 @@ class McpServerCoreObservabilityService:
             average_dispatch_latency_ms=avg_latency,
             health_status=health,
         )
+        snapshot.validate()
+        return snapshot
+
+
+_GLOBAL_OBSERVABILITY_SERVICE = McpServerCoreObservabilityService()
+
+
+def get_observability_service() -> McpServerCoreObservabilityService:
+    return _GLOBAL_OBSERVABILITY_SERVICE
+
+
+def register_mcp_observability_tools(mcp_app: Any) -> None:
+    """Register MCP Server Core Observability diagnostic tools with FastMCP (T-03138)."""
+    @mcp_app.tool()
+    def aios_mcp_observability_snapshot() -> dict:
+        """Capture point-in-time runtime metrics snapshot for MCP Server Core."""
+        try:
+            snapshot = _GLOBAL_OBSERVABILITY_SERVICE.get_snapshot(
+                tools_count=len(mcp_app._tool_manager.list_tools()) if hasattr(mcp_app, "_tool_manager") else 0,
+                active_sessions=1,
+                max_capacity=64,
+            )
+            return {
+                "ok": True,
+                "snapshot": snapshot.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+

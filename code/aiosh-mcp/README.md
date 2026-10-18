@@ -1012,9 +1012,101 @@ Response payload (`content[0].text`, pretty-printed):
 - Hardening: [T-03140](../../docs/tasks/evidence/T-03140-observability-hardening.md)
 - Documentation: [T-03141](../../docs/tasks/evidence/T-03141-observability-documentation.md)
 
+---
+
+## MCP Server Core Documentation Subsystem (Phase 3)
+
+The **MCP Server Core Documentation Subsystem** provides a zero-dependency, self-contained reference repository, schema discovery, and keyword search index for AI Control Plane operators and autonomous agents (T-03143..T-03152).
+
+### Exposed FastMCP Tools
+
+1. **`aios_mcp_doc_lookup`**: Retrieves full topic documentation by `topic_id`, performs keyword search by `query`, or lists all available canonical topic IDs when called without arguments.
+
+### Example Tool Invocations
+
+#### 1. List All Available Documentation Topics
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_doc_lookup",
+    "arguments": {}
+  }
+}
+```
+
+Response payload (`content[0].text`, pretty-printed):
+```json
+{
+  "ok": true,
+  "topics": [
+    "core.api",
+    "core.config",
+    "core.doc",
+    "core.observability",
+    "core.overview",
+    "core.policy",
+    "core.tests"
+  ]
+}
+```
+
+#### 2. Retrieve Specific Topic Documentation (`core.policy`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_doc_lookup",
+    "arguments": {
+      "topic_id": "core.policy"
+    }
+  }
+}
+```
+
+#### 3. Search Documentation by Keywords (`"fastmcp"`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_mcp_doc_lookup",
+    "arguments": {
+      "query": "fastmcp"
+    }
+  }
+}
+```
+
+### Constraints & Known Limitations
+- Query bounds: Search queries clamped to `MAX_MCP_DOC_QUERY_LEN = 128` characters.
+- Result bounds: Search results clamped to `MAX_MCP_DOC_SEARCH_RESULTS = 10` matches.
+- Topic syntax & traversal immunity: Topic IDs must match `^[a-zA-Z0-9_\-\.]{1,64}$`; any path traversal characters (`..`, `/`, `\`) or NUL bytes are rejected fail-closed.
+- Unicode normalization: Queries and topic identifiers are normalized via Unicode NFKC to defend against homoglyph spoofing.
+- Capacity ceiling: Topic catalog strictly limited to 256 topics (`MAX_TOPICS_LIMIT = 256`).
+- Pure read-only execution: Generates no filesystem writes or privilege escalation under Proof-of-Restraint Invariant I-2.
+
+### Evidence & Specifications
+- Specification: [SPEC-MCP-SERVER-CORE-DOC](../../docs/SPEC-MCP-SERVER-CORE-DOC.md)
+- Research: [T-03143](../../docs/tasks/evidence/T-03143-documentation-research.md)
+- Spec Evidence: [T-03144](../../docs/tasks/evidence/T-03144-documentation-specification.md)
+- Scaffold: [T-03145](../../docs/tasks/evidence/T-03145-documentation-scaffold.md)
+- Implementation: [T-03146](../../docs/tasks/evidence/T-03146-documentation-implementation.md)
+- Unit tests: [T-03147](../../docs/tasks/evidence/T-03147-documentation-unit-test.md)
+- Integration: [T-03148](../../docs/tasks/evidence/T-03148-documentation-integration.md)
+- Security review: [T-03149](../../docs/tasks/evidence/T-03149-documentation-security-review.md)
+- Hardening: [T-03150](../../docs/tasks/evidence/T-03150-documentation-hardening.md)
+- Documentation: [T-03151](../../docs/tasks/evidence/T-03151-documentation-documentation.md)
+
 ## Tests
 
 ```bash
 python tests/test_smoke.py
 ```
+
 

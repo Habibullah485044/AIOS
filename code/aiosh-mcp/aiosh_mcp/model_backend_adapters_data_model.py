@@ -346,3 +346,57 @@ def model_endpoint_from_dict(d: Dict[str, Any]) -> ModelEndpointConfig:
         is_active=d.get("is_active", True),
     )
 
+
+def register_model_adapter_tools(mcp_app: Any) -> None:
+    """Register Model Backend Adapters tools with FastMCP (T-03168)."""
+
+    @mcp_app.tool()
+    def aios_model_endpoint_list() -> dict:
+        """List all configured model backend adapters and their capabilities. Pure read-only (PoR Invariant I-2)."""
+        try:
+            endpoints = _GLOBAL_MODEL_REGISTRY.list_endpoints()
+            return {
+                "ok": True,
+                "endpoints": [e.to_dict() for e in endpoints],
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+    @mcp_app.tool()
+    def aios_model_endpoint_register(
+        backend_id: str,
+        provider: str,
+        model_name: str,
+        base_url: Optional[str] = None,
+        api_key_env: Optional[str] = None,
+        timeout_ms: int = 30000,
+        max_retries: int = 3,
+        capability_token: str = "",
+    ) -> dict:
+        """Register or update a model backend adapter endpoint. Requires capability token (PoR Invariant I-2)."""
+        if not capability_token or not capability_token.strip():
+            return {
+                "ok": False,
+                "error": f"{MODADAPT_ERR_UNAUTHORIZED}: capability token required for endpoint registration (PoR Invariant I-2)",
+            }
+        try:
+            prov_enum = ModelProviderType(provider.lower())
+            config = ModelEndpointConfig(
+                backend_id=backend_id,
+                provider=prov_enum,
+                model_name=model_name,
+                base_url=base_url,
+                api_key_env=api_key_env,
+                timeout_ms=timeout_ms,
+                max_retries=max_retries,
+            )
+            _GLOBAL_MODEL_REGISTRY.register(config)
+            return {
+                "ok": True,
+                "backend_id": backend_id,
+                "endpoint": config.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
+

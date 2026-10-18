@@ -100,6 +100,7 @@ pub mod mcp_server_core_config;
 pub mod mcp_server_core_tests;
 pub mod mcp_server_core_policy;
 pub mod mcp_server_core_observability;
+pub mod mcp_server_core_doc;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

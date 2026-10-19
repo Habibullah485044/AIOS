@@ -33,6 +33,10 @@ MODSERV_ERR_FALLBACK_EXHAUSTED = "MODSERV_ERR_FALLBACK_EXHAUSTED"
 MODSERV_ERR_UNSUPPORTED_PROVIDER = "MODSERV_ERR_UNSUPPORTED_PROVIDER"
 MODSERV_ERR_INVALID_PAYLOAD = "MODSERV_ERR_INVALID_PAYLOAD"
 
+MAX_FALLBACK_DEPTH = 5
+MAX_REQUEST_MESSAGES = 100
+
+
 
 def redact_secrets(text: str) -> str:
     """Redacts potential API tokens, bearer keys, and environment values (MODSERV-INV4)."""
@@ -283,9 +287,25 @@ class ModelBackendService:
         """Dispatches completion request across primary and fallback endpoints."""
         request.validate()
 
+        if len(request.messages) > MAX_REQUEST_MESSAGES:
+            raise ModelServiceError(
+                MODSERV_ERR_INVALID_PAYLOAD,
+                f"Request message count ({len(request.messages)}) exceeds ceiling of {MAX_REQUEST_MESSAGES}",
+            )
+
         chain = [request.model_id]
         if fallback_backends:
-            chain.extend([b for b in fallback_backends if b != request.model_id])
+            seen = {request.model_id}
+            for b in fallback_backends:
+                if b not in seen:
+                    chain.append(b)
+                    seen.add(b)
+
+        if len(chain) > MAX_FALLBACK_DEPTH:
+            raise ModelServiceError(
+                MODSERV_ERR_INVALID_PAYLOAD,
+                f"Fallback chain depth ({len(chain)}) exceeds max allowed {MAX_FALLBACK_DEPTH}",
+            )
 
         last_error: Optional[Exception] = None
         for backend_id in chain:

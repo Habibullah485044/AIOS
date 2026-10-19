@@ -14,6 +14,11 @@ pub const MODSERV_ERR_AUTH: &str = "MODSERV_ERR_AUTH";
 pub const MODSERV_ERR_UNAVAILABLE: &str = "MODSERV_ERR_UNAVAILABLE";
 pub const MODSERV_ERR_FALLBACK_EXHAUSTED: &str = "MODSERV_ERR_FALLBACK_EXHAUSTED";
 pub const MODSERV_ERR_UNSUPPORTED_PROVIDER: &str = "MODSERV_ERR_UNSUPPORTED_PROVIDER";
+pub const MODSERV_ERR_INVALID_PAYLOAD: &str = "MODSERV_ERR_INVALID_PAYLOAD";
+
+pub const MAX_FALLBACK_DEPTH: usize = 5;
+pub const MAX_REQUEST_MESSAGES: usize = 100;
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelServiceHealth {

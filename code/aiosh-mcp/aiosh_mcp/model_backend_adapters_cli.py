@@ -125,13 +125,18 @@ def parse_model_cli_args(args: List[str]) -> Tuple[str, Dict[str, Any]]:
             if i >= len(args):
                 raise ValueError("--temperature requires a float")
             try:
-                options["temperature"] = float(args[i])
+                t = float(args[i])
             except ValueError:
                 raise ValueError(f"Invalid temperature: {args[i]}")
+            if t < 0.0 or t > 2.0:
+                raise ValueError(f"Invalid temperature: {args[i]} (must be within [0.0, 2.0])")
+            options["temperature"] = t
         elif flag == "--fallback":
             i += 1
             if i >= len(args):
                 raise ValueError("--fallback requires a backend id")
+            if len(options["fallbacks"]) >= 5:
+                raise ValueError("Fallback list exceeds max depth of 5")
             options["fallbacks"].append(args[i])
         elif flag == "--token":
             i += 1
@@ -161,7 +166,13 @@ def parse_model_cli_args(args: List[str]) -> Tuple[str, Dict[str, Any]]:
                 options["timeout"] = int(args[i])
             except ValueError:
                 raise ValueError(f"Invalid timeout: {args[i]}")
+            if options["timeout"] < 1000 or options["timeout"] > 300000:
+                raise ValueError(f"Timeout {options['timeout']} out of bounds [1000, 300000] ms")
         elif not flag.startswith("-"):
+            if len(flag) > 64:
+                raise ValueError(f"Positional identifier exceeds max length of 64: {flag[:16]}...")
+            if ".." in flag or "/" in flag or "\\" in flag:
+                raise ValueError(f"Path traversal characters forbidden in identifier: {flag}")
             options["positional"].append(flag)
         else:
             raise ValueError(f"Unknown option '{flag}'")

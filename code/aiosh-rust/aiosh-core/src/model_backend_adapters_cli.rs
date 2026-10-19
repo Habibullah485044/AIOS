@@ -153,12 +153,19 @@ pub fn parse_model_cli_args(args: &[String]) -> Result<ModelCliSubcommand, (i32,
                 if i >= args.len() {
                     return Err((EXIT_USAGE, "--temperature requires a float".to_string()));
                 }
-                temperature = args[i].parse::<f32>().map_err(|_| (EXIT_USAGE, format!("Invalid temperature: {}", args[i])))?;
+                let t = args[i].parse::<f32>().map_err(|_| (EXIT_USAGE, format!("Invalid temperature: {}", args[i])))?;
+                if !(0.0..=2.0).contains(&t) {
+                    return Err((EXIT_USAGE, format!("Invalid temperature: {} (must be within [0.0, 2.0])", args[i])));
+                }
+                temperature = t;
             }
             "--fallback" => {
                 i += 1;
                 if i >= args.len() {
                     return Err((EXIT_USAGE, "--fallback requires a backend id".to_string()));
+                }
+                if fallbacks.len() >= 5 {
+                    return Err((EXIT_USAGE, "Fallback list exceeds max depth of 5".to_string()));
                 }
                 fallbacks.push(args[i].clone());
             }
@@ -195,12 +202,24 @@ pub fn parse_model_cli_args(args: &[String]) -> Result<ModelCliSubcommand, (i32,
                 if i >= args.len() {
                     return Err((EXIT_USAGE, "--timeout requires milliseconds".to_string()));
                 }
-                timeout = Some(args[i].parse::<u64>().map_err(|_| (EXIT_USAGE, format!("Invalid timeout: {}", args[i])))?);
+                let ms = args[i].parse::<u64>().map_err(|_| (EXIT_USAGE, format!("Invalid timeout: {}", args[i])))?;
+                if !(1000..=300000).contains(&ms) {
+                    return Err((EXIT_USAGE, format!("Timeout {} out of bounds [1000, 300000] ms", ms)));
+                }
+                timeout = Some(ms);
             }
             other if other.starts_with('-') => {
                 return Err((EXIT_USAGE, format!("Unknown option '{}'", other)));
             }
-            pos => positional.push(pos.to_string()),
+            pos => {
+                if pos.len() > 64 {
+                    return Err((EXIT_USAGE, format!("Positional identifier exceeds max length of 64: {}", pos)));
+                }
+                if pos.contains("..") || pos.contains('/') || pos.contains('\\') {
+                    return Err((EXIT_USAGE, format!("Path traversal characters forbidden in identifier: {}", pos)));
+                }
+                positional.push(pos.to_string());
+            }
         }
         i += 1;
     }

@@ -258,3 +258,170 @@ pub fn parse_model_cli_args(args: &[String]) -> Result<ModelCliSubcommand, (i32,
         other => Err((EXIT_USAGE, format!("Unknown subcommand '{}'", other))),
     }
 }
+
+pub fn dispatch_model_cli(
+    subcmd: &ModelCliSubcommand,
+    endpoints: &mut Vec<ModelEndpointConfig>,
+) -> ModelCliOutput {
+    match subcmd {
+        ModelCliSubcommand::List { provider, active_only, json } => {
+            let mut filtered = endpoints.clone();
+            if let Some(ref prov) = provider {
+                filtered.retain(|e| {
+                    let prov_str = serde_json::to_string(&e.provider).unwrap_or_default().replace('"', "");
+                    prov_str.eq_ignore_ascii_case(prov)
+                });
+            }
+            if *active_only {
+                filtered.retain(|e| e.is_active);
+            }
+            if *json {
+                let payload = json!({
+                    "status": "success",
+                    "ok": true,
+                    "exit_code": EXIT_SUCCESS,
+                    "count": filtered.len(),
+                    "endpoints": filtered,
+                });
+                ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+            } else {
+                let lines: Vec<String> = filtered.iter().map(|e| {
+                    format!("{} [{:?}] model={} active={}", e.backend_id, e.provider, e.model_name, e.is_active)
+                }).collect();
+                ModelCliOutput::success(if lines.is_empty() { "No endpoints found".to_string() } else { lines.join("\n") }, None)
+            }
+        }
+        ModelCliSubcommand::Show { backend_id, json } => {
+            if let Some(cfg) = endpoints.iter().find(|e| &e.backend_id == backend_id) {
+                if *json {
+                    let payload = json!({
+                        "status": "success",
+                        "ok": true,
+                        "exit_code": EXIT_SUCCESS,
+                        "endpoint": cfg,
+                    });
+                    ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+                } else {
+                    ModelCliOutput::success(format!("Backend: {}\nProvider: {:?}\nModel: {}\nActive: {}", cfg.backend_id, cfg.provider, cfg.model_name, cfg.is_active), None)
+                }
+            } else {
+                ModelCliOutput::failure_with_json(EXIT_FAILURE, format!("Backend '{}' not found", backend_id), *json)
+            }
+        }
+        ModelCliSubcommand::Health { backend_id, json } => {
+            if let Some(ref id) = backend_id {
+                if let Some(cfg) = endpoints.iter().find(|e| &e.backend_id == id) {
+                    if *json {
+                        let payload = json!({
+                            "status": "success",
+                            "ok": true,
+                            "exit_code": EXIT_SUCCESS,
+                            "data": {
+                                "backend_id": id,
+                                "active": cfg.is_active,
+                                "adapter_available": true
+                            }
+                        });
+                        ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+                    } else {
+                        ModelCliOutput::success(format!("{}: active={}, adapter_ready=true", id, cfg.is_active), None)
+                    }
+                } else {
+                    ModelCliOutput::failure_with_json(EXIT_FAILURE, format!("Unknown backend: {}", id), *json)
+                }
+            } else {
+                let active_count = endpoints.iter().filter(|e| e.is_active).count();
+                if *json {
+                    let payload = json!({
+                        "status": "success",
+                        "ok": true,
+                        "exit_code": EXIT_SUCCESS,
+                        "data": {
+                            "total_endpoints": endpoints.len(),
+                            "active_endpoints": active_count,
+                            "adapters_available": ["mock", "openai_compatible", "anthropic", "gemini", "ollama"]
+                        }
+                    });
+                    ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+                } else {
+                    ModelCliOutput::success(format!("Health Summary: {}/{} active endpoints.", active_count, endpoints.len()), None)
+                }
+            }
+        }
+        ModelCliSubcommand::Complete { backend_id, prompt: _, temperature: _, fallbacks: _, token, json } => {
+            if token.as_ref().map_or(true, |t| t.trim().is_empty()) {
+                return ModelCliOutput::failure_with_json(
+                    EXIT_UNAUTHORIZED,
+                    "MODSERV_ERR_UNAUTHORIZED: subcommand 'complete' requires a capability token (--token)",
+                    *json,
+                );
+            }
+            if let Some(cfg) = endpoints.iter().find(|e| &e.backend_id == backend_id) {
+                let resp_payload = json!({
+                    "id": "resp-mock-1",
+                    "model": cfg.model_name,
+                    "content": "Mock completion response",
+                    "finish_reason": "stop",
+                    "latency_ms": 1.5
+                });
+                if *json {
+                    let payload = json!({
+                        "status": "success",
+                        "ok": true,
+                        "exit_code": EXIT_SUCCESS,
+                        "response": resp_payload
+                    });
+                    ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+                } else {
+                    ModelCliOutput::success(format!("[{}] Mock completion response", cfg.model_name), None)
+                }
+            } else {
+                ModelCliOutput::failure_with_json(EXIT_FAILURE, format!("Backend '{}' not found", backend_id), *json)
+            }
+        }
+        ModelCliSubcommand::Register { backend_id, provider, model, base_url, env, timeout, token, json } => {
+            if token.as_ref().map_or(true, |t| t.trim().is_empty()) {
+                return ModelCliOutput::failure_with_json(
+                    EXIT_UNAUTHORIZED,
+                    "MODSERV_ERR_UNAUTHORIZED: subcommand 'register' requires a capability token (--token)",
+                    *json,
+                );
+            }
+            let prov = match provider.to_lowercase().as_str() {
+                "mock" => ModelProviderType::Mock,
+                "openai_compatible" => ModelProviderType::OpenaiCompatible,
+                "anthropic" => ModelProviderType::Anthropic,
+                "gemini" => ModelProviderType::Gemini,
+                "ollama" => ModelProviderType::Ollama,
+                _ => return ModelCliOutput::failure_with_json(EXIT_USAGE, format!("Invalid provider: {}", provider), *json),
+            };
+            let new_cfg = ModelEndpointConfig {
+                backend_id: backend_id.clone(),
+                provider: prov,
+                model_name: model.clone(),
+                base_url: base_url.clone(),
+                api_key_env: env.clone(),
+                timeout_ms: timeout.unwrap_or(30000),
+                max_retries: 3,
+                capabilities: ModelCapabilities::default(),
+                is_active: true,
+            };
+            if let Err(e) = new_cfg.validate() {
+                return ModelCliOutput::failure_with_json(EXIT_FAILURE, e, *json);
+            }
+            endpoints.retain(|e| e.backend_id != *backend_id);
+            endpoints.push(new_cfg.clone());
+            if *json {
+                let payload = json!({
+                    "status": "success",
+                    "ok": true,
+                    "exit_code": EXIT_SUCCESS,
+                    "registered": new_cfg
+                });
+                ModelCliOutput::success(serde_json::to_string(&payload).unwrap_or_default(), Some(payload))
+            } else {
+                ModelCliOutput::success(format!("Successfully registered backend '{}'", backend_id), None)
+            }
+        }
+    }
+}

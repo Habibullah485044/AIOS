@@ -341,3 +341,59 @@ class ModelBackendService:
             ],
         }
         return status
+
+
+_GLOBAL_MODEL_SERVICE = ModelBackendService()
+
+
+def register_model_service_tools(mcp_app: Any) -> None:
+    """Register Model Backend Adapters Core Service tools with FastMCP (T-03178)."""
+
+    @mcp_app.tool()
+    async def aios_model_complete(
+        model_id: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        fallback_backends: Optional[List[str]] = None,
+        capability_token: str = "",
+    ) -> dict:
+        """Execute model completion across adapters. Requires capability token (PoR Invariant I-2)."""
+        if not capability_token or not capability_token.strip():
+            return {
+                "ok": False,
+                "error": "MODSERV_ERR_UNAUTHORIZED: capability token required for model completion (PoR Invariant I-2)",
+            }
+        try:
+            parsed_messages = [
+                ModelMessage(
+                    role=m.get("role", "user"),
+                    content=m.get("content", ""),
+                    name=m.get("name"),
+                    tool_call_id=m.get("tool_call_id"),
+                )
+                for m in messages
+            ]
+            req = ModelRequest(
+                model_id=model_id,
+                messages=parsed_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            response = await _GLOBAL_MODEL_SERVICE.complete(req, fallback_backends=fallback_backends)
+            return {
+                "ok": True,
+                "response": response.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": redact_secrets(str(exc))}
+
+    @mcp_app.tool()
+    def aios_model_service_health(backend_id: Optional[str] = None) -> dict:
+        """Operational health check of model backend service. Pure read-only (PoR Invariant I-2)."""
+        try:
+            res = _GLOBAL_MODEL_SERVICE.health_check(backend_id=backend_id)
+            return {"ok": True, **res}
+        except Exception as exc:
+            return {"ok": False, "error": redact_secrets(str(exc))}
+

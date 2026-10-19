@@ -912,6 +912,9 @@ mcp_server_core_recovery_mod.register_mcp_recovery_tools(mcp)
 from . import model_backend_adapters_data_model as model_backend_adapters_data_model_mod
 model_backend_adapters_data_model_mod.register_model_adapter_tools(mcp)
 
+from . import model_backend_adapters_service as model_backend_adapters_service_mod
+model_backend_adapters_service_mod.register_model_service_tools(mcp)
+
 
 
 

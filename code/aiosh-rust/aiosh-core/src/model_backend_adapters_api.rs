@@ -264,3 +264,84 @@ impl ModelBackendApiHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rust_api_ping() {
+        let handler = ModelBackendApiHandler::default();
+        let res = handler.handle_ping(Some(json!(1)));
+        assert_eq!(res["jsonrpc"], "2.0");
+        assert_eq!(res["result"]["status"], "ok");
+    }
+
+    #[test]
+    fn test_rust_api_list_and_show() {
+        let handler = ModelBackendApiHandler::default();
+        let res_list = handler.handle_list(Some(json!(2)), None);
+        assert_eq!(res_list["result"]["ok"], true);
+        assert_eq!(res_list["result"]["count"], 1);
+
+        let res_show = handler.handle_show(Some(json!(3)), Some(&json!({"backend_id": "mock-default"})));
+        assert_eq!(res_show["result"]["ok"], true);
+        assert_eq!(res_show["result"]["endpoint"]["backend_id"], "mock-default");
+
+        let res_nf = handler.handle_show(Some(json!(4)), Some(&json!({"backend_id": "missing"})));
+        assert_eq!(res_nf["error"]["code"], ERR_NOT_FOUND);
+    }
+
+    #[test]
+    fn test_rust_api_por_token_gating() {
+        let mut handler = ModelBackendApiHandler::default();
+        // Complete without token rejected
+        let res_comp_no = handler.handle_complete(
+            Some(json!(5)),
+            Some(&json!({"backend_id": "mock-default", "prompt": "hi"})),
+        );
+        assert_eq!(res_comp_no["error"]["code"], ERR_UNAUTHORIZED);
+
+        // Complete with token succeeds
+        let res_comp_ok = handler.handle_complete(
+            Some(json!(6)),
+            Some(&json!({
+                "backend_id": "mock-default",
+                "prompt": "hi",
+                "capability_token": "grant-token-1"
+            })),
+        );
+        assert_eq!(res_comp_ok["result"]["ok"], true);
+
+        // Register without token rejected
+        let res_reg_no = handler.handle_register(
+            Some(json!(7)),
+            Some(&json!({"backend_id": "new-1", "provider": "mock", "model_name": "m"})),
+        );
+        assert_eq!(res_reg_no["error"]["code"], ERR_UNAUTHORIZED);
+
+        // Register with token succeeds
+        let res_reg_ok = handler.handle_register(
+            Some(json!(8)),
+            Some(&json!({
+                "backend_id": "new-1",
+                "provider": "mock",
+                "model_name": "m",
+                "capability_token": "grant-token-1"
+            })),
+        );
+        assert_eq!(res_reg_ok["result"]["ok"], true);
+    }
+
+    #[test]
+    fn test_rust_api_request_dispatch() {
+        let mut handler = ModelBackendApiHandler::default();
+        let body = json!({"id": 10, "method": "model_backend_ping"});
+        let res = handler.handle_request(&body);
+        assert_eq!(res["result"]["status"], "ok");
+
+        let body_unk = json!({"id": 11, "method": "invalid_method"});
+        let res_unk = handler.handle_request(&body_unk);
+        assert_eq!(res_unk["error"]["code"], -32601);
+    }
+}

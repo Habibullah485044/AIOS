@@ -915,6 +915,9 @@ model_backend_adapters_data_model_mod.register_model_adapter_tools(mcp)
 from . import model_backend_adapters_service as model_backend_adapters_service_mod
 model_backend_adapters_service_mod.register_model_service_tools(mcp)
 
+from . import model_backend_adapters_api as model_backend_adapters_api_mod
+model_backend_adapters_api_mod.register_model_backend_tools(mcp)
+
 
 
 

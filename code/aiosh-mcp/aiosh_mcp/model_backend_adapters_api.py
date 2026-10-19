@@ -36,6 +36,12 @@ PROTOCOL_VERSION: str = "2025-06-18"
 SERVER_NAME: str = "aiosh-model-backend"
 SERVER_VERSION: str = "0.1.0"
 
+API_METHOD_LIST: str = "model_backend_list"
+API_METHOD_SHOW: str = "model_backend_show"
+API_METHOD_HEALTH: str = "model_backend_health"
+API_METHOD_COMPLETE: str = "model_backend_complete"
+API_METHOD_REGISTER: str = "model_backend_register"
+
 ERR_SUCCESS: int = 0
 ERR_INVALID_PARAMS: int = -32602
 ERR_UNAUTHORIZED: int = -32003

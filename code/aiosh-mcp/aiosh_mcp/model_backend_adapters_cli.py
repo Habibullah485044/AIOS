@@ -339,3 +339,18 @@ def dispatch_model_cli(args: List[str], service: Optional[ModelBackendService] =
         return ModelCliOutput.success(f"Successfully registered backend '{backend_id}'")
 
     return ModelCliOutput.failure_with_json(EXIT_USAGE, f"Unhandled subcommand '{subcmd}'", json_mode=json_mode)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI execution entrypoint returning exit code."""
+    import sys
+    args = argv if argv is not None else sys.argv[1:]
+    out = dispatch_model_cli(args)
+    if out.message:
+        print(out.message)
+    return out.exit_code
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

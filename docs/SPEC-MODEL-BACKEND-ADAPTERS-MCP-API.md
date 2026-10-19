@@ -87,3 +87,105 @@ Both the Python runtime (`aiosh_mcp.model_backend_adapters_api`) and the Rust ru
 | `-32004` | `ERR_NOT_FOUND` | Specified backend_id not found in registry |
 | `-32005` | `ERR_TIMEOUT` | Upstream provider request exceeded configured timeout |
 | `-32603` | `ERR_INTERNAL` | Unhandled internal exception |
+
+---
+
+## 5. Usage & Wire Invocation Examples
+
+### 5.1 Enumerate Model Backends (Pure Read)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "model_backend_list",
+  "params": {
+    "provider": "mock",
+    "active_only": true
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "status": "success",
+    "ok": true,
+    "count": 1,
+    "endpoints": [
+      {
+        "backend_id": "mock-default",
+        "provider": "mock",
+        "model_name": "mock-model-v1",
+        "is_active": true
+      }
+    ]
+  }
+}
+```
+
+### 5.2 Execute Model Inference with Fallback (Gated Mutation)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "model_backend_complete",
+  "params": {
+    "backend_id": "mock-default",
+    "prompt": "Evaluate system security posture",
+    "temperature": 0.5,
+    "fallbacks": ["secondary-backend"],
+    "capability_token": "grant-cap-token-883"
+  }
+}
+```
+
+### 5.3 Register Dynamic Endpoint (Gated Mutation)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "model_backend_register",
+  "params": {
+    "backend_id": "custom-openai",
+    "provider": "openai_compatible",
+    "model_name": "gpt-4o",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "timeout_ms": 30000,
+    "capability_token": "grant-cap-token-884"
+  }
+}
+```
+
+---
+
+## 6. Constraints & Known Limitations
+
+1. **Proof-of-Restraint Gating**:
+   - `model_backend_complete` and `model_backend_register` strictly require a valid capability token. Missing or whitespace tokens fail-closed immediately with `-32003`.
+2. **Payload Size Caps**:
+   - Prompt content is strictly bounded at 1 MiB (`1024 * 1024` bytes) and NUL bytes (`\0`) are prohibited.
+3. **Fallback Depth**:
+   - Chained fallbacks are clamped to at most 5 alternative endpoints to avoid cascading latencies.
+4. **Identifier Formatting**:
+   - Backend identifiers must be between 1 and 64 characters, and cannot contain path traversal (`..`, `/`, `\`) or ASCII control characters.
+5. **Streaming Primitive**:
+   - In accordance with ADR-0035 §5, token streaming is deferred to future sprint milestones; completions return atomic responses.
+
+---
+
+## 7. Evidence & Implementation References
+
+- Research Evidence: [docs/tasks/evidence/T-03193-mcp-api-surface-research.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03193-mcp-api-surface-research.md)
+- Specification Evidence: [docs/tasks/evidence/T-03194-mcp-api-surface-specification.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03194-mcp-api-surface-specification.md)
+- Scaffold Evidence: [docs/tasks/evidence/T-03195-mcp-api-surface-scaffold.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03195-mcp-api-surface-scaffold.md)
+- Implementation Evidence: [docs/tasks/evidence/T-03196-mcp-api-surface-implementation.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03196-mcp-api-surface-implementation.md)
+- Unit Test Evidence: [docs/tasks/evidence/T-03197-mcp-api-surface-unit-test.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03197-mcp-api-surface-unit-test.md)
+- Integration Evidence: [docs/tasks/evidence/T-03198-mcp-api-surface-integration.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03198-mcp-api-surface-integration.md)
+- Security Review Evidence: [docs/tasks/evidence/T-03199-mcp-api-surface-security-review.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03199-mcp-api-surface-security-review.md)
+- Hardening Evidence: [docs/tasks/evidence/T-03200-mcp-api-surface-hardening.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03200-mcp-api-surface-hardening.md)
+- Documentation Evidence: [docs/tasks/evidence/T-03201-mcp-api-surface-documentation.md](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03201-mcp-api-surface-documentation.md)
+

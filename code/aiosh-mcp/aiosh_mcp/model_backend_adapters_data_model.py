@@ -254,6 +254,10 @@ class ModelEndpointRegistry:
     def __init__(self) -> None:
         self._endpoints: Dict[str, ModelEndpointConfig] = {}
 
+    @classmethod
+    def default(cls) -> "ModelEndpointRegistry":
+        return build_default_model_registry()
+
     def register(self, config: ModelEndpointConfig) -> None:
         config.validate()
         if len(self._endpoints) >= MAX_ENDPOINTS and config.backend_id not in self._endpoints:

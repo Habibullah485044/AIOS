@@ -1276,6 +1276,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_model_endpoint_list` (read-only, zero tokens) and `aios_model_endpoint_register` (gated mutation) registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03172-data-model-verification-evidenc.md.
 
+## T-03182 - AI Control Plane Model Backend Adapters / core service: Verification & Evidence (2026-10-18)
+- Milestone closeout for Model Backend Adapters core service subsystem (T-03173..T-03182).
+- Verification battery:
+  - Python Model Backend Adapters Core Service suite (`test_model_backend_adapters_service_*.py`): 20/20 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODSERV-INV1..MODSERV-INV5, PoR Invariant I-2.
+- Core Service Subsystem & Safety verified:
+  - Universal provider adapter dispatch across Mock, OpenAI-compatible, Anthropic Claude, Google Gemini, and Ollama.
+  - Guaranteed token conservation: `total_tokens == prompt_tokens + completion_tokens` validated across all responses.
+  - Resilient fallback progression with error classification (`TIMEOUT`, `RATE_LIMIT`, `AUTH`, `UNAVAILABLE`) and fallback exhaustion handling.
+  - Hardened input limits: `MAX_REQUEST_MESSAGES = 100`, `MAX_FALLBACK_DEPTH = 5`, and cyclic fallback deduplication.
+  - Zero-leak secret redaction: masks Bearer, `sk-*`, and `ghp_*` tokens across all telemetry and exception strings.
+  - FastMCP production integration: `aios_model_complete` (gated mutation requiring capability token) and `aios_model_service_health` (pure read-only query requiring zero tokens) registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03182-core-service-verification-evidenc.md.
+
+
 
 
 

@@ -78,6 +78,21 @@ def make_jsonrpc_result(
     }
 
 
+def validate_backend_id(backend_id: str) -> Optional[str]:
+    """Validates backend identifier format and bounds.
+    Returns error message if invalid, None if valid.
+    """
+    if not backend_id:
+        return "Backend identifier cannot be empty"
+    if len(backend_id) > 64:
+        return f"Backend identifier exceeds 64 characters (length: {len(backend_id)})"
+    if any(c in backend_id for c in ("\0", "/", "\\")) or ".." in backend_id:
+        return "Backend identifier contains prohibited path traversal or control characters"
+    if any(ord(c) < 32 or ord(c) == 127 for c in backend_id):
+        return "Backend identifier contains prohibited control characters"
+    return None
+
+
 class ModelBackendApiHandler:
     """Dispatches wire MCP tool calls and JSON-RPC 2.0 requests to ModelBackendService."""
 
@@ -131,6 +146,10 @@ class ModelBackendApiHandler:
         if not backend_id:
             return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, "Missing 'backend_id' parameter")
 
+        err = validate_backend_id(str(backend_id))
+        if err:
+            return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, err)
+
         try:
             cfg = self.service.registry.get(backend_id)
         except KeyError:
@@ -154,6 +173,9 @@ class ModelBackendApiHandler:
         p = params or {}
         backend_id = p.get("backend_id")
         if backend_id:
+            err = validate_backend_id(str(backend_id))
+            if err:
+                return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, err)
             try:
                 cfg = self.service.registry.get(backend_id)
             except KeyError:
@@ -193,6 +215,16 @@ class ModelBackendApiHandler:
         if not prompt:
             return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, "Missing 'prompt' parameter")
 
+        err = validate_backend_id(str(backend_id))
+        if err:
+            return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, err)
+
+        if "\0" in str(prompt):
+            return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, "Prompt contains prohibited NUL byte")
+
+        if len(str(prompt).encode("utf-8")) > 1024 * 1024:
+            return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, "Prompt exceeds 1 MiB limit")
+
         temp = p.get("temperature", 0.7)
         if temp < 0.0 or temp > 2.0:
             return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, f"Temperature {temp} out of bounds [0.0, 2.0]")
@@ -204,6 +236,10 @@ class ModelBackendApiHandler:
                 ERR_INVALID_PARAMS,
                 f"Fallback depth ({len(fallbacks)}) exceeds maximum of {MAX_FALLBACK_DEPTH}",
             )
+        for fb in fallbacks:
+            fb_err = validate_backend_id(str(fb))
+            if fb_err:
+                return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, f"Fallback backend invalid: {fb_err}")
 
         req = ModelRequest(
             model_id=backend_id,
@@ -259,6 +295,10 @@ class ModelBackendApiHandler:
                 ERR_INVALID_PARAMS,
                 "Missing required parameters: 'backend_id', 'provider', 'model_name'",
             )
+
+        err = validate_backend_id(str(backend_id))
+        if err:
+            return make_jsonrpc_error(req_id, ERR_INVALID_PARAMS, err)
 
         try:
             provider = ModelProviderType(str(provider_str).lower())

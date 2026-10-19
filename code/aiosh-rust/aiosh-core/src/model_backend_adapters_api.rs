@@ -41,6 +41,22 @@ impl Default for ModelBackendApiHandler {
     }
 }
 
+pub fn validate_backend_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("Backend identifier cannot be empty");
+    }
+    if id.len() > 64 {
+        return Err("Backend identifier exceeds 64 characters");
+    }
+    if id.contains('\0') || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err("Backend identifier contains prohibited path traversal or control characters");
+    }
+    if id.chars().any(|c| (c as u32) < 32 || (c as u32) == 127) {
+        return Err("Backend identifier contains prohibited control characters");
+    }
+    Ok(())
+}
+
 impl ModelBackendApiHandler {
     pub fn new(endpoints: Vec<ModelEndpointConfig>) -> Self {
         Self { endpoints }
@@ -108,6 +124,10 @@ impl ModelBackendApiHandler {
             None => return Self::make_error(id, ERR_INVALID_PARAMS, "Missing 'backend_id' parameter"),
         };
 
+        if let Err(e) = validate_backend_id(backend_id) {
+            return Self::make_error(id, ERR_INVALID_PARAMS, e);
+        }
+
         match self.endpoints.iter().find(|e| e.backend_id == backend_id) {
             Some(cfg) => Self::make_result(id, json!({
                 "status": "success",
@@ -121,6 +141,9 @@ impl ModelBackendApiHandler {
     pub fn handle_health(&self, id: Option<Value>, params: Option<&Value>) -> Value {
         let backend_id = params.and_then(|p| p.get("backend_id")).and_then(|v| v.as_str());
         if let Some(bid) = backend_id {
+            if let Err(e) = validate_backend_id(bid) {
+                return Self::make_error(id, ERR_INVALID_PARAMS, e);
+            }
             match self.endpoints.iter().find(|e| e.backend_id == bid) {
                 Some(cfg) => Self::make_result(id, json!({
                     "status": "success",
@@ -162,13 +185,40 @@ impl ModelBackendApiHandler {
             None => return Self::make_error(id, ERR_INVALID_PARAMS, "Missing 'backend_id' parameter"),
         };
 
+        if let Err(e) = validate_backend_id(backend_id) {
+            return Self::make_error(id, ERR_INVALID_PARAMS, e);
+        }
+
         let prompt = match params.and_then(|p| p.get("prompt")).and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Self::make_error(id, ERR_INVALID_PARAMS, "Missing 'prompt' parameter"),
         };
 
+        if prompt.contains('\0') {
+            return Self::make_error(id, ERR_INVALID_PARAMS, "Prompt contains prohibited NUL byte");
+        }
+
         if prompt.as_bytes().len() > 1024 * 1024 {
             return Self::make_error(id, ERR_INVALID_PARAMS, "Prompt exceeds 1 MiB limit");
+        }
+
+        if let Some(temp) = params.and_then(|p| p.get("temperature")).and_then(|v| v.as_f64()) {
+            if temp < 0.0 || temp > 2.0 {
+                return Self::make_error(id, ERR_INVALID_PARAMS, format!("Temperature {} out of bounds [0.0, 2.0]", temp));
+            }
+        }
+
+        if let Some(fbs) = params.and_then(|p| p.get("fallbacks")).and_then(|v| v.as_array()) {
+            if fbs.len() > 5 {
+                return Self::make_error(id, ERR_INVALID_PARAMS, format!("Fallback depth ({}) exceeds maximum of 5", fbs.len()));
+            }
+            for fb in fbs {
+                if let Some(s) = fb.as_str() {
+                    if let Err(e) = validate_backend_id(s) {
+                        return Self::make_error(id, ERR_INVALID_PARAMS, format!("Fallback backend invalid: {}", e));
+                    }
+                }
+            }
         }
 
         match self.endpoints.iter().find(|e| e.backend_id == backend_id) {
@@ -201,6 +251,11 @@ impl ModelBackendApiHandler {
             Some(b) => b,
             None => return Self::make_error(id, ERR_INVALID_PARAMS, "Missing 'backend_id'"),
         };
+
+        if let Err(e) = validate_backend_id(backend_id) {
+            return Self::make_error(id, ERR_INVALID_PARAMS, e);
+        }
+
         let prov_str = match params.and_then(|p| p.get("provider")).and_then(|v| v.as_str()) {
             Some(p) => p,
             None => return Self::make_error(id, ERR_INVALID_PARAMS, "Missing 'provider'"),
@@ -219,13 +274,18 @@ impl ModelBackendApiHandler {
             _ => return Self::make_error(id, ERR_INVALID_PARAMS, format!("Invalid provider: {}", prov_str)),
         };
 
+        let timeout_ms = params.and_then(|p| p.get("timeout_ms")).and_then(|v| v.as_u64()).unwrap_or(30000);
+        if timeout_ms < 1000 || timeout_ms > 300000 {
+            return Self::make_error(id, ERR_INVALID_PARAMS, format!("Timeout {} out of bounds [1000, 300000] ms", timeout_ms));
+        }
+
         let new_cfg = ModelEndpointConfig {
             backend_id: backend_id.to_string(),
             provider: prov,
             model_name: model_name.to_string(),
             base_url: params.and_then(|p| p.get("base_url")).and_then(|v| v.as_str()).map(|s| s.to_string()),
             api_key_env: params.and_then(|p| p.get("api_key_env")).and_then(|v| v.as_str()).map(|s| s.to_string()),
-            timeout_ms: params.and_then(|p| p.get("timeout_ms")).and_then(|v| v.as_u64()).unwrap_or(30000),
+            timeout_ms,
             max_retries: 3,
             capabilities: ModelCapabilities::default(),
             is_active: true,
@@ -343,5 +403,41 @@ mod tests {
         let body_unk = json!({"id": 11, "method": "invalid_method"});
         let res_unk = handler.handle_request(&body_unk);
         assert_eq!(res_unk["error"]["code"], -32601);
+    }
+
+    #[test]
+    fn test_rust_api_hardening() {
+        let handler = ModelBackendApiHandler::default();
+
+        // Path traversal in show rejected
+        let res_trav = handler.handle_show(Some(json!(12)), Some(&json!({"backend_id": "../secret"})));
+        assert_eq!(res_trav["error"]["code"], ERR_INVALID_PARAMS);
+
+        // Path traversal in health rejected
+        let res_htrav = handler.handle_health(Some(json!(13)), Some(&json!({"backend_id": "dir/escape"})));
+        assert_eq!(res_htrav["error"]["code"], ERR_INVALID_PARAMS);
+
+        // NUL byte in prompt rejected
+        let res_nul = handler.handle_complete(
+            Some(json!(14)),
+            Some(&json!({
+                "backend_id": "mock-default",
+                "prompt": "hello\0world",
+                "capability_token": "grant-1"
+            })),
+        );
+        assert_eq!(res_nul["error"]["code"], ERR_INVALID_PARAMS);
+
+        // Fallback depth > 5 rejected
+        let res_fbs = handler.handle_complete(
+            Some(json!(15)),
+            Some(&json!({
+                "backend_id": "mock-default",
+                "prompt": "hi",
+                "capability_token": "grant-1",
+                "fallbacks": ["f1", "f2", "f3", "f4", "f5", "f6"]
+            })),
+        );
+        assert_eq!(res_fbs["error"]["code"], ERR_INVALID_PARAMS);
     }
 }

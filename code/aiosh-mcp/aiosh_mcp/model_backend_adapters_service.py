@@ -38,8 +38,8 @@ def redact_secrets(text: str) -> str:
     """Redacts potential API tokens, bearer keys, and environment values (MODSERV-INV4)."""
     if not text:
         return text
-    # Redact sk-*, ghp_*, Bearer tokens
-    redacted = re.sub(r"(?:Bearer\s+|sk-[a-zA-Z0-9_\-]{10,}|ghp_[a-zA-Z0-9_\-]{10,})", "[REDACTED_SECRET]", text)
+    # Redact Bearer <token>, sk-*, ghp_*
+    redacted = re.sub(r"(?:Bearer\s+[a-zA-Z0-9_\-\.]+|sk-[a-zA-Z0-9_\-]{10,}|ghp_[a-zA-Z0-9_\-]{10,})", "[REDACTED_SECRET]", text)
     return redacted
 
 

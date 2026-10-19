@@ -7,5 +7,8 @@ from . import mcp_server_core_service
 from . import mcp_server_core_cli
 from . import mcp_server_core_policy
 from . import mcp_server_core_observability
+from . import model_backend_adapters_data_model
+from . import model_backend_adapters_service
+from . import model_backend_adapters_cli
 
 

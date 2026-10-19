@@ -27,6 +27,7 @@ def test_scaffold_adapter_registration():
     assert isinstance(adapter, MockModelAdapter)
 
     # Missing adapter raises
+    del svc._adapters[ModelProviderType.ANTHROPIC]
     with pytest.raises(ModelServiceError, match=MODSERV_ERR_UNSUPPORTED_PROVIDER):
         svc.get_adapter(ModelProviderType.ANTHROPIC)
 

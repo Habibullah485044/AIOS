@@ -1325,6 +1325,59 @@ The **Model Backend Adapters Core Service** (`ModelBackendService`) provides exe
 - Hardening: [T-03180](../../docs/tasks/evidence/T-03180-core-service-hardening.md)
 - Documentation: [T-03181](../../docs/tasks/evidence/T-03181-core-service-documentation.md)
 
+---
+
+### Model Backend Adapters — MCP/API Surface (Sprint 3 / Phase 3)
+
+Exposes JSON-RPC 2.0 wire protocol adapters and FastMCP tools for Model Backend Adapters, conforming to PoR Invariant I-2 and SPEC-MODEL-BACKEND-ADAPTERS-MCP-API:
+
+- `model_backend_list`: List registered endpoints (pure read, 0 tokens).
+- `model_backend_show`: Query endpoint config and capabilities (pure read, 0 tokens).
+- `model_backend_health`: Inspect operational readiness (pure read, 0 tokens).
+- `model_backend_complete`: Execute model inference with fallback progression (PoR I-2 token required).
+- `model_backend_register`: Register new backend endpoint (PoR I-2 token required).
+
+#### Example: List Registered Model Endpoints
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "list-1",
+  "method": "model_backend_list",
+  "params": {"active_only": true}
+}
+```
+
+#### Example: Inference Completion via FastMCP Tool Call
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "comp-1",
+  "method": "tools/call",
+  "params": {
+    "name": "model_backend_complete",
+    "arguments": {
+      "backend_id": "mock-default",
+      "prompt": "Evaluate system integrity",
+      "capability_token": "grant-token-xyz"
+    }
+  }
+}
+```
+
+#### Constraints & Known Limitations
+- Pure read operations consume zero capability tokens; mutations strictly fail-closed (`-32003`) without a valid `capability_token`.
+- Prompt size bounded to 1 MiB (`1024 * 1024` bytes) and NUL characters (`\0`) are strictly prohibited.
+- Fallback chain depth clamped to `MAX_FALLBACK_DEPTH = 5`.
+- Positional identifiers restricted to 64 chars with strict anti-traversal validation.
+
+#### Evidence References
+- Spec: [SPEC-MODEL-BACKEND-ADAPTERS-MCP-API](../../docs/SPEC-MODEL-BACKEND-ADAPTERS-MCP-API.md)
+- Unit Tests: [T-03197](../../docs/tasks/evidence/T-03197-mcp-api-surface-unit-test.md)
+- Integration: [T-03198](../../docs/tasks/evidence/T-03198-mcp-api-surface-integration.md)
+- Security Review: [T-03199](../../docs/tasks/evidence/T-03199-mcp-api-surface-security-review.md)
+- Hardening: [T-03200](../../docs/tasks/evidence/T-03200-mcp-api-surface-hardening.md)
+- Documentation: [T-03201](../../docs/tasks/evidence/T-03201-mcp-api-surface-documentation.md)
+
 ## Tests
 
 ```bash

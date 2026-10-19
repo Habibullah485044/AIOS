@@ -425,3 +425,129 @@ pub fn dispatch_model_cli(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_endpoints() -> Vec<ModelEndpointConfig> {
+        vec![
+            ModelEndpointConfig {
+                backend_id: "mock-default".to_string(),
+                provider: ModelProviderType::Mock,
+                model_name: "mock-v1".to_string(),
+                base_url: None,
+                api_key_env: None,
+                timeout_ms: 30000,
+                max_retries: 3,
+                capabilities: ModelCapabilities::default(),
+                is_active: true,
+            },
+            ModelEndpointConfig {
+                backend_id: "openai-gpt4".to_string(),
+                provider: ModelProviderType::OpenaiCompatible,
+                model_name: "gpt-4o".to_string(),
+                base_url: None,
+                api_key_env: Some("OPENAI_KEY".to_string()),
+                timeout_ms: 60000,
+                max_retries: 2,
+                capabilities: ModelCapabilities::default(),
+                is_active: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_exit_codes_constants() {
+        assert_eq!(EXIT_SUCCESS, 0);
+        assert_eq!(EXIT_FAILURE, 1);
+        assert_eq!(EXIT_USAGE, 2);
+        assert_eq!(EXIT_UNAUTHORIZED, 3);
+        assert_eq!(EXIT_TIMEOUT, 4);
+    }
+
+    #[test]
+    fn test_parse_nul_byte_rejection() {
+        let args = vec!["list".to_string(), "bad\0arg".to_string()];
+        let res = parse_model_cli_args(&args);
+        assert!(res.is_err());
+        let (code, msg) = res.unwrap_err();
+        assert_eq!(code, EXIT_USAGE);
+        assert!(msg.contains("NUL byte"));
+    }
+
+    #[test]
+    fn test_parse_subcommands_valid() {
+        let args = vec!["list".to_string(), "--provider".to_string(), "mock".to_string(), "--json".to_string()];
+        let cmd = parse_model_cli_args(&args).expect("valid parse");
+        match cmd {
+            ModelCliSubcommand::List { provider, active_only, json } => {
+                assert_eq!(provider, Some("mock".to_string()));
+                assert!(!active_only);
+                assert!(json);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_dispatch_list_and_show() {
+        let mut endpoints = sample_endpoints();
+        let cmd = ModelCliSubcommand::List { provider: None, active_only: false, json: true };
+        let out = dispatch_model_cli(&cmd, &mut endpoints);
+        assert_eq!(out.exit_code, EXIT_SUCCESS);
+        let payload = out.json_payload.expect("has payload");
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["count"], 2);
+
+        let cmd_show = ModelCliSubcommand::Show { backend_id: "mock-default".to_string(), json: true };
+        let out_show = dispatch_model_cli(&cmd_show, &mut endpoints);
+        assert_eq!(out_show.exit_code, EXIT_SUCCESS);
+
+        let cmd_missing = ModelCliSubcommand::Show { backend_id: "unknown".to_string(), json: true };
+        let out_missing = dispatch_model_cli(&cmd_missing, &mut endpoints);
+        assert_eq!(out_missing.exit_code, EXIT_FAILURE);
+    }
+
+    #[test]
+    fn test_dispatch_por_token_enforcement() {
+        let mut endpoints = sample_endpoints();
+        // Complete without token
+        let cmd_comp_no_tok = ModelCliSubcommand::Complete {
+            backend_id: "mock-default".to_string(),
+            prompt: "test".to_string(),
+            temperature: 0.7,
+            fallbacks: vec![],
+            token: None,
+            json: true,
+        };
+        let out = dispatch_model_cli(&cmd_comp_no_tok, &mut endpoints);
+        assert_eq!(out.exit_code, EXIT_UNAUTHORIZED);
+
+        // Complete with token
+        let cmd_comp_tok = ModelCliSubcommand::Complete {
+            backend_id: "mock-default".to_string(),
+            prompt: "test".to_string(),
+            temperature: 0.7,
+            fallbacks: vec![],
+            token: Some("token-grant-1".to_string()),
+            json: true,
+        };
+        let out_ok = dispatch_model_cli(&cmd_comp_tok, &mut endpoints);
+        assert_eq!(out_ok.exit_code, EXIT_SUCCESS);
+
+        // Register without token
+        let cmd_reg_no_tok = ModelCliSubcommand::Register {
+            backend_id: "new-b".to_string(),
+            provider: "mock".to_string(),
+            model: "m-1".to_string(),
+            base_url: None,
+            env: None,
+            timeout: None,
+            token: None,
+            json: true,
+        };
+        let out_reg = dispatch_model_cli(&cmd_reg_no_tok, &mut endpoints);
+        assert_eq!(out_reg.exit_code, EXIT_UNAUTHORIZED);
+    }
+}

@@ -7,6 +7,7 @@ and PoR Invariant I-2.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -237,13 +238,13 @@ def dispatch_model_cli(args: List[str], service: Optional[ModelBackendService] =
     elif subcmd == "health":
         positional = opts.get("positional", [])
         target_id = positional[0] if positional else None
-        health = svc.get_health_summary()
 
         if target_id:
             try:
                 cfg = svc.registry.get(target_id)
             except KeyError:
                 return ModelCliOutput.failure_with_json(EXIT_FAILURE, f"Unknown backend: {target_id}", json_mode=json_mode)
+            health = svc.health_check(target_id)
             health_data = {
                 "backend_id": target_id,
                 "provider": cfg.provider.value,
@@ -260,6 +261,7 @@ def dispatch_model_cli(args: List[str], service: Optional[ModelBackendService] =
                 return ModelCliOutput.success(json.dumps(payload), payload)
             return ModelCliOutput.success(f"{target_id}: active={cfg.is_active}, adapter_ready={health_data['adapter_available']}")
 
+        health = svc.health_check()
         if json_mode:
             payload = {
                 "status": "success",
@@ -282,11 +284,12 @@ def dispatch_model_cli(args: List[str], service: Optional[ModelBackendService] =
             return ModelCliOutput.failure_with_json(EXIT_USAGE, "Missing --prompt argument", json_mode=json_mode)
 
         req = ModelRequest(
+            model_id=backend_id,
             messages=[ModelMessage(role="user", content=prompt)],
             temperature=opts.get("temperature", 0.7),
         )
         try:
-            resp = svc.complete(backend_id, req, fallback_backend_ids=opts.get("fallbacks"))
+            resp = asyncio.run(svc.complete(req, fallback_backends=opts.get("fallbacks")))
             if json_mode:
                 payload = {
                     "status": "success",
@@ -320,7 +323,7 @@ def dispatch_model_cli(args: List[str], service: Optional[ModelBackendService] =
             provider=provider,
             model_name=model_name,
             base_url=opts.get("base_url"),
-            api_key_env_var=opts.get("env"),
+            api_key_env=opts.get("env"),
             timeout_ms=opts.get("timeout") or 30000,
         )
         svc.registry.register(endpoint)

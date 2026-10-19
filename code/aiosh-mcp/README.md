@@ -1256,11 +1256,81 @@ The Model Backend Adapters Data Model provides standardized, strongly-typed endp
 - Hardening: [T-03170](../../docs/tasks/evidence/T-03170-data-model-hardening.md)
 - Documentation: [T-03171](../../docs/tasks/evidence/T-03171-data-model-documentation.md)
 
+---
+
+## Model Backend Adapters Core Service Subsystem
+
+The **Model Backend Adapters Core Service** (`ModelBackendService`) provides execution orchestration, provider adapter dispatch, fallback routing, and token usage accounting for model completion requests across diverse Large Language Model providers (Mock, OpenAI-compatible, Anthropic, Gemini, Ollama).
+
+### Invariants & Architectural Rules
+
+- **`MODSERV-INV1` (Provider Dispatch Parity)**: Maps each registered `ModelProviderType` to a conformant adapter (`MockModelAdapter`, `OpenAICompatibleAdapter`, `AnthropicAdapter`, `GeminiAdapter`, `OllamaAdapter`).
+- **`MODSERV-INV2` (Complete Token Accounting)**: Ensures every returned `ModelUsage` satisfies `total_tokens == prompt_tokens + completion_tokens` with non-negative counts.
+- **`MODSERV-INV3` (Resilient Fallback & Error Classification)**: Automatically traverses fallback chains upon backend errors (`TIMEOUT`, `RATE_LIMIT`, `AUTH`, `UNAVAILABLE`) and fails closed with `MODSERV_ERR_FALLBACK_EXHAUSTED` if all candidates fail.
+- **`MODSERV-INV4` (Secret & Telemetry Isolation)**: Redacts API keys (`sk-*`, `ghp_*`) and Authorization headers (`Bearer ...`) from all exception messages, logs, and telemetry.
+- **`MODSERV-INV5` (Proof-of-Restraint Invariant I-2 Compliance)**: Consequential inference tool `aios_model_complete` strictly requires a capability token grant; `aios_model_service_health` is pure read-only consuming 0 tokens.
+
+### Tool Invocation Examples
+
+#### 1. Model Completion Execution (`aios_model_complete`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_model_complete",
+    "arguments": {
+      "model_id": "mock-default",
+      "messages": [
+        {"role": "user", "content": "Analyze system audit logs"}
+      ],
+      "temperature": 0.7,
+      "fallback_backends": ["openai-primary", "gemini-primary"],
+      "capability_token": "cap_por_model_complete_001"
+    }
+  }
+}
+```
+
+#### 2. Service Operational Health Check (`aios_model_service_health`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios_model_service_health",
+    "arguments": {
+      "backend_id": "mock-default"
+    }
+  }
+}
+```
+
+### Constraints & Security Hardening
+- **Message Count Ceiling**: Request message history is bounded at `MAX_REQUEST_MESSAGES = 100` preventing memory exhaustion.
+- **Fallback Chain Depth**: Progression chain is clamped to `MAX_FALLBACK_DEPTH = 5` and deduplicated to prevent recursion and cascading latency.
+- **Secret Redaction**: All error outputs pass through regex filtering to mask Bearer and secret tokens.
+
+### Evidence & Specifications
+- Specification: [SPEC-MODEL-BACKEND-ADAPTERS-SERVICE](../../docs/SPEC-MODEL-BACKEND-ADAPTERS-SERVICE.md)
+- Research: [T-03173](../../docs/tasks/evidence/T-03173-core-service-research.md)
+- Spec Evidence: [T-03174](../../docs/tasks/evidence/T-03174-core-service-specification.md)
+- Scaffold: [T-03175](../../docs/tasks/evidence/T-03175-core-service-scaffold.md)
+- Implementation: [T-03176](../../docs/tasks/evidence/T-03176-core-service-implementation.md)
+- Unit tests: [T-03177](../../docs/tasks/evidence/T-03177-core-service-unit-test.md)
+- Integration: [T-03178](../../docs/tasks/evidence/T-03178-core-service-integration.md)
+- Security review: [T-03179](../../docs/tasks/evidence/T-03179-core-service-security-review.md)
+- Hardening: [T-03180](../../docs/tasks/evidence/T-03180-core-service-hardening.md)
+- Documentation: [T-03181](../../docs/tasks/evidence/T-03181-core-service-documentation.md)
+
 ## Tests
 
 ```bash
 python tests/test_smoke.py
 ```
+
 
 
 

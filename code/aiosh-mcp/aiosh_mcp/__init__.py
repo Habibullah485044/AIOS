@@ -10,5 +10,6 @@ from . import mcp_server_core_observability
 from . import model_backend_adapters_data_model
 from . import model_backend_adapters_service
 from . import model_backend_adapters_cli
+from . import model_backend_adapters_api
 
 

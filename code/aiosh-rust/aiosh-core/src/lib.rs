@@ -105,6 +105,7 @@ pub mod mcp_server_core_recovery;
 pub mod model_backend_adapters_data_model;
 pub mod model_backend_adapters_service;
 pub mod model_backend_adapters_cli;
+pub mod model_backend_adapters_api;
 pub mod kernel_module;
 pub mod kernel_module_config;
 pub mod kernel_module_doc;

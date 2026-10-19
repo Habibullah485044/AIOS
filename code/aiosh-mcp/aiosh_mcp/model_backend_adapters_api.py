@@ -307,3 +307,42 @@ class ModelBackendApiHandler:
             return self.handle_register(req_id, params)
         else:
             return make_jsonrpc_error(req_id, -32601, f"Method '{method}' not found")
+
+
+def register_model_backend_tools(mcp_app: Any, service: Optional[ModelBackendService] = None) -> None:
+    """Registers Model Backend Adapters tools with a FastMCP server application."""
+    handler = ModelBackendApiHandler(service=service)
+
+    @mcp_app.tool(name="model_backend_list", description="List registered model backend endpoints")
+    def tool_list(provider: Optional[str] = None, active_only: bool = False) -> Dict[str, Any]:
+        return handler.handle_list(None, {"provider": provider, "active_only": active_only})
+
+    @mcp_app.tool(name="model_backend_show", description="Show details of a model backend endpoint")
+    def tool_show(backend_id: str) -> Dict[str, Any]:
+        return handler.handle_show(None, {"backend_id": backend_id})
+
+    @mcp_app.tool(name="model_backend_health", description="Query health status of model backend endpoints")
+    def tool_health(backend_id: Optional[str] = None) -> Dict[str, Any]:
+        return handler.handle_health(None, {"backend_id": backend_id})
+
+    @mcp_app.tool(name="model_backend_complete", description="Execute model inference through backend with fallback (PoR I-2 token required)")
+    def tool_complete(backend_id: str, prompt: str, capability_token: str, temperature: float = 0.7, fallbacks: Optional[List[str]] = None) -> Dict[str, Any]:
+        return handler.handle_complete(None, {
+            "backend_id": backend_id,
+            "prompt": prompt,
+            "capability_token": capability_token,
+            "temperature": temperature,
+            "fallbacks": fallbacks or [],
+        })
+
+    @mcp_app.tool(name="model_backend_register", description="Register a new model backend endpoint (PoR I-2 token required)")
+    def tool_register(backend_id: str, provider: str, model_name: str, capability_token: str, base_url: Optional[str] = None, api_key_env: Optional[str] = None, timeout_ms: int = 30000) -> Dict[str, Any]:
+        return handler.handle_register(None, {
+            "backend_id": backend_id,
+            "provider": provider,
+            "model_name": model_name,
+            "capability_token": capability_token,
+            "base_url": base_url,
+            "api_key_env": api_key_env,
+            "timeout_ms": timeout_ms,
+        })

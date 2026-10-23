@@ -16,6 +16,11 @@ from aiosh_mcp.model_backend_adapters_data_model import (
     ModelRequest,
     ModelResponse,
 )
+from aiosh_mcp.model_backend_adapters_service import (
+    ModelBackendService,
+    ModelServiceError,
+    redact_secrets,
+)
 
 
 @dataclass
@@ -35,13 +40,63 @@ class ModelTestReport:
     duration_ms: int = 0
     results: List[Dict[str, Any]] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total": self.total,
+            "passed": self.passed,
+            "failed": self.failed,
+            "duration_ms": self.duration_ms,
+            "pass_rate": round(self.passed / self.total, 2) if self.total > 0 else 0.0,
+            "results": self.results,
+        }
+
 
 class ModelTestRunner:
-    def __init__(self, service: Any):
+    def __init__(self, service: ModelBackendService):
         self.service = service
 
     async def run_case(self, case: ModelTestCase) -> Dict[str, Any]:
-        raise NotImplementedError("T-03215 scaffold")
+        t0 = time.time()
+        status = "failed"
+        error_msg = None
+
+        try:
+            resp = await self.service.complete(case.request)
+            if case.expected_status == "success":
+                status = "passed"
+            else:
+                error_msg = f"Expected failure '{case.expected_status}' but succeeded"
+        except ModelServiceError as e:
+            if case.expected_status == "error":
+                status = "passed"
+            else:
+                error_msg = redact_secrets(str(e))
+        except Exception as e:
+            if case.expected_status == "error":
+                status = "passed"
+            else:
+                error_msg = redact_secrets(str(e))
+
+        elapsed_ms = int((time.time() - t0) * 1000)
+        return {
+            "name": case.name,
+            "model_id": case.request.model_id,
+            "status": status,
+            "duration_ms": elapsed_ms,
+            "error": error_msg,
+        }
 
     async def run_suite(self, cases: List[ModelTestCase]) -> ModelTestReport:
-        raise NotImplementedError("T-03215 scaffold")
+        t0 = time.time()
+        report = ModelTestReport(total=len(cases))
+
+        for case in cases:
+            res = await self.run_case(case)
+            report.results.append(res)
+            if res["status"] == "passed":
+                report.passed += 1
+            else:
+                report.failed += 1
+
+        report.duration_ms = int((time.time() - t0) * 1000)
+        return report

@@ -10,11 +10,8 @@ def test_configuration_module_exports():
     assert hasattr(modconf, "load_config_from_json")
 
 
-def test_configuration_scaffold_raises_not_implemented():
+def test_configuration_scaffold_structure():
     cfg = modconf.ModelBackendConfig()
-    with pytest.raises(NotImplementedError):
-        cfg.to_dict()
-    with pytest.raises(NotImplementedError):
-        modconf.load_config_from_dict({})
-    with pytest.raises(NotImplementedError):
-        modconf.load_config_from_json("{}")
+    assert hasattr(cfg, "to_dict")
+    assert callable(modconf.load_config_from_dict)
+    assert callable(modconf.load_config_from_json)

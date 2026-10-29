@@ -41,11 +41,9 @@ def test_validate_topic_id():
         validate_topic_id("")
 
 
-def test_catalog_scaffold_raises_not_implemented():
+def test_catalog_scaffold_methods_callable():
     catalog = ModelAdapterDocCatalog()
-    # In scaffold stage, methods raise NotImplementedError
-    # (In implementation stage T-03246, this will be updated or superseded)
-    try:
-        catalog.get_topic("test")
-    except NotImplementedError:
-        pass
+    assert catalog is not None
+    topic = catalog.get_topic("model.overview")
+    assert topic is not None
+    assert topic.topic_id == "model.overview"

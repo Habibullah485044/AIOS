@@ -23,13 +23,10 @@ def test_scaffold_types_and_exports():
     assert "normal text" in sanitized
 
 
-def test_scaffold_not_implemented():
+def test_scaffold_methods_callable():
     service = ModelBackendObservabilityService()
-    with pytest.raises(NotImplementedError):
-        service.record_completion("mock", 100.0, 10, 20)
-
-    with pytest.raises(NotImplementedError):
-        service.record_failure("mock", "TIMEOUT")
-
-    with pytest.raises(NotImplementedError):
-        service.get_snapshot()
+    service.record_completion("mock", 100.0, 10, 20)
+    service.record_failure("mock", "TIMEOUT")
+    snap = service.get_snapshot()
+    assert snap is not None
+    assert snap.total_requests == 2

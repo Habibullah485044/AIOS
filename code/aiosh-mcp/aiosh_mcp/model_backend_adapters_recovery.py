@@ -1,7 +1,7 @@
-"""Model Backend Adapters Recovery & Validation Subsystem (T-03256 impl).
+"""Model Backend Adapters Recovery & Validation Subsystem (T-03260 hardened).
 
 Enforces MODRECV-INV1..MODRECV-INV5: record conservation, health state consistency,
-path traversal immunity, PoR Invariant I-2 gating, and atomic quarantine.
+path traversal immunity, PoR Invariant I-2 gating, atomic quarantine, and leak-free error paths.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ logger = logging.getLogger("aiosh_mcp.model_backend_adapters_recovery")
 
 MAX_CONFIG_FILE_BYTES = 10 * 1024 * 1024  # 10 MiB
 MAX_PATH_LEN = 1024
+MAX_CONFIG_MODELS_CAP = 128
 
 MODRECV_ERR_INVALID_PATH = "MODRECV_ERR_INVALID_PATH"
 MODRECV_ERR_CORRUPT_JSON = "MODRECV_ERR_CORRUPT_JSON"
@@ -36,11 +37,20 @@ RESERVED_DEVICE_NAMES = {
 
 VALID_PROVIDERS = {"openai", "anthropic", "ollama", "mock", "gemini", "azure"}
 MODEL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]{1,64}$")
+SECRET_PATTERN = re.compile(r"(sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9_\-]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})", re.IGNORECASE)
+
+
+def mask_secrets(text: str) -> str:
+    """Masks API keys, tokens, and authorization credentials in text."""
+    if not text:
+        return ""
+    return SECRET_PATTERN.sub("[REDACTED_SECRET]", text)
 
 
 def sanitize_error_message(msg: str) -> str:
-    """Redacts absolute filesystem paths from error messages."""
-    return re.sub(r"[a-zA-Z]:\\[^\s]+|/[^\s]+", "[REDACTED_PATH]", msg)
+    """Redacts absolute filesystem paths and secrets from error messages."""
+    redacted = re.sub(r"[a-zA-Z]:\\[^\s]+|/[^\s]+", "[REDACTED_PATH]", msg)
+    return mask_secrets(redacted)
 
 
 def validate_model_store_path(path: str) -> Path:
@@ -77,7 +87,7 @@ class ModelValidationIssue:
         return {
             "severity": self.severity,
             "code": self.code,
-            "message": self.message,
+            "message": mask_secrets(self.message),
             "model_name": self.model_name,
         }
 
@@ -109,7 +119,7 @@ class ModelConfigValidationReport:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "store_path": self.store_path,
+            "store_path": sanitize_error_message(self.store_path),
             "is_healthy": self.is_healthy,
             "total_models": self.total_models,
             "valid_models": self.valid_models,
@@ -134,9 +144,9 @@ class ModelRecoveryResult:
         return {
             "ok": self.ok,
             "action_taken": self.action_taken,
-            "quarantine_path": self.quarantine_path,
-            "backup_path": self.backup_path,
-            "error": self.error,
+            "quarantine_path": sanitize_error_message(self.quarantine_path) if self.quarantine_path else None,
+            "backup_path": sanitize_error_message(self.backup_path) if self.backup_path else None,
+            "error": sanitize_error_message(self.error) if self.error else None,
             "recovered_at_utc": self.recovered_at_utc,
         }
 
@@ -271,6 +281,16 @@ class ModelBackendRecoveryEngine:
                 )
             )
 
+        if len(raw_models) > MAX_CONFIG_MODELS_CAP:
+            issues.append(
+                ModelValidationIssue(
+                    severity="error",
+                    code="MODRECV_ERR_SCHEMA_VIOLATION",
+                    message=f"Model count {len(raw_models)} exceeds maximum allowed limit of {MAX_CONFIG_MODELS_CAP}",
+                    model_name="_global_",
+                )
+            )
+
         valid_count = 0
         invalid_count = 0
 
@@ -375,6 +395,7 @@ class ModelBackendRecoveryEngine:
         timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         quarantine_path: Optional[str] = None
         backup_path: Optional[str] = None
+        temp_path: Optional[Path] = None
 
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,6 +430,11 @@ class ModelBackendRecoveryEngine:
                 json.dump(default_config, f, indent=2)
             os.replace(temp_path, target_path)
 
+            logger.info(
+                f"AUDIT: Model config recovery succeeded: target={sanitize_error_message(str(target_path))} "
+                f"quarantine={sanitize_error_message(quarantine_path or '')}"
+            )
+
             return ModelRecoveryResult(
                 ok=True,
                 action_taken="QUARANTINE_AND_RESTORE_DEFAULT",
@@ -416,7 +442,9 @@ class ModelBackendRecoveryEngine:
                 backup_path=backup_path,
             )
         except Exception as e:
-            logger.error(f"Recovery failed: {e}")
+            logger.error(
+                f"AUDIT: Model config recovery failed: target={sanitize_error_message(str(target_path))} error={e}"
+            )
             return ModelRecoveryResult(
                 ok=False,
                 action_taken="RECOVERY_FAILED",
@@ -424,6 +452,12 @@ class ModelBackendRecoveryEngine:
                 backup_path=backup_path,
                 error=sanitize_error_message(str(e)),
             )
+        finally:
+            if temp_path and temp_path.exists():
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
 
 _GLOBAL_RECOVERY_ENGINE = ModelBackendRecoveryEngine()
@@ -435,7 +469,7 @@ def get_global_recovery_engine() -> ModelBackendRecoveryEngine:
 
 
 def register_model_recovery_tools(mcp_server: Any) -> None:
-    """Registers Model Backend Adapters Recovery & Validation MCP tools (T-03258)."""
+    """Registers Model Backend Adapters Recovery & Validation MCP tools (T-03258 / T-03260)."""
 
     @mcp_server.tool()
     def aios_model_validate_config(config_path: str) -> dict:

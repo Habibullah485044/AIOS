@@ -921,6 +921,9 @@ model_backend_adapters_api_mod.register_model_backend_tools(mcp)
 from . import model_backend_adapters_observability as model_backend_adapters_observability_mod
 model_backend_adapters_observability_mod.register_model_observability_tools(mcp)
 
+from . import model_backend_adapters_doc as model_backend_adapters_doc_mod
+model_backend_adapters_doc_mod.register_model_doc_tools(mcp)
+
 
 
 

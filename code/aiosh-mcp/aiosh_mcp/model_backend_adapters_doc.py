@@ -1,4 +1,4 @@
-"""AI Control Plane Model Backend Adapters Documentation Subsystem (T-03245 scaffold).
+"""AI Control Plane Model Backend Adapters Documentation Subsystem (T-03246 impl).
 
 Provides reference topic definitions, topic catalog, keyword search, and schema discovery in compliance with SPEC-MODEL-BACKEND-ADAPTERS-DOCUMENTATION and PoR Invariant I-2.
 """
@@ -82,12 +82,123 @@ class ModelAdapterDocCatalog:
 
     def __init__(self) -> None:
         self._topics: Dict[str, ModelAdapterDocTopic] = {}
+        self._initialize_default_topics()
+
+    def _initialize_default_topics(self) -> None:
+        defaults = [
+            ModelAdapterDocTopic(
+                topic_id="model.overview",
+                title="Model Backend Adapters Architecture Overview",
+                category="architecture",
+                summary="AI Control Plane model adapter architecture, multi-provider routing, failover cascades, and token metering.",
+                body=(
+                    "The AIOS Model Backend Adapters provide a unified, pluggable interface between AIOS "
+                    "agent workflows and LLM providers. Features include deterministic routing, policy gates, "
+                    "automated failover cascades, token accounting, and Proof-of-Restraint token budgeting."
+                ),
+                tags=["overview", "architecture", "routing", "failover", "tokens"],
+            ),
+            ModelAdapterDocTopic(
+                topic_id="model.providers",
+                title="Supported LLM Model Providers and Configuration",
+                category="providers",
+                summary="Configuration specifications for OpenAI, Anthropic, Ollama, and Mock providers.",
+                body=(
+                    "Supported backend adapters include OpenAI, Anthropic, Ollama (local LLM), and Mock testing backends. "
+                    "Credentials are held strictly within OS keyrings or environment variables and never logged or serialized "
+                    "in MCP responses. Backend selection is governed by capability descriptors and cost envelopes."
+                ),
+                tags=["providers", "openai", "anthropic", "ollama", "mock", "credentials"],
+            ),
+            ModelAdapterDocTopic(
+                topic_id="model.fallback",
+                title="Automated Failover and Cascade Strategy",
+                category="resilience",
+                summary="Transient error detection, exponential backoff, circuit breaking, and secondary backend failover.",
+                body=(
+                    "When a backend encounters HTTP 429 (rate limit), 5xx, or network timeouts, the cascade engine "
+                    "evaluates retry budgets before falling back to secondary providers. Circuit breakers isolate faulty "
+                    "endpoints to avoid latency pileup."
+                ),
+                tags=["fallback", "cascade", "circuit-breaker", "resilience", "retry"],
+            ),
+            ModelAdapterDocTopic(
+                topic_id="model.security",
+                title="Security Policies, Prompt Invariant Guards, and Redaction",
+                category="security",
+                summary="Egress filtering, prompt injection guards, secret masking, and immutable audit trails.",
+                body=(
+                    "All prompts and completions are routed through security inspection filters. Invariants prohibit "
+                    "credential leakage, unescaped raw control codes, and unauthorized token consumption. Consequential "
+                    "invocations generate immutable audit events."
+                ),
+                tags=["security", "audit", "policy", "redaction", "prompt-guard"],
+            ),
+            ModelAdapterDocTopic(
+                topic_id="model.observability",
+                title="Telemetry, Metrics, and Latency Observability",
+                category="observability",
+                summary="Token consumption metering, latency histograms, error telemetry, and Prometheus export.",
+                body=(
+                    "The model adapter telemetry subsystem records request durations, prompt/completion token ratios, "
+                    "cache hit rates, and error frequencies. Real-time metrics can be inspected via FastMCP tools and "
+                    "dumped as structured telemetry snapshots."
+                ),
+                tags=["observability", "metrics", "telemetry", "latency", "tokens"],
+            ),
+        ]
+        for t in defaults:
+            self._topics[t.topic_id] = t
 
     def get_topic(self, topic_id: str) -> Optional[ModelAdapterDocTopic]:
-        raise NotImplementedError("Scaffold only — implemented in T-03246")
+        """Look up documentation topic by ID with syntax and traversal validation."""
+        validate_topic_id(topic_id)
+        return self._topics.get(topic_id)
 
     def list_topics(self) -> List[ModelAdapterDocTopic]:
-        raise NotImplementedError("Scaffold only — implemented in T-03246")
+        """Return all catalog topics sorted alphabetically by topic_id."""
+        return sorted(self._topics.values(), key=lambda t: t.topic_id)
 
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        raise NotImplementedError("Scaffold only — implemented in T-03246")
+        """Keyword search over topic title, tags, summary, and body with relevance scoring."""
+        cleaned = sanitize_doc_query(query)
+        if not cleaned:
+            return []
+
+        bounded_limit = max(1, min(limit, MAX_DOC_SEARCH_RESULTS))
+        query_terms = [t.lower() for t in cleaned.split() if t]
+        if not query_terms:
+            return []
+
+        scored_results = []
+        for topic in self._topics.values():
+            score = 0.0
+            tid_lower = topic.topic_id.lower()
+            title_lower = topic.title.lower()
+            summary_lower = topic.summary.lower()
+            body_lower = topic.body.lower()
+            tags_lower = [tag.lower() for tag in topic.tags]
+
+            for term in query_terms:
+                if term in tid_lower:
+                    score += 10.0
+                if term in title_lower:
+                    score += 5.0
+                if any(term in tag for tag in tags_lower):
+                    score += 3.0
+                if term in summary_lower:
+                    score += 2.0
+                if term in body_lower:
+                    score += 1.0
+
+            if score > 0.0:
+                scored_results.append({
+                    "topic_id": topic.topic_id,
+                    "title": topic.title,
+                    "category": topic.category,
+                    "summary": topic.summary,
+                    "score": round(score, 2),
+                })
+
+        scored_results.sort(key=lambda r: (-r["score"], r["topic_id"]))
+        return scored_results[:bounded_limit]

@@ -1,4 +1,4 @@
-"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold).
+"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold / T-03236 impl).
 
 Defines telemetry data models, operational metrics aggregation, health status determination,
 and observability services in compliance with SPEC-MODEL-BACKEND-ADAPTERS-OBSERVABILITY and PoR Invariant I-2.
@@ -6,6 +6,7 @@ and observability services in compliance with SPEC-MODEL-BACKEND-ADAPTERS-OBSERV
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -87,9 +88,10 @@ class ModelBackendMetricsSnapshot:
 
 
 class ModelBackendObservabilityService:
-    """Aggregates real-time metrics and generates point-in-time observability snapshots."""
+    """Thread-safe service aggregating real-time metrics and generating point-in-time observability snapshots."""
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._start_time: float = time.monotonic()
         self._total_requests: int = 0
         self._successful_requests: int = 0
@@ -110,20 +112,81 @@ class ModelBackendObservabilityService:
         fallback_used: bool = False,
     ) -> None:
         """Records a successful model completion."""
-        raise NotImplementedError("Scaffold only — implemented in T-03236")
+        safe_provider = sanitize_telemetry_text(provider) or "unknown"
+        with self._lock:
+            self._total_requests += 1
+            self._successful_requests += 1
+            self._total_prompt_tokens += max(0, prompt_tokens)
+            self._total_completion_tokens += max(0, completion_tokens)
+            self._total_duration_ms += max(0.0, duration_ms)
+            self._provider_counts[safe_provider] = self._provider_counts.get(safe_provider, 0) + 1
+            if fallback_used:
+                self._fallback_triggers_count += 1
 
     def record_failure(self, provider: str, error_type: str) -> None:
         """Records a failed model dispatch."""
-        raise NotImplementedError("Scaffold only — implemented in T-03236")
+        safe_provider = sanitize_telemetry_text(provider) or "unknown"
+        with self._lock:
+            self._total_requests += 1
+            self._failed_requests += 1
+            self._provider_counts[safe_provider] = self._provider_counts.get(safe_provider, 0) + 1
 
     def record_policy_denial(self) -> None:
         """Records an authorization refusal under PoR Invariant I-2."""
-        raise NotImplementedError("Scaffold only — implemented in T-03236")
+        with self._lock:
+            self._policy_denials += 1
 
     def get_snapshot(self) -> ModelBackendMetricsSnapshot:
         """Computes and returns an immutable metrics snapshot."""
-        raise NotImplementedError("Scaffold only — implemented in T-03236")
+        with self._lock:
+            uptime = max(0.0, time.monotonic() - self._start_time)
+            avg_latency = (
+                round(self._total_duration_ms / self._successful_requests, 3)
+                if self._successful_requests > 0
+                else 0.0
+            )
+
+            # Health classification
+            if self._total_requests == 0:
+                health = HealthStatus.HEALTHY
+            else:
+                error_rate = self._failed_requests / self._total_requests
+                if error_rate >= 0.25:
+                    health = HealthStatus.CRITICAL
+                elif error_rate >= 0.05 or self._fallback_triggers_count > 0:
+                    health = HealthStatus.DEGRADED
+                else:
+                    health = HealthStatus.HEALTHY
+
+            snapshot = ModelBackendMetricsSnapshot(
+                generated_at_utc=datetime.now(timezone.utc).isoformat(),
+                uptime_seconds=uptime,
+                total_requests=self._total_requests,
+                successful_requests=self._successful_requests,
+                failed_requests=self._failed_requests,
+                policy_denials=self._policy_denials,
+                fallback_triggers_count=self._fallback_triggers_count,
+                total_prompt_tokens=self._total_prompt_tokens,
+                total_completion_tokens=self._total_completion_tokens,
+                total_tokens=self._total_prompt_tokens + self._total_completion_tokens,
+                average_latency_ms=avg_latency,
+                health_status=health,
+                provider_breakdown=dict(self._provider_counts),
+            )
+
+        snapshot.validate()
+        return snapshot
 
     def reset(self) -> None:
         """Resets all metrics counters."""
-        raise NotImplementedError("Scaffold only — implemented in T-03236")
+        with self._lock:
+            self._start_time = time.monotonic()
+            self._total_requests = 0
+            self._successful_requests = 0
+            self._failed_requests = 0
+            self._policy_denials = 0
+            self._fallback_triggers_count = 0
+            self._total_prompt_tokens = 0
+            self._total_completion_tokens = 0
+            self._total_duration_ms = 0.0
+            self._provider_counts.clear()

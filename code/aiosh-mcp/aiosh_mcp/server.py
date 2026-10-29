@@ -924,6 +924,9 @@ model_backend_adapters_observability_mod.register_model_observability_tools(mcp)
 from . import model_backend_adapters_doc as model_backend_adapters_doc_mod
 model_backend_adapters_doc_mod.register_model_doc_tools(mcp)
 
+from . import model_backend_adapters_recovery as model_backend_adapters_recovery_mod
+model_backend_adapters_recovery_mod.register_model_recovery_tools(mcp)
+
 
 
 

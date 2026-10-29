@@ -1,4 +1,4 @@
-"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold / T-03236 impl / T-03238 integration).
+"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold / T-03236 impl / T-03238 integration / T-03240 hardening).
 
 Defines telemetry data models, operational metrics aggregation, health status determination,
 and observability services in compliance with SPEC-MODEL-BACKEND-ADAPTERS-OBSERVABILITY and PoR Invariant I-2.
@@ -6,6 +6,7 @@ and observability services in compliance with SPEC-MODEL-BACKEND-ADAPTERS-OBSERV
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
@@ -13,7 +14,13 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger(__name__)
+
 MAX_TELEMETRY_TEXT_LEN: int = 256
+MAX_TRACKED_PROVIDERS: int = 64
+MAX_DURATION_MS: float = 3_600_000.0  # 1 hour max recorded duration
+MAX_TOKENS_PER_RECORD: int = 10_000_000
+
 _FORBIDDEN_CHARS = {"\u200b", "\u200c", "\u200d", "\ufeff", "\x00"}
 
 
@@ -88,7 +95,7 @@ class ModelBackendMetricsSnapshot:
 
 
 class ModelBackendObservabilityService:
-    """Thread-safe service aggregating real-time metrics and generating point-in-time observability snapshots."""
+    """Thread-safe hardened service aggregating real-time metrics and generating point-in-time observability snapshots."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -103,6 +110,15 @@ class ModelBackendObservabilityService:
         self._total_duration_ms: float = 0.0
         self._provider_counts: Dict[str, int] = {}
 
+    def _record_provider_key(self, safe_provider: str) -> None:
+        """Records provider with bounded dictionary capacity."""
+        if safe_provider in self._provider_counts:
+            self._provider_counts[safe_provider] += 1
+        elif len(self._provider_counts) < MAX_TRACKED_PROVIDERS:
+            self._provider_counts[safe_provider] = 1
+        else:
+            self._provider_counts["other"] = self._provider_counts.get("other", 0) + 1
+
     def record_completion(
         self,
         provider: str,
@@ -111,25 +127,29 @@ class ModelBackendObservabilityService:
         completion_tokens: int,
         fallback_used: bool = False,
     ) -> None:
-        """Records a successful model completion."""
+        """Records a successful model completion with bounded sanitization."""
         safe_provider = sanitize_telemetry_text(provider) or "unknown"
+        clamped_duration = min(max(0.0, float(duration_ms)), MAX_DURATION_MS)
+        clamped_prompt = min(max(0, int(prompt_tokens)), MAX_TOKENS_PER_RECORD)
+        clamped_completion = min(max(0, int(completion_tokens)), MAX_TOKENS_PER_RECORD)
+
         with self._lock:
             self._total_requests += 1
             self._successful_requests += 1
-            self._total_prompt_tokens += max(0, prompt_tokens)
-            self._total_completion_tokens += max(0, completion_tokens)
-            self._total_duration_ms += max(0.0, duration_ms)
-            self._provider_counts[safe_provider] = self._provider_counts.get(safe_provider, 0) + 1
+            self._total_prompt_tokens += clamped_prompt
+            self._total_completion_tokens += clamped_completion
+            self._total_duration_ms += clamped_duration
+            self._record_provider_key(safe_provider)
             if fallback_used:
                 self._fallback_triggers_count += 1
 
     def record_failure(self, provider: str, error_type: str) -> None:
-        """Records a failed model dispatch."""
+        """Records a failed model dispatch with bounded sanitization."""
         safe_provider = sanitize_telemetry_text(provider) or "unknown"
         with self._lock:
             self._total_requests += 1
             self._failed_requests += 1
-            self._provider_counts[safe_provider] = self._provider_counts.get(safe_provider, 0) + 1
+            self._record_provider_key(safe_provider)
 
     def record_policy_denial(self) -> None:
         """Records an authorization refusal under PoR Invariant I-2."""
@@ -137,45 +157,64 @@ class ModelBackendObservabilityService:
             self._policy_denials += 1
 
     def get_snapshot(self) -> ModelBackendMetricsSnapshot:
-        """Computes and returns an immutable metrics snapshot."""
+        """Computes and returns an immutable metrics snapshot with fail-closed integrity."""
         with self._lock:
-            uptime = max(0.0, time.monotonic() - self._start_time)
-            avg_latency = (
-                round(self._total_duration_ms / self._successful_requests, 3)
-                if self._successful_requests > 0
-                else 0.0
-            )
+            try:
+                uptime = max(0.0, time.monotonic() - self._start_time)
+                avg_latency = (
+                    round(self._total_duration_ms / self._successful_requests, 3)
+                    if self._successful_requests > 0
+                    else 0.0
+                )
 
-            # Health classification
-            if self._total_requests == 0:
-                health = HealthStatus.HEALTHY
-            else:
-                error_rate = self._failed_requests / self._total_requests
-                if error_rate >= 0.25:
-                    health = HealthStatus.CRITICAL
-                elif error_rate >= 0.05 or self._fallback_triggers_count > 0:
-                    health = HealthStatus.DEGRADED
-                else:
+                # Health classification
+                if self._total_requests == 0:
                     health = HealthStatus.HEALTHY
+                else:
+                    error_rate = self._failed_requests / self._total_requests
+                    if error_rate >= 0.25:
+                        health = HealthStatus.CRITICAL
+                    elif error_rate >= 0.05 or self._fallback_triggers_count > 0:
+                        health = HealthStatus.DEGRADED
+                    else:
+                        health = HealthStatus.HEALTHY
 
-            snapshot = ModelBackendMetricsSnapshot(
-                generated_at_utc=datetime.now(timezone.utc).isoformat(),
-                uptime_seconds=uptime,
-                total_requests=self._total_requests,
-                successful_requests=self._successful_requests,
-                failed_requests=self._failed_requests,
-                policy_denials=self._policy_denials,
-                fallback_triggers_count=self._fallback_triggers_count,
-                total_prompt_tokens=self._total_prompt_tokens,
-                total_completion_tokens=self._total_completion_tokens,
-                total_tokens=self._total_prompt_tokens + self._total_completion_tokens,
-                average_latency_ms=avg_latency,
-                health_status=health,
-                provider_breakdown=dict(self._provider_counts),
-            )
-
-        snapshot.validate()
-        return snapshot
+                snapshot = ModelBackendMetricsSnapshot(
+                    generated_at_utc=datetime.now(timezone.utc).isoformat(),
+                    uptime_seconds=uptime,
+                    total_requests=self._total_requests,
+                    successful_requests=self._successful_requests,
+                    failed_requests=self._failed_requests,
+                    policy_denials=self._policy_denials,
+                    fallback_triggers_count=self._fallback_triggers_count,
+                    total_prompt_tokens=self._total_prompt_tokens,
+                    total_completion_tokens=self._total_completion_tokens,
+                    total_tokens=self._total_prompt_tokens + self._total_completion_tokens,
+                    average_latency_ms=avg_latency,
+                    health_status=health,
+                    provider_breakdown=dict(self._provider_counts),
+                )
+                snapshot.validate()
+                return snapshot
+            except Exception as e:
+                logger.error(f"Failed to generate observability snapshot: {e}")
+                # Fail-closed fallback snapshot
+                fallback = ModelBackendMetricsSnapshot(
+                    generated_at_utc=datetime.now(timezone.utc).isoformat(),
+                    uptime_seconds=0.0,
+                    total_requests=0,
+                    successful_requests=0,
+                    failed_requests=0,
+                    policy_denials=0,
+                    fallback_triggers_count=0,
+                    total_prompt_tokens=0,
+                    total_completion_tokens=0,
+                    total_tokens=0,
+                    average_latency_ms=0.0,
+                    health_status=HealthStatus.CRITICAL,
+                    provider_breakdown={"error": 1},
+                )
+                return fallback
 
     def reset(self) -> None:
         """Resets all metrics counters."""

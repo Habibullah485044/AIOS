@@ -2,7 +2,7 @@
 
 **Document ID**: SPEC-MODEL-BACKEND-ADAPTERS-OBSERVABILITY  
 **Lifecycle Target**: T-03233..T-03242 (Phase 3 — AI Control Plane (Pillar C Spine) / Model Backend Adapters / observability)  
-**Contract Reference**: ADR-0035 §AF-2, ADR-0037, OpenTelemetry GenAI Conventions, PoR Invariant I-2  
+**Contract Reference**: ADR-0035 §AF-2, ADR-0035 §F-2, ADR-0037, OpenTelemetry GenAI Conventions, PoR Invariant I-2  
 **Status**: APPROVED / ACTIVE  
 
 ---
@@ -83,12 +83,84 @@ class ModelBackendObservabilityService:
 
 ---
 
-## 4. Error Cases & Persistence Effects
+## 4. Copy-Pasteable Usage Examples
 
-1. **Error Cases**:
-   - Zero requests: `average_latency_ms` safely returns `0.0` (zero-division defense).
-   - Invariant violation during snapshot validation raises `ValueError` immediately.
-   - Malformed timestamp or negative duration raises `ValueError`.
-2. **Persistence & Audit Effects**:
-   - In-memory metrics counters are transient and reset on daemon restart.
-   - When snapshots are exported or inspected over MCP, an audit event (`model.observability.snapshot`) is written to `audit.db` via `AuditRing` with `outcome="ok"`.
+### 4.1 Python Programmatic Inspection
+```python
+from aiosh_mcp.model_backend_adapters_observability import get_global_observability_service
+
+service = get_global_observability_service()
+snapshot = service.get_snapshot()
+
+print(f"Health Status: {snapshot.health_status.value}")
+print(f"Total Requests: {snapshot.total_requests}")
+print(f"Total Tokens: {snapshot.total_tokens}")
+print(f"Average Latency: {snapshot.average_latency_ms} ms")
+```
+
+### 4.2 MCP Wire Invocation (`aios_model_observability_snapshot`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "obs-req-01",
+  "method": "tools/call",
+  "params": {
+    "name": "aios_model_observability_snapshot",
+    "arguments": {}
+  }
+}
+```
+
+Response:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "obs-req-01",
+  "result": {
+    "status": "success",
+    "ok": true,
+    "data": {
+      "generated_at_utc": "2026-10-29T22:20:00.000000+00:00",
+      "uptime_seconds": 124.50,
+      "total_requests": 15,
+      "successful_requests": 15,
+      "failed_requests": 0,
+      "policy_denials": 0,
+      "fallback_triggers_count": 0,
+      "total_prompt_tokens": 1200,
+      "total_completion_tokens": 600,
+      "total_tokens": 1800,
+      "average_latency_ms": 142.305,
+      "health_status": "HEALTHY",
+      "provider_breakdown": {
+        "mock": 10,
+        "gemini": 5
+      }
+    }
+  }
+}
+```
+
+---
+
+## 5. Constraints & Known Limitations Honestly Stated
+
+1. **In-Memory Volatility**: Point-in-time metrics counters reset upon daemon restart. Durable history is reconstructed from `audit.db` SQLite rows.
+2. **Provider Key Ceiling**: Distinct provider tracking is capped at `MAX_TRACKED_PROVIDERS = 64`. Any excess distinct names are aggregated under `"other"`.
+3. **Duration Bounds**: Single-request duration telemetry is capped at `MAX_DURATION_MS = 3,600,000.0` ms (1 hour). Negative values normalize to 0.0.
+4. **Token Addition Bounds**: Token additions are clamped to `[0, 10,000,000]`. Negative numbers normalize to 0.
+5. **Zero Token Requirement**: Operational telemetry queries require 0 capability tokens under PoR Invariant I-2.
+
+---
+
+## 6. Lifecycle Evidence Links
+
+- **T-03233 (Research)**: [`docs/tasks/evidence/T-03233-observability-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03233-observability-research.md)
+- **T-03234 (Specification)**: [`docs/tasks/evidence/T-03234-observability-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03234-observability-specification.md)
+- **T-03235 (Scaffold)**: [`docs/tasks/evidence/T-03235-observability-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03235-observability-scaffold.md)
+- **T-03236 (Implementation)**: [`docs/tasks/evidence/T-03236-observability-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03236-observability-implementation.md)
+- **T-03237 (Unit Test)**: [`docs/tasks/evidence/T-03237-observability-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03237-observability-unit-test.md)
+- **T-03238 (Integration)**: [`docs/tasks/evidence/T-03238-observability-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03238-observability-integration.md)
+- **T-03239 (Security Review)**: [`docs/tasks/evidence/T-03239-observability-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03239-observability-security-review.md)
+- **T-03240 (Hardening)**: [`docs/tasks/evidence/T-03240-observability-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03240-observability-hardening.md)
+- **T-03241 (Documentation)**: [`docs/tasks/evidence/T-03241-observability-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-03241-observability-documentation.md)

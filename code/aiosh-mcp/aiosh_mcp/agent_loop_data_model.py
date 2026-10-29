@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold).
+"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold / T-03266 impl).
 
 Enforces LOOPDATA-INV1..LOOPDATA-INV5: monotonic step indexing, token conservation,
 circuit breaker bounds, substrate serialization parity, and FSM transition determinism.
@@ -18,7 +18,10 @@ LOOPDATA_ERR_BOUNDS_EXCEEDED = "LOOPDATA_ERR_BOUNDS_EXCEEDED"
 LOOPDATA_ERR_INVARIANT_VIOLATION = "LOOPDATA_ERR_INVARIANT_VIOLATION"
 
 LOOP_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{8,64}$")
-SECRET_PATTERN = re.compile(r"(sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9_\-]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})", re.IGNORECASE)
+SECRET_PATTERN = re.compile(
+    r"(sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9_\-]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})",
+    re.IGNORECASE,
+)
 
 
 def mask_secrets(text: str) -> str:
@@ -195,6 +198,65 @@ class LoopSnapshot:
                 f"total_tokens_used ({self.total_tokens_used}) != sum(steps.tokens) ({sum_tokens})"
             )
 
+    def transition_to(self, new_state: LoopState, terminal_reason: Optional[str] = None) -> None:
+        """Transitions to new_state enforcing FSM determinism (LOOPDATA-INV5)."""
+        validate_loop_transition(self.current_state, new_state)
+        self.current_state = new_state
+        if new_state in {LoopState.COMPLETED, LoopState.FAILED, LoopState.ABORTED}:
+            self.is_terminated = True
+            if terminal_reason:
+                self.terminal_reason = mask_secrets(terminal_reason)
+        self.updated_at_utc = datetime.now(timezone.utc).isoformat()
+
+    def record_step(self, step: LoopStepRecord, config: Optional[LoopConfig] = None) -> None:
+        """Appends a step record and updates iteration, token counts, and circuit-breaker limits."""
+        expected_index = len(self.steps)
+        if step.step_index != expected_index:
+            raise AssertionError(
+                f"{LOOPDATA_ERR_INVARIANT_VIOLATION}: LOOPDATA-INV1 violated: "
+                f"step.step_index={step.step_index} != expected {expected_index}"
+            )
+        if step.tokens_consumed < 0:
+            raise AssertionError(
+                f"{LOOPDATA_ERR_INVARIANT_VIOLATION}: tokens_consumed cannot be negative: {step.tokens_consumed}"
+            )
+
+        self.steps.append(step)
+        self.total_tokens_used += step.tokens_consumed
+        if step.tool_name:
+            self.total_tool_calls += 1
+
+        if step.outcome == "error":
+            self.consecutive_failures += 1
+        elif step.outcome == "ok":
+            self.consecutive_failures = 0
+
+        self.current_iteration += 1
+        self.updated_at_utc = datetime.now(timezone.utc).isoformat()
+
+        # Enforce bounds / circuit breakers if config is provided
+        if config is not None:
+            if self.consecutive_failures >= config.consecutive_failure_limit:
+                self.current_state = LoopState.FAILED
+                self.is_terminated = True
+                self.terminal_reason = (
+                    f"Circuit breaker triggered: consecutive failure limit reached ({self.consecutive_failures})"
+                )
+            elif self.total_tokens_used >= config.max_total_tokens:
+                self.current_state = LoopState.FAILED
+                self.is_terminated = True
+                self.terminal_reason = (
+                    f"Resource limit exceeded: token budget exhausted ({self.total_tokens_used}/{config.max_total_tokens})"
+                )
+            elif self.current_iteration >= config.max_iterations and not self.is_terminated:
+                self.current_state = LoopState.FAILED
+                self.is_terminated = True
+                self.terminal_reason = (
+                    f"Iteration limit reached ({self.current_iteration}/{config.max_iterations})"
+                )
+
+        self.validate_invariants()
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "loop_id": self.loop_id,
@@ -228,3 +290,25 @@ class LoopSnapshot:
         )
         snap.validate_invariants()
         return snap
+
+
+def create_initial(loop_id: str, config: Optional[LoopConfig] = None) -> LoopSnapshot:
+    """Creates a new initial LoopSnapshot in INIT state."""
+    if not loop_id or not LOOP_ID_PATTERN.match(loop_id.strip()):
+        raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: invalid loop_id syntax: {loop_id}")
+    if config is not None:
+        config.validate_bounds()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    return LoopSnapshot(
+        loop_id=loop_id.strip(),
+        current_state=LoopState.INIT,
+        current_iteration=0,
+        total_tokens_used=0,
+        total_tool_calls=0,
+        consecutive_failures=0,
+        is_terminated=False,
+        terminal_reason=None,
+        steps=[],
+        created_at_utc=now_utc,
+        updated_at_utc=now_utc,
+    )

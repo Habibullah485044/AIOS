@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold / T-03266 impl).
+"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold / T-03266 impl / T-03268 integ).
 
 Enforces LOOPDATA-INV1..LOOPDATA-INV5: monotonic step indexing, token conservation,
 circuit breaker bounds, substrate serialization parity, and FSM transition determinism.
@@ -16,6 +16,8 @@ LOOPDATA_ERR_INVALID_STATE = "LOOPDATA_ERR_INVALID_STATE"
 LOOPDATA_ERR_INVALID_TRANSITION = "LOOPDATA_ERR_INVALID_TRANSITION"
 LOOPDATA_ERR_BOUNDS_EXCEEDED = "LOOPDATA_ERR_BOUNDS_EXCEEDED"
 LOOPDATA_ERR_INVARIANT_VIOLATION = "LOOPDATA_ERR_INVARIANT_VIOLATION"
+LOOPDATA_ERR_UNAUTHORIZED = "LOOPDATA_ERR_UNAUTHORIZED"
+LOOPDATA_ERR_NOT_FOUND = "LOOPDATA_ERR_NOT_FOUND"
 
 LOOP_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{8,64}$")
 SECRET_PATTERN = re.compile(
@@ -312,3 +314,81 @@ def create_initial(loop_id: str, config: Optional[LoopConfig] = None) -> LoopSna
         created_at_utc=now_utc,
         updated_at_utc=now_utc,
     )
+
+
+class AgentLoopRegistry:
+    """Thread-safe in-memory registry of active and historical agent loops."""
+
+    def __init__(self) -> None:
+        self._loops: Dict[str, LoopSnapshot] = {}
+        self._configs: Dict[str, LoopConfig] = {}
+
+    def get_loop(self, loop_id: str) -> Optional[LoopSnapshot]:
+        return self._loops.get(loop_id)
+
+    def register_loop(self, config: LoopConfig) -> LoopSnapshot:
+        config.validate_bounds()
+        snap = create_initial(config.loop_id, config)
+        self._loops[config.loop_id] = snap
+        self._configs[config.loop_id] = config
+        return snap
+
+    def get_config(self, loop_id: str) -> Optional[LoopConfig]:
+        return self._configs.get(loop_id)
+
+    def list_loops(self) -> List[LoopSnapshot]:
+        return list(self._loops.values())
+
+    def clear(self) -> None:
+        self._loops.clear()
+        self._configs.clear()
+
+
+_GLOBAL_LOOP_REGISTRY = AgentLoopRegistry()
+
+
+def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
+    """Registers agent loop hardening data model tools with FastMCP (T-03268)."""
+
+    @mcp_app.tool()
+    def aios_agent_loop_status(loop_id: str) -> dict:
+        """Returns the status, FSM state, and metrics for an agent loop (Pure read-only, PoR Invariant I-2)."""
+        snap = _GLOBAL_LOOP_REGISTRY.get_loop(loop_id)
+        if not snap:
+            return {
+                "ok": False,
+                "error": f"{LOOPDATA_ERR_NOT_FOUND}: loop_id '{loop_id}' not found",
+            }
+        return {
+            "ok": True,
+            "snapshot": snap.to_dict(),
+        }
+
+    @mcp_app.tool()
+    def aios_agent_loop_init(
+        loop_id: str,
+        max_iterations: int = 25,
+        max_total_tokens: int = 32768,
+        capability_token: str = "",
+    ) -> dict:
+        """Initializes a hardened agent loop FSM. Mutating: requires PoR capability token (PoR Invariant I-2)."""
+        if not capability_token or not capability_token.strip():
+            return {
+                "ok": False,
+                "error": f"{LOOPDATA_ERR_UNAUTHORIZED}: capability token required for agent loop init (PoR Invariant I-2)",
+            }
+        try:
+            cfg = LoopConfig(
+                loop_id=loop_id,
+                max_iterations=max_iterations,
+                max_total_tokens=max_total_tokens,
+            )
+            cfg.validate_bounds()
+            snap = _GLOBAL_LOOP_REGISTRY.register_loop(cfg)
+            return {
+                "ok": True,
+                "loop_id": loop_id,
+                "snapshot": snap.to_dict(),
+            }
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}

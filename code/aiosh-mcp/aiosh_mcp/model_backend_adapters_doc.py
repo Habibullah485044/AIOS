@@ -1,22 +1,28 @@
-"""AI Control Plane Model Backend Adapters Documentation Subsystem (T-03246 impl).
+"""AI Control Plane Model Backend Adapters Documentation Subsystem (T-03250 hardened).
 
 Provides reference topic definitions, topic catalog, keyword search, and schema discovery in compliance with SPEC-MODEL-BACKEND-ADAPTERS-DOCUMENTATION and PoR Invariant I-2.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger("aiosh_mcp.model_backend_adapters_doc")
+
 MAX_DOC_QUERY_LEN = 128
 MAX_DOC_SEARCH_RESULTS = 10
 MAX_TOPICS_LIMIT = 256
+MAX_TOPIC_BODY_BYTES = 64 * 1024  # 64 KiB
 
 MODDOC_ERR_NOT_FOUND = "MODDOC_ERR_NOT_FOUND"
 MODDOC_ERR_INVALID_ID = "MODDOC_ERR_INVALID_ID"
 MODDOC_ERR_QUERY_BOUNDS = "MODDOC_ERR_QUERY_BOUNDS"
+MODDOC_ERR_INTERNAL = "MODDOC_ERR_INTERNAL"
+MODDOC_ERR_CAPACITY_EXCEEDED = "MODDOC_ERR_CAPACITY_EXCEEDED"
 
 BIDI_AND_INVISIBLE_CODEPOINTS = {
     0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
@@ -26,6 +32,14 @@ BIDI_AND_INVISIBLE_CODEPOINTS = {
 }
 
 TOPIC_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]{1,64}$")
+SECRET_PATTERN = re.compile(r"(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})", re.IGNORECASE)
+
+
+def mask_secrets(text: str) -> str:
+    """Masks API keys, tokens, and authorization credentials in documentation text."""
+    if not text:
+        return ""
+    return SECRET_PATTERN.sub("[REDACTED_SECRET]", text)
 
 
 def sanitize_doc_query(s: str) -> str:
@@ -70,8 +84,8 @@ class ModelAdapterDocTopic:
             "topic_id": self.topic_id,
             "title": self.title,
             "category": self.category,
-            "summary": self.summary,
-            "body": self.body,
+            "summary": mask_secrets(self.summary),
+            "body": mask_secrets(self.body),
             "tags": list(self.tags),
             "updated_at": self.updated_at,
         }
@@ -150,6 +164,15 @@ class ModelAdapterDocCatalog:
         for t in defaults:
             self._topics[t.topic_id] = t
 
+    def add_topic(self, topic: ModelAdapterDocTopic) -> None:
+        """Adds a topic with capacity and size boundary checks."""
+        validate_topic_id(topic.topic_id)
+        if len(self._topics) >= MAX_TOPICS_LIMIT and topic.topic_id not in self._topics:
+            raise ValueError(f"{MODDOC_ERR_CAPACITY_EXCEEDED}: catalog topic limit {MAX_TOPICS_LIMIT} reached")
+        if len(topic.body.encode("utf-8")) > MAX_TOPIC_BODY_BYTES:
+            raise ValueError(f"{MODDOC_ERR_QUERY_BOUNDS}: topic body exceeds maximum allowed size of {MAX_TOPIC_BODY_BYTES} bytes")
+        self._topics[topic.topic_id] = topic
+
     def get_topic(self, topic_id: str) -> Optional[ModelAdapterDocTopic]:
         """Look up documentation topic by ID with syntax and traversal validation."""
         validate_topic_id(topic_id)
@@ -196,7 +219,7 @@ class ModelAdapterDocCatalog:
                     "topic_id": topic.topic_id,
                     "title": topic.title,
                     "category": topic.category,
-                    "summary": topic.summary,
+                    "summary": mask_secrets(topic.summary),
                     "score": round(score, 2),
                 })
 
@@ -213,7 +236,7 @@ def get_global_doc_catalog() -> ModelAdapterDocCatalog:
 
 
 def register_model_doc_tools(mcp_server: Any) -> None:
-    """Registers Model Backend Adapters Documentation MCP tools (T-03248)."""
+    """Registers Model Backend Adapters Documentation MCP tools (T-03248 / T-03250)."""
 
     @mcp_server.tool()
     def aios_model_doc_get(topic_id: str) -> dict:
@@ -239,30 +262,56 @@ def register_model_doc_tools(mcp_server: Any) -> None:
                 "error": MODDOC_ERR_INVALID_ID,
                 "message": str(ve),
             }
+        except Exception as e:
+            logger.error(f"Unexpected error in aios_model_doc_get: {e}")
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODDOC_ERR_INTERNAL,
+                "message": "Internal error retrieving documentation topic",
+            }
 
     @mcp_server.tool()
     def aios_model_doc_search(query: str, limit: int = 10) -> dict:
         """Search model backend adapter documentation topics by keywords (pure read-only, 0 tokens)."""
-        results = get_global_doc_catalog().search(query, limit=limit)
-        return {
-            "status": "success",
-            "ok": True,
-            "data": {
-                "query": sanitize_doc_query(query),
-                "count": len(results),
-                "results": results,
-            },
-        }
+        try:
+            results = get_global_doc_catalog().search(query, limit=limit)
+            return {
+                "status": "success",
+                "ok": True,
+                "data": {
+                    "query": sanitize_doc_query(query),
+                    "count": len(results),
+                    "results": results,
+                },
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error in aios_model_doc_search: {e}")
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODDOC_ERR_INTERNAL,
+                "message": "Internal error searching documentation topics",
+            }
 
     @mcp_server.tool()
     def aios_model_doc_list() -> dict:
         """List all available model backend adapter documentation topics (pure read-only, 0 tokens)."""
-        topics = get_global_doc_catalog().list_topics()
-        return {
-            "status": "success",
-            "ok": True,
-            "data": {
-                "count": len(topics),
-                "topics": [t.to_dict() for t in topics],
-            },
-        }
+        try:
+            topics = get_global_doc_catalog().list_topics()
+            return {
+                "status": "success",
+                "ok": True,
+                "data": {
+                    "count": len(topics),
+                    "topics": [t.to_dict() for t in topics],
+                },
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error in aios_model_doc_list: {e}")
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODDOC_ERR_INTERNAL,
+                "message": "Internal error listing documentation topics",
+            }

@@ -1364,3 +1364,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_model_validate_config` and `aios_model_recover_config` registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03262-verify.md, docs/tasks/evidence/T-03262-recovery-validation-verification-evidenc.md.
 
+
+
+## T-03272 - AI Control Plane Agent Loop Hardening / data model: Verification & Evidence (2026-10-30)
+- Milestone closeout for Agent Loop Hardening data model subsystem (T-03263..T-03272).
+- Verification battery:
+  - Python Agent Loop Hardening Data Model suite (test_agent_loop_data_model_*.py): 35/35 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (demo_por.py): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: LOOPDATA-INV1..LOOPDATA-INV5, PoR Invariant I-2.
+- Data Model Subsystem & Safety verified:
+  - LOOPDATA-INV1: Strict contiguous monotonic step indexing (step[i].step_index == i).
+  - LOOPDATA-INV2: Token conservation and non-negativity (total_tokens_used == sum(steps.tokens_consumed)).
+  - LOOPDATA-INV3: Circuit breakers trip loop into FAILED upon exceeding consecutive_failure_limit, max_total_tokens, or max_iterations.
+  - LOOPDATA-INV4: Cross-substrate serialization fidelity (to_dict / from_dict) with automatic credential masking (sk-*, ghp_*, Bearer *).
+  - LOOPDATA-INV5: Deterministic finite state machine transitions across 9 states with absorbing terminal states (COMPLETED, FAILED, ABORTED).
+  - Hardening bounds: bounded string lengths (args <= 64 KiB, error trace <= 16 KiB), snapshot step cap (1000 steps), and bounded registry capacity (256 loops) with LRU termination eviction.
+  - FastMCP production integration: aios_agent_loop_status (pure read-only, 0 tokens) and aios_agent_loop_init (PoR Invariant I-2 token gated).
+- Evidence: docs/tasks/evidence/T-03272-verify.md, docs/tasks/evidence/T-03272-data-model-verification-evidenc.md.

@@ -14,3 +14,5 @@ from . import model_backend_adapters_api
 
 
 from . import model_backend_adapters_doc
+
+from . import model_backend_adapters_recovery

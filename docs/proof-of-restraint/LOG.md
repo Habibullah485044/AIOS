@@ -1332,3 +1332,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 
 
 
+## T-03252 - AI Control Plane Model Backend Adapters / documentation: Verification & Evidence (2026-10-29)
+- Milestone closeout for Model Backend Adapters documentation subsystem (T-03243..T-03252).
+- Verification battery:
+  - Python Model Backend Adapters Documentation suite (`test_model_backend_adapters_doc_*.py`): 55/55 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODDOC-INV1..MODDOC-INV5, PoR Invariant I-2.
+- Documentation Subsystem & Safety verified:
+  - Zero-token Invariant I-2: topic retrieval, catalog enumeration, and keyword search require 0 capability tokens.
+  - Input sanitization & Bidi defense: strips control codes (<32, 127) and Bidi/invisible unicode sequences (`\u200b`, `\ufeff`). Clamped to 128 chars.
+  - Traversal immunity: topic IDs strictly validated against `^[a-zA-Z0-9_\-\.]{1,64}$`; path tokens (`..`, `/`, `\`) and NUL bytes rejected fail-closed.
+  - Capacity bounds: 256 topics ceiling, 64 KiB max body size, 10 items max search output.
+  - Secret masking: automatically redacts API keys, Bearer tokens, and secrets with `[REDACTED_SECRET]`.
+  - FastMCP production integration: `aios_model_doc_get`, `aios_model_doc_search`, `aios_model_doc_list` registered as pure read tools (0 tokens).
+- Evidence: docs/tasks/evidence/T-03252-verify.md, docs/tasks/evidence/T-03252-documentation-verification-evidenc.md.
+

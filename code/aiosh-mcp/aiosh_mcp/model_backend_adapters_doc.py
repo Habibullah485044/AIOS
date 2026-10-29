@@ -202,3 +202,67 @@ class ModelAdapterDocCatalog:
 
         scored_results.sort(key=lambda r: (-r["score"], r["topic_id"]))
         return scored_results[:bounded_limit]
+
+
+_GLOBAL_DOC_CATALOG = ModelAdapterDocCatalog()
+
+
+def get_global_doc_catalog() -> ModelAdapterDocCatalog:
+    """Returns the process-wide ModelAdapterDocCatalog singleton."""
+    return _GLOBAL_DOC_CATALOG
+
+
+def register_model_doc_tools(mcp_server: Any) -> None:
+    """Registers Model Backend Adapters Documentation MCP tools (T-03248)."""
+
+    @mcp_server.tool()
+    def aios_model_doc_get(topic_id: str) -> dict:
+        """Retrieve detailed documentation topic by its identifier (pure read-only, 0 tokens)."""
+        try:
+            topic = get_global_doc_catalog().get_topic(topic_id)
+            if topic is None:
+                return {
+                    "status": "error",
+                    "ok": False,
+                    "error": MODDOC_ERR_NOT_FOUND,
+                    "message": f"Topic not found: {topic_id}",
+                }
+            return {
+                "status": "success",
+                "ok": True,
+                "data": topic.to_dict(),
+            }
+        except ValueError as ve:
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODDOC_ERR_INVALID_ID,
+                "message": str(ve),
+            }
+
+    @mcp_server.tool()
+    def aios_model_doc_search(query: str, limit: int = 10) -> dict:
+        """Search model backend adapter documentation topics by keywords (pure read-only, 0 tokens)."""
+        results = get_global_doc_catalog().search(query, limit=limit)
+        return {
+            "status": "success",
+            "ok": True,
+            "data": {
+                "query": sanitize_doc_query(query),
+                "count": len(results),
+                "results": results,
+            },
+        }
+
+    @mcp_server.tool()
+    def aios_model_doc_list() -> dict:
+        """List all available model backend adapter documentation topics (pure read-only, 0 tokens)."""
+        topics = get_global_doc_catalog().list_topics()
+        return {
+            "status": "success",
+            "ok": True,
+            "data": {
+                "count": len(topics),
+                "topics": [t.to_dict() for t in topics],
+            },
+        }

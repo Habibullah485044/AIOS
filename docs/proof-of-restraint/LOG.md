@@ -1347,3 +1347,20 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_model_doc_get`, `aios_model_doc_search`, `aios_model_doc_list` registered as pure read tools (0 tokens).
 - Evidence: docs/tasks/evidence/T-03252-verify.md, docs/tasks/evidence/T-03252-documentation-verification-evidenc.md.
 
+## T-03262 - AI Control Plane Model Backend Adapters / recovery & validation: Verification & Evidence (2026-10-29)
+- Milestone closeout for Model Backend Adapters recovery & validation subsystem (T-03253..T-03262).
+- Verification battery:
+  - Python Model Backend Adapters Recovery suite (`test_model_backend_adapters_recovery_*.py`): 49/49 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODRECV-INV1..MODRECV-INV5, PoR Invariant I-2.
+- Recovery Subsystem & Safety verified:
+  - Record conservation invariant: `total_models == valid_models + invalid_models` enforced.
+  - Health state consistency: `is_healthy == (len(issues) == 0 and invalid_models == 0)` validated.
+  - Traversal immunity on paths: strictly rejects `..`, NUL bytes (`\0`), alternate data streams (`:`), Windows reserved devices, and lengths > 1024.
+  - Token gating (PoR Invariant I-2): read-only validation (`aios_model_validate_config`) consumes 0 capability tokens; state-mutating recovery (`aios_model_recover_config`) strictly requires valid capability token redemption.
+  - Atomic quarantine & backup: corrupted configuration files are preserved to `<path>.corrupt.<timestamp>` before overwriting with authoritative default fallback configuration.
+  - Leak-free error paths: temporary files (`.tmp.<pid>`) are guaranteed to be unlinked even upon exceptions.
+  - Secret masking: automatically redacts API keys, Bearer tokens, and secrets with `[REDACTED_SECRET]`.
+  - FastMCP production integration: `aios_model_validate_config` and `aios_model_recover_config` registered in live server catalog.
+- Evidence: docs/tasks/evidence/T-03262-verify.md, docs/tasks/evidence/T-03262-recovery-validation-verification-evidenc.md.
+

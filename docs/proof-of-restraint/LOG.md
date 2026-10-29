@@ -1306,6 +1306,23 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Secret redaction and fail-closed audit trail emission on all evaluation outcomes via `PolicyVerdict.to_envelope()`.
 - Evidence: docs/tasks/evidence/T-03232-verify.md, docs/tasks/evidence/T-03232-security-policy-verification-evidenc.md.
 
+## T-03242 - AI Control Plane Model Backend Adapters / observability: Verification & Evidence (2026-10-29)
+- Milestone closeout for Model Backend Adapters observability subsystem (T-03233..T-03242).
+- Verification battery:
+  - Python Model Backend Adapters Observability suite (`test_model_backend_adapters_observability_*.py`): 15/15 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODOBS-INV1..MODOBS-INV5, PoR Invariant I-2.
+- Observability Subsystem & Safety verified:
+  - Thread-safe operational metrics aggregation via `ModelBackendObservabilityService`.
+  - Token conservation invariant: `total_tokens == prompt_tokens + completion_tokens` validated.
+  - Request balance invariant: `total_requests == successful_requests + failed_requests` validated.
+  - Health state classification: deterministic thresholds for `HEALTHY`, `DEGRADED`, and `CRITICAL`.
+  - Bounded memory footprint: provider dictionary capped to 64 distinct keys, excess aggregated under `"other"`.
+  - Duration and token ceiling enforcement preventing arithmetic overflow.
+  - FastMCP production integration: `aios_model_observability_snapshot` registered as a pure read tool (0 capability tokens consumed).
+- Evidence: docs/tasks/evidence/T-03242-verify.md, docs/tasks/evidence/T-03242-observability-verification-evidenc.md.
+
+
 
 
 

@@ -91,3 +91,71 @@ class ModelRecoveryResult:
 - **Parameters**: `config_path: str`, `capability_token: str`, `create_backup: bool = True`
 - **PoR Requirement**: Valid capability token redemption (Invariant I-2).
 - **Returns**: ADR-0035 envelope containing `ModelRecoveryResult`.
+
+---
+
+## 5. Usage Examples
+
+### 5.1 Programmatic Python Invocation
+```python
+from aiosh_mcp.model_backend_adapters_recovery import get_global_recovery_engine
+
+engine = get_global_recovery_engine()
+
+# 1. Validate configuration file (pure read, 0 tokens)
+report = engine.validate_config_file("config/models.json")
+if not report.is_healthy:
+    print(f"Config unhealthy! Issues found: {len(report.issues)}")
+    # 2. Recover defective configuration (requires capability token)
+    result = engine.recover_config_file(
+        path="config/models.json",
+        capability_token="cap_operator_recovery_token",
+        create_backup=True,
+    )
+    print(f"Recovery status: {result.action_taken}, quarantine: {result.quarantine_path}")
+```
+
+### 5.2 FastMCP Tool Call
+```json
+// Validate config
+{
+  "name": "aios_model_validate_config",
+  "arguments": {
+    "config_path": "config/models.json"
+  }
+}
+
+// Recover config
+{
+  "name": "aios_model_recover_config",
+  "arguments": {
+    "config_path": "config/models.json",
+    "capability_token": "cap_sample_valid_token_12345",
+    "create_backup": true
+  }
+}
+```
+
+---
+
+## 6. Constraints & Known Limitations
+
+1. **Maximum File Size**: Config files exceeding `MAX_CONFIG_FILE_BYTES` (10 MiB) fail validation immediately.
+2. **Maximum Model Definitions**: Config files cannot declare more than `MAX_CONFIG_MODELS_CAP` (128) model items.
+3. **Capability Token Requirement**: `aios_model_recover_config` strictly rejects invocations with missing or whitespace-only tokens.
+4. **Path Traversal Restrictions**: Target paths cannot contain `..`, Windows reserved names (`CON`, `NUL`), or alternate data streams (`:`).
+5. **Offline Fallback Guarantee**: The synthesized default configuration points strictly to a safe offline `mock` endpoint (`http://localhost:8080/mock`) to avoid accidental external credential requirements upon disaster recovery.
+
+---
+
+## 7. Traceability & Task Evidence Links
+
+- `T-03253`: Recovery Research — [`docs/tasks/evidence/T-03253-recovery-validation-research.md`](file:///docs/tasks/evidence/T-03253-recovery-validation-research.md)
+- `T-03254`: Recovery Specification — [`docs/tasks/evidence/T-03254-recovery-validation-specification.md`](file:///docs/tasks/evidence/T-03254-recovery-validation-specification.md)
+- `T-03255`: Recovery Scaffold — [`docs/tasks/evidence/T-03255-recovery-validation-scaffold.md`](file:///docs/tasks/evidence/T-03255-recovery-validation-scaffold.md)
+- `T-03256`: Recovery Implementation — [`docs/tasks/evidence/T-03256-recovery-validation-implementation.md`](file:///docs/tasks/evidence/T-03256-recovery-validation-implementation.md)
+- `T-03257`: Recovery Unit Test — [`docs/tasks/evidence/T-03257-recovery-validation-unit-test.md`](file:///docs/tasks/evidence/T-03257-recovery-validation-unit-test.md)
+- `T-03258`: Recovery Integration — [`docs/tasks/evidence/T-03258-recovery-validation-integration.md`](file:///docs/tasks/evidence/T-03258-recovery-validation-integration.md)
+- `T-03259`: Recovery Security Review — [`docs/tasks/evidence/T-03259-recovery-validation-security-review.md`](file:///docs/tasks/evidence/T-03259-recovery-validation-security-review.md)
+- `T-03260`: Recovery Hardening — [`docs/tasks/evidence/T-03260-recovery-validation-hardening.md`](file:///docs/tasks/evidence/T-03260-recovery-validation-hardening.md)
+- `T-03261`: Recovery Documentation — [`docs/tasks/evidence/T-03261-recovery-validation-documentation.md`](file:///docs/tasks/evidence/T-03261-recovery-validation-documentation.md)

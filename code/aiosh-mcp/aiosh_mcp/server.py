@@ -927,6 +927,9 @@ model_backend_adapters_doc_mod.register_model_doc_tools(mcp)
 from . import model_backend_adapters_recovery as model_backend_adapters_recovery_mod
 model_backend_adapters_recovery_mod.register_model_recovery_tools(mcp)
 
+from . import agent_loop_data_model as agent_loop_data_model_mod
+agent_loop_data_model_mod.register_agent_loop_data_model_tools(mcp)
+
 
 
 

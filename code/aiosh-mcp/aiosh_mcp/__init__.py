@@ -13,3 +13,4 @@ from . import model_backend_adapters_cli
 from . import model_backend_adapters_api
 
 
+from . import model_backend_adapters_doc

@@ -1291,6 +1291,22 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - FastMCP production integration: `aios_model_complete` (gated mutation requiring capability token) and `aios_model_service_health` (pure read-only query requiring zero tokens) registered in live server catalog.
 - Evidence: docs/tasks/evidence/T-03182-core-service-verification-evidenc.md.
 
+## T-03232 - AI Control Plane Model Backend Adapters / security policy: Verification & Evidence (2026-10-29)
+- Milestone closeout for Model Backend Adapters security policy subsystem (T-03223..T-03232).
+- Verification battery:
+  - Python Model Backend Adapters Security Policy suite (`test_model_backend_adapters_security_policy_*.py`): 12/12 tests PASSED.
+  - Proof of Restraint Demonstration & Standalone Verifier (`demo_por.py`): PASSED (unused grant proved PROVABLY_RESTRAINED; post-anchor tamper REJECTED).
+- Invariants certified: MODSEC-INV1..MODSEC-INV5, PoR Invariant I-2.
+- Security Policy Subsystem & Safety verified:
+  - Centralized policy enforcement engine (`ModelSecurityPolicy`) governing model actions.
+  - Proof-of-Restraint Invariant I-2 gating: state-mutating actions (`complete`, `register`, `delete`, `reload_config`) strictly require valid non-empty capability tokens, failing closed with `POLICY_UNAUTHORIZED`.
+  - Read actions (`list`, `show`, `health`, `ping`) proceed with 0 tokens.
+  - Input hardening: strict rejection of NUL bytes (`\x00`) across action names, capability tokens, and prompt payloads.
+  - Hard parameter ceilings: 1 MiB (`MAX_PAYLOAD_BYTES`), 512-character token limit (`MAX_TOKEN_LEN`), and 64-character action length limit (`MAX_ACTION_LEN`).
+  - Secret redaction and fail-closed audit trail emission on all evaluation outcomes via `PolicyVerdict.to_envelope()`.
+- Evidence: docs/tasks/evidence/T-03232-verify.md, docs/tasks/evidence/T-03232-security-policy-verification-evidenc.md.
+
+
 
 
 

@@ -1,7 +1,8 @@
-"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold / T-03266 impl / T-03268 integ).
+"""AI Control Plane Agent Loop Hardening Data Model (T-03265 scaffold / T-03266 impl / T-03268 integ / T-03270 hardening).
 
 Enforces LOOPDATA-INV1..LOOPDATA-INV5: monotonic step indexing, token conservation,
 circuit breaker bounds, substrate serialization parity, and FSM transition determinism.
+Includes bounded memory limits, truncation safeguards, and LRU eviction.
 """
 
 from __future__ import annotations
@@ -19,6 +20,11 @@ LOOPDATA_ERR_INVARIANT_VIOLATION = "LOOPDATA_ERR_INVARIANT_VIOLATION"
 LOOPDATA_ERR_UNAUTHORIZED = "LOOPDATA_ERR_UNAUTHORIZED"
 LOOPDATA_ERR_NOT_FOUND = "LOOPDATA_ERR_NOT_FOUND"
 
+MAX_SNAPSHOT_STEPS = 1000
+MAX_ARGS_SUMMARY_BYTES = 65536
+MAX_ERROR_MSG_BYTES = 16384
+MAX_REGISTRY_CAPACITY = 256
+
 LOOP_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{8,64}$")
 SECRET_PATTERN = re.compile(
     r"(sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9_\-]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})",
@@ -31,6 +37,13 @@ def mask_secrets(text: str) -> str:
     if not text:
         return ""
     return SECRET_PATTERN.sub("[REDACTED_SECRET]", text)
+
+
+def truncate_safe(text: str, max_chars: int) -> str:
+    """Safely bounds string length preventing unbounded memory growth."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + " [TRUNCATED]"
 
 
 class LoopState(str, Enum):
@@ -67,6 +80,25 @@ def validate_loop_transition(from_state: LoopState, to_state: LoopState) -> None
         raise ValueError(
             f"{LOOPDATA_ERR_INVALID_TRANSITION}: transition from {from_state.value} to {to_state.value} is forbidden"
         )
+
+
+@dataclass(frozen=True)
+class LoopResultEnvelope:
+    """Standardized result envelope for loop operations (ADR-0035)."""
+    ok: bool
+    error: Optional[str] = None
+    error_code: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        res: Dict[str, Any] = {"ok": self.ok}
+        if self.error:
+            res["error"] = self.error
+        if self.error_code:
+            res["error_code"] = self.error_code
+        if self.data is not None:
+            res["data"] = self.data
+        return res
 
 
 @dataclass(frozen=True)
@@ -131,6 +163,12 @@ class LoopStepRecord:
     recorded_at_utc: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+
+    def __post_init__(self) -> None:
+        if self.tool_args_summary:
+            self.tool_args_summary = truncate_safe(self.tool_args_summary, MAX_ARGS_SUMMARY_BYTES)
+        if self.error_message:
+            self.error_message = truncate_safe(self.error_message, MAX_ERROR_MSG_BYTES)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -212,6 +250,11 @@ class LoopSnapshot:
 
     def record_step(self, step: LoopStepRecord, config: Optional[LoopConfig] = None) -> None:
         """Appends a step record and updates iteration, token counts, and circuit-breaker limits."""
+        if len(self.steps) >= MAX_SNAPSHOT_STEPS:
+            raise ValueError(
+                f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: maximum step count ({MAX_SNAPSHOT_STEPS}) exceeded"
+            )
+
         expected_index = len(self.steps)
         if step.step_index != expected_index:
             raise AssertionError(
@@ -317,9 +360,10 @@ def create_initial(loop_id: str, config: Optional[LoopConfig] = None) -> LoopSna
 
 
 class AgentLoopRegistry:
-    """Thread-safe in-memory registry of active and historical agent loops."""
+    """Thread-safe bounded in-memory registry of active and historical agent loops."""
 
-    def __init__(self) -> None:
+    def __init__(self, capacity: int = MAX_REGISTRY_CAPACITY) -> None:
+        self._capacity = capacity
         self._loops: Dict[str, LoopSnapshot] = {}
         self._configs: Dict[str, LoopConfig] = {}
 
@@ -328,10 +372,25 @@ class AgentLoopRegistry:
 
     def register_loop(self, config: LoopConfig) -> LoopSnapshot:
         config.validate_bounds()
+        if len(self._loops) >= self._capacity and config.loop_id not in self._loops:
+            self._evict_terminated_or_raise()
+
         snap = create_initial(config.loop_id, config)
         self._loops[config.loop_id] = snap
         self._configs[config.loop_id] = config
         return snap
+
+    def _evict_terminated_or_raise(self) -> None:
+        # Find oldest terminated loop
+        terminated = [lid for lid, snap in self._loops.items() if snap.is_terminated]
+        if terminated:
+            oldest = terminated[0]
+            del self._loops[oldest]
+            self._configs.pop(oldest, None)
+            return
+        raise ValueError(
+            f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: loop registry capacity {self._capacity} reached and no terminated loops eligible for eviction"
+        )
 
     def get_config(self, loop_id: str) -> Optional[LoopConfig]:
         return self._configs.get(loop_id)
@@ -348,17 +407,19 @@ _GLOBAL_LOOP_REGISTRY = AgentLoopRegistry()
 
 
 def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
-    """Registers agent loop hardening data model tools with FastMCP (T-03268)."""
+    """Registers agent loop hardening data model tools with FastMCP (T-03268 / T-03270)."""
 
     @mcp_app.tool()
     def aios_agent_loop_status(loop_id: str) -> dict:
         """Returns the status, FSM state, and metrics for an agent loop (Pure read-only, PoR Invariant I-2)."""
         snap = _GLOBAL_LOOP_REGISTRY.get_loop(loop_id)
         if not snap:
-            return {
-                "ok": False,
-                "error": f"{LOOPDATA_ERR_NOT_FOUND}: loop_id '{loop_id}' not found",
-            }
+            env = LoopResultEnvelope(
+                ok=False,
+                error=f"{LOOPDATA_ERR_NOT_FOUND}: loop_id '{loop_id}' not found",
+                error_code=LOOPDATA_ERR_NOT_FOUND,
+            )
+            return env.to_dict()
         return {
             "ok": True,
             "snapshot": snap.to_dict(),
@@ -373,10 +434,12 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
     ) -> dict:
         """Initializes a hardened agent loop FSM. Mutating: requires PoR capability token (PoR Invariant I-2)."""
         if not capability_token or not capability_token.strip():
-            return {
-                "ok": False,
-                "error": f"{LOOPDATA_ERR_UNAUTHORIZED}: capability token required for agent loop init (PoR Invariant I-2)",
-            }
+            env = LoopResultEnvelope(
+                ok=False,
+                error=f"{LOOPDATA_ERR_UNAUTHORIZED}: capability token required for agent loop init (PoR Invariant I-2)",
+                error_code=LOOPDATA_ERR_UNAUTHORIZED,
+            )
+            return env.to_dict()
         try:
             cfg = LoopConfig(
                 loop_id=loop_id,
@@ -391,4 +454,9 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
                 "snapshot": snap.to_dict(),
             }
         except Exception as exc:
-            return {"ok": False, "error": str(exc)}
+            env = LoopResultEnvelope(
+                ok=False,
+                error=str(exc),
+                error_code=LOOPDATA_ERR_BOUNDS_EXCEEDED,
+            )
+            return env.to_dict()

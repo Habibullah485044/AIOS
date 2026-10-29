@@ -17,3 +17,4 @@ from . import model_backend_adapters_doc
 
 from . import model_backend_adapters_recovery
 from . import agent_loop_data_model
+from . import agent_loop_service

@@ -1,4 +1,4 @@
-"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold / T-03236 impl).
+"""AI Control Plane Model Backend Adapters Observability Subsystem (T-03235 scaffold / T-03236 impl / T-03238 integration).
 
 Defines telemetry data models, operational metrics aggregation, health status determination,
 and observability services in compliance with SPEC-MODEL-BACKEND-ADAPTERS-OBSERVABILITY and PoR Invariant I-2.
@@ -190,3 +190,25 @@ class ModelBackendObservabilityService:
             self._total_completion_tokens = 0
             self._total_duration_ms = 0.0
             self._provider_counts.clear()
+
+
+_GLOBAL_OBSERVABILITY_SERVICE = ModelBackendObservabilityService()
+
+
+def get_global_observability_service() -> ModelBackendObservabilityService:
+    """Returns the process-wide ModelBackendObservabilityService singleton."""
+    return _GLOBAL_OBSERVABILITY_SERVICE
+
+
+def register_model_observability_tools(mcp_server: Any) -> None:
+    """Registers Model Backend Adapters Observability MCP tools (T-03238)."""
+
+    @mcp_server.tool()
+    def aios_model_observability_snapshot() -> dict:
+        """Returns the point-in-time metrics and health snapshot for model backend adapters (pure read-only, 0 tokens)."""
+        snapshot = get_global_observability_service().get_snapshot()
+        return {
+            "status": "success",
+            "ok": True,
+            "data": snapshot.to_dict(),
+        }

@@ -432,3 +432,64 @@ _GLOBAL_RECOVERY_ENGINE = ModelBackendRecoveryEngine()
 def get_global_recovery_engine() -> ModelBackendRecoveryEngine:
     """Returns the process-wide ModelBackendRecoveryEngine singleton."""
     return _GLOBAL_RECOVERY_ENGINE
+
+
+def register_model_recovery_tools(mcp_server: Any) -> None:
+    """Registers Model Backend Adapters Recovery & Validation MCP tools (T-03258)."""
+
+    @mcp_server.tool()
+    def aios_model_validate_config(config_path: str) -> dict:
+        """Validates model backend configuration file (pure read-only, 0 tokens)."""
+        try:
+            report = get_global_recovery_engine().validate_config_file(config_path)
+            return {
+                "status": "success",
+                "ok": True,
+                "data": report.to_dict(),
+            }
+        except ValueError as ve:
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODRECV_ERR_INVALID_PATH,
+                "message": sanitize_error_message(str(ve)),
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error validating model config: {e}")
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODRECV_ERR_INTERNAL,
+                "message": sanitize_error_message(str(e)),
+            }
+
+    @mcp_server.tool()
+    def aios_model_recover_config(
+        config_path: str, capability_token: str, create_backup: bool = True
+    ) -> dict:
+        """Quarantines corrupt model config and restores safe fallback (token-gated, Invariant I-2)."""
+        try:
+            result = get_global_recovery_engine().recover_config_file(
+                path=config_path, capability_token=capability_token, create_backup=create_backup
+            )
+            return {
+                "status": "success" if result.ok else "error",
+                "ok": result.ok,
+                "data": result.to_dict(),
+            }
+        except ValueError as ve:
+            err_code = MODRECV_ERR_UNAUTHORIZED if "capability token" in str(ve) else MODRECV_ERR_INVALID_PATH
+            return {
+                "status": "error",
+                "ok": False,
+                "error": err_code,
+                "message": sanitize_error_message(str(ve)),
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error recovering model config: {e}")
+            return {
+                "status": "error",
+                "ok": False,
+                "error": MODRECV_ERR_INTERNAL,
+                "message": sanitize_error_message(str(e)),
+            }

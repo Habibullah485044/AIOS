@@ -1,4 +1,4 @@
-"""Scaffold tests for Agent Loop Hardening Core Service (T-03275)."""
+"""Scaffold tests for Agent Loop Hardening Core Service (T-03275 / T-03276)."""
 
 import pytest
 from aiosh_mcp.agent_loop_data_model import LoopConfig
@@ -38,24 +38,23 @@ def test_service_scaffold_por_token_enforcement():
     assert LOOPSERV_ERR_UNAUTHORIZED in str(exc.value)
 
 
-def test_service_scaffold_not_implemented():
+def test_service_basic_lifecycle():
     service = AgentLoopService()
     cfg = LoopConfig(loop_id="loop-scaffold-02")
 
-    # Calling with valid capability token hits NotImplementedError in scaffold
-    with pytest.raises(NotImplementedError):
-        service.start_loop(cfg, capability_token="por-valid-token")
+    snap = service.start_loop(cfg, capability_token="por-valid-token")
+    assert snap.loop_id == "loop-scaffold-02"
 
-    with pytest.raises(NotImplementedError):
-        service.advance_turn(
-            "loop-scaffold-02",
-            "search",
-            capability_token="por-valid-token",
-        )
+    step = service.advance_turn(
+        "loop-scaffold-02",
+        "search",
+        capability_token="por-valid-token",
+    )
+    assert step.step_index == 0
 
-    with pytest.raises(NotImplementedError):
-        service.abort_loop(
-            "loop-scaffold-02",
-            "cancel",
-            capability_token="por-valid-token",
-        )
+    aborted = service.abort_loop(
+        "loop-scaffold-02",
+        "cancel",
+        capability_token="por-valid-token",
+    )
+    assert aborted.is_terminated is True

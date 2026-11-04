@@ -1,15 +1,12 @@
 """Scaffold tests for the Agent Loop Hardening MCP/API surface (T-03295)."""
 
-import pytest
 from mcp.server.fastmcp import FastMCP
 
-from aiosh_mcp import agent_loop_gate
 from aiosh_mcp.agent_loop_mcp import (
     READ_ONLY,
     TOOL_ANNOTATIONS,
     LoopIdArg,
     TokensArg,
-    register_agent_loop_mcp_tools,
 )
 
 
@@ -34,10 +31,3 @@ def test_annotated_constraints_reach_input_schema():
     assert props["loop_id"]["pattern"] == r"^[a-zA-Z0-9_\-]{8,64}$"
     assert (props["tokens"]["minimum"], props["tokens"]["maximum"]) == (0, 1_000_000)
     assert tool.annotations.readOnlyHint is True
-
-
-def test_stubs_fail_loudly():
-    with pytest.raises(NotImplementedError):
-        register_agent_loop_mcp_tools(FastMCP("scaffold-stub"))
-    with pytest.raises(NotImplementedError):
-        agent_loop_gate.read_loop_history(None, "loop-scaffold-mcp", 10)

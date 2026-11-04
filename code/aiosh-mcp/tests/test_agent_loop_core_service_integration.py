@@ -105,10 +105,13 @@ async def test_mutating_tools_fail_closed_without_token():
 
 
 @pytest.mark.anyio
-async def test_invalid_config_returns_envelope_not_exception():
-    res = await _call("aios_agent_loop_start", {"loop_id": "bad", "capability_token": "tok"})
-    assert res["ok"] is False
-    assert res["error_code"] == "LOOPDATA_ERR_BOUNDS_EXCEEDED"
+async def test_invalid_config_rejected_without_state_change():
+    """Since T-03296 the published schema rejects a bad loop_id (MCP tool error); out-of-range
+    values that pass the schema still come back as LOOPDATA_ERR_BOUNDS_EXCEEDED envelopes."""
+    from mcp.server.fastmcp.exceptions import ToolError
+    with pytest.raises(ToolError):
+        await _call("aios_agent_loop_start", {"loop_id": "bad", "capability_token": "tok"})
+    assert _GLOBAL_AGENT_LOOP_SERVICE.list_active_loops() == []
 
 
 @pytest.mark.anyio

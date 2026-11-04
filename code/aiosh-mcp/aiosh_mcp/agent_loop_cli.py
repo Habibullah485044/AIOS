@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from aiosh_mcp import audit_client
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopState, mask_secrets
-from aiosh_mcp.agent_loop_gate import PepCapabilityGate
+from aiosh_mcp.agent_loop_gate import HistoryReadError, PepCapabilityGate, read_loop_history
 from aiosh_mcp.agent_loop_service import (
     AgentLoopService,
     AgentLoopServiceError,
@@ -53,8 +53,6 @@ LOOPCLI_ERR_PLAN = "LOOPCLI_ERR_PLAN"
 LOOPCLI_ERR_AUDIT_READ = "LOOPCLI_ERR_AUDIT_READ"
 LOOPCLI_ERR_INTERRUPTED = "LOOPCLI_ERR_INTERRUPTED"
 
-#: Bounded wait for a locked audit DB on read (seconds).
-HISTORY_DB_TIMEOUT_S = 5.0
 
 _PLAN_KEYS = {"action_intent", "tool_name", "tool_args", "tokens_consumed", "policy_allowed"}
 _EXIT_BY_CODE = {
@@ -254,31 +252,10 @@ def _abort_quietly(service: AgentLoopService, loop_id: str, token: str, reason: 
 def _cmd_history(ns: argparse.Namespace, db_path: Optional[str]) -> CliResult:
     if not (1 <= ns.limit <= MAX_HISTORY_LIMIT):
         raise _UsageError(f"--limit must be in [1, {MAX_HISTORY_LIMIT}]")
-    path = Path(db_path or audit_client.default_db_path())
-    events: List[Dict[str, Any]] = []
-    if path.is_file():
-        # Read-only URI: history never creates or migrates the audit DB.
-        try:
-            conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True,
-                                   timeout=HISTORY_DB_TIMEOUT_S)
-        except sqlite3.Error as exc:
-            raise _AuditReadError(f"cannot open audit DB: {exc}") from exc
-        try:
-            conn.row_factory = sqlite3.Row
-            has_ring = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone()
-            rows = conn.execute(
-                """SELECT id, ts, tool, outcome, outcome_detail, args_json FROM audit_ring
-                   WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
-                   ORDER BY id LIMIT ?""",
-                (ns.loop_id, ns.limit),
-            ).fetchall() if has_ring else []
-        except sqlite3.Error as exc:
-            raise _AuditReadError(f"cannot read audit DB: {exc}") from exc
-        finally:
-            conn.close()
-        events = [{"id": r["id"], "ts": r["ts"], "tool": r["tool"], "outcome": r["outcome"],
-                   "outcome_detail": r["outcome_detail"], "args": json.loads(r["args_json"])} for r in rows]
+    try:
+        events = read_loop_history(db_path, ns.loop_id, ns.limit)
+    except HistoryReadError as exc:
+        raise _AuditReadError(str(exc)) from exc
     return CliResult(EXIT_SUCCESS, "history", data={"loop_id": ns.loop_id, "events": events})
 
 

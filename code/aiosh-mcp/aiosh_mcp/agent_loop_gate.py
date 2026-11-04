@@ -46,13 +46,20 @@ _CLAIM_TOOLS = tuple(f"aios.agent_loop.{e}" for e in CLAIM_EVENTS)
 class PepCapabilityGate:
     """Production gate backed by the ``pep_grants`` table and ``audit_ring``."""
 
-    def __init__(self, db_path: Optional[str] = None) -> None:
+    def __init__(self, db_path: Optional[str] = None, busy_timeout_ms: Optional[int] = None) -> None:
         self._db_path = db_path
+        self._busy_timeout_ms = busy_timeout_ms
+
+    def _busy_ms(self) -> int:
+        if self._busy_timeout_ms is None:  # T-03308: resolved lazily, clamped 100..30000
+            from aiosh_mcp.agent_loop_config import resolve
+            self._busy_timeout_ms = int(resolve()["config"]["db_busy_timeout_ms"])
+        return self._busy_timeout_ms
 
     def _open(self):
         conn = audit_client.open_db(self._db_path)
         # Bounded wait on a locked DB (T-03280) instead of failing or hanging.
-        conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+        conn.execute(f"PRAGMA busy_timeout = {int(self._busy_ms())}")
         audit_client.ensure_pep_schema(conn)
         return conn
 

@@ -87,8 +87,11 @@ class CapabilityGate(Protocol):
 class AgentLoopService:
     """Core Service orchestrating hardened agent loop state machines (LOOPSERV-INV1..LOOPSERV-INV5)."""
 
-    def __init__(self, gate: Optional[CapabilityGate] = None, capacity: int = MAX_REGISTRY_CAPACITY) -> None:
+    def __init__(self, gate: Optional[CapabilityGate] = None, capacity: Optional[int] = None) -> None:
         self._gate: CapabilityGate = gate if gate is not None else PepCapabilityGate()
+        if capacity is None:  # T-03308: operator-configurable, clamped to 1..MAX_REGISTRY_CAPACITY
+            from aiosh_mcp.agent_loop_config import resolve
+            capacity = int(resolve()["config"]["registry_capacity"])
         self._capacity = capacity
         self._lock = threading.RLock()
         self._loops: Dict[str, LoopSnapshot] = {}

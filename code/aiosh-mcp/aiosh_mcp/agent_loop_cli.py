@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional
 
 from aiosh_mcp import audit_client
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopState, mask_secrets
+from aiosh_mcp.agent_loop_config import loop_config_for
+from aiosh_mcp.agent_loop_config import resolve as resolve_config
 from aiosh_mcp.agent_loop_gate import HistoryReadError, PepCapabilityGate, read_loop_history
 from aiosh_mcp.agent_loop_service import (
     AgentLoopService,
@@ -178,11 +180,16 @@ def _build_parser() -> _Parser:
     tok.add_argument("--token-env", metavar="VAR")
     tok.add_argument("--token-stdin", action="store_true")
     r.add_argument("--plan", required=True)
-    r.add_argument("--max-iterations", type=int, default=25)
-    r.add_argument("--max-total-tokens", type=int, default=32768)
-    r.add_argument("--total-timeout-ms", type=float, default=300000.0)
-    r.add_argument("--consecutive-failure-limit", type=int, default=3)
+    # Omitted budgets fall back to the configured defaults (T-03308, agent_loop_config).
+    r.add_argument("--max-iterations", type=int, default=None)
+    r.add_argument("--max-total-tokens", type=int, default=None)
+    r.add_argument("--total-timeout-ms", type=float, default=None)
+    r.add_argument("--consecutive-failure-limit", type=int, default=None)
     r.add_argument("--json", action="store_true")
+
+    c = sub.add_parser("config", add_help=False)
+    c.add_argument("--config", dest="config_file", default=None)
+    c.add_argument("--json", action="store_true")
 
     h = sub.add_parser("history", add_help=False)
     h.add_argument("--loop-id", required=True)
@@ -205,8 +212,9 @@ def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
     ns.token = _resolve_token(ns)
     if len(ns.token) > MAX_TOKEN_CHARS:
         raise _UsageError(f"capability token longer than {MAX_TOKEN_CHARS} chars")
-    cfg = LoopConfig(
-        loop_id=ns.loop_id,
+    cfg = loop_config_for(
+        ns.loop_id,
+        resolve_config(),
         max_iterations=ns.max_iterations,
         max_total_tokens=ns.max_total_tokens,
         total_timeout_ms=ns.total_timeout_ms,
@@ -266,13 +274,15 @@ def dispatch_cli(
     db_path: Optional[str] = None,
 ) -> CliResult:
     """Parses argv and runs one subcommand; never raises."""
-    sub = argv[0] if argv and argv[0] in {"validate", "run", "history"} else "unknown"
+    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config"} else "unknown"
     try:
         if any("\0" in a for a in argv):
             raise _UsageError("argument contains prohibited NUL byte")
         ns = _build_parser().parse_args(argv)
         if ns.subcommand is None:
-            raise _UsageError("expected a subcommand: validate | run | history")
+            raise _UsageError("expected a subcommand: validate | run | history | config")
+        if ns.subcommand == "config":
+            return CliResult(EXIT_SUCCESS, "config", data=resolve_config(arg_config=ns.config_file))
         if ns.subcommand == "validate":
             return CliResult(EXIT_SUCCESS, "validate", data={"turns": len(load_plan(ns.plan))})
         if ns.subcommand == "run":
@@ -307,6 +317,11 @@ def render(result: CliResult, json_mode: bool) -> str:
     d = result.data or {}
     if result.subcommand == "validate":
         return f"plan OK: {d['turns']} turn(s)"
+    if result.subcommand == "config":
+        lines = [f"{k:<36} {v!s:<12} ({d['source'].get(k, 'default')})" for k, v in d["config"].items()]
+        lines.append(f"config file: {d['source'].get('_file', 'default')}")
+        lines += [f"warning: {e}" for e in d["errors"]]
+        return mask_secrets("\n".join(lines))
     if result.subcommand == "run":
         lines = [f"[{t['step_index']}] {t['outcome']:<7} {t['tool_name'] or '-'}"
                  + (f"  {t['error_message']}" if t.get("error_message") else "") for t in d["turns"]]

@@ -66,7 +66,8 @@ def test_non_finite_config_rejected(monkeypatch, value):
     monkeypatch.setenv("AIOSH_AGENT_LOOP_REGISTRY_CAPACITY", str(value))
     r = alc.resolve()  # must not raise (AGENTLOOPCONF-INV1)
     assert r["config"]["registry_capacity"] == 256
-    assert r["source"]["registry_capacity"] == "env_invalid"
+    assert r["source"]["registry_capacity"] == "default"
+    assert r["rejected"]["registry_capacity"] == "env_invalid"
 
 
 def test_nan_literal_in_config_file_rejected(tmp_path):

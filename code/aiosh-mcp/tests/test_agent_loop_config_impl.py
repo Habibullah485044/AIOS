@@ -54,7 +54,9 @@ def test_clamping_is_reported(tmp_path):
     r = alc.resolve(arg_config=_file(tmp_path, {"registry_capacity": 10_000, "mcp_call_timeout_s": 0}))
     assert r["config"]["registry_capacity"] == 256
     assert r["config"]["mcp_call_timeout_s"] == 1.0
-    assert sum(alc.AGENTLOOPCONF_ERR_BOUNDS in e for e in r["errors"]) == 2
+    # 2 clamps + the busy-wait coupling (1 s call bound -> busy wait lowered to 500 ms, T-03309)
+    assert sum(alc.AGENTLOOPCONF_ERR_BOUNDS in e for e in r["errors"]) == 3
+    assert r["config"]["db_busy_timeout_ms"] == 500
 
 
 def test_loop_config_for_uses_resolved_defaults_and_explicit_wins(tmp_path):

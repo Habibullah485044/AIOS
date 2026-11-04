@@ -27,16 +27,20 @@ def _file(tmp_path, body, name="cfg.json"):
 
 # ---- boundaries: every field accepts both edges and clamps one step past them ----
 
+#: Companion values that keep the busy-wait < half-call-timeout coupling (T-03309) satisfied at the edges.
+_COMPANION = {"db_busy_timeout_ms": {"mcp_call_timeout_s": 60}, "mcp_call_timeout_s": {"db_busy_timeout_ms": 100}}
+
+
 @pytest.mark.parametrize("key", sorted(alc.FIELDS))
 def test_each_field_edges_and_clamp(tmp_path, key):
     f = alc.FIELDS[key]
     for edge in (f.lo, f.hi):
-        r = alc.resolve(overrides={key: edge})
+        r = alc.resolve(overrides={key: edge, **_COMPANION.get(key, {})})
         assert r["config"][key] == f.kind(edge)
         assert r["errors"] == []
     step = 1 if f.kind is int else 0.5
-    low = alc.resolve(overrides={key: f.lo - step})
-    high = alc.resolve(overrides={key: f.hi + step})
+    low = alc.resolve(overrides={key: f.lo - step, **_COMPANION.get(key, {})})
+    high = alc.resolve(overrides={key: f.hi + step, **_COMPANION.get(key, {})})
     assert (low["config"][key], high["config"][key]) == (f.kind(f.lo), f.kind(f.hi))
     assert all(alc.AGENTLOOPCONF_ERR_BOUNDS in r["errors"][0] for r in (low, high))
 
@@ -84,7 +88,8 @@ def test_missing_file_is_io_error(tmp_path):
 def test_bad_env_value_keeps_lower_level(tmp_path, monkeypatch):
     monkeypatch.setenv("AIOSH_AGENT_LOOP_MAX_ITERATIONS", "many")
     r = alc.resolve(arg_config=_file(tmp_path, {"default_max_iterations": 9}))
-    assert r["source"]["default_max_iterations"] == "env_invalid"
+    assert r["source"]["default_max_iterations"] == "file"  # truthful: the file value is in effect
+    assert r["rejected"]["default_max_iterations"] == "env_invalid"
     assert r["config"]["default_max_iterations"] == 9
     assert any(e.startswith(alc.AGENTLOOPCONF_ERR_ENV) for e in r["errors"])
 

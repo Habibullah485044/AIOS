@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import stat
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -37,7 +39,13 @@ AGENTLOOPCONF_ERR_LOCKED = "AGENTLOOPCONF_ERR_LOCKED"
 AGENTLOOPCONF_ERR_BOUNDS = "AGENTLOOPCONF_ERR_BOUNDS"
 AGENTLOOPCONF_ERR_ENV = "AGENTLOOPCONF_ERR_ENV"
 
-CONFIG_SOURCES = ("argument", "env", "file", "default", "env_invalid", "config_invalid")
+#: ``source`` values. Since T-03309 a key's source is always where its value really came from;
+#: rejected inputs are listed in ``rejected`` / ``errors`` instead of overwriting the label.
+CONFIG_SOURCES = ("argument", "env", "file", "default", "settings", "env_invalid", "config_invalid")
+#: Longest error message kept (an echoed bad value must not flood the config tool).
+MAX_ERROR_CHARS = 300
+#: Windows device names: opening them blocks or touches hardware (T-03309).
+_WIN_DEVICE = re.compile(r"^(CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9]|LPT[0-9])(\..*)?$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -100,7 +108,18 @@ def hygiene_ok(value: Any) -> bool:
         return False
     v = value.strip()
     return (bool(v) and len(v) <= MAX_CONFIG_PATH_LEN and ".." not in v
-            and not any(ord(ch) < 32 or ord(ch) == 127 for ch in v))
+            and not any(ord(ch) < 32 or ord(ch) == 127 for ch in v)
+            and _special_path_reason(v) is None)
+
+
+def _special_path_reason(path: str) -> Optional[str]:
+    """Why ``path`` must not be opened at all, or None (T-03309: hangs, device I/O, SMB/NTLM leaks)."""
+    norm = path.replace("\\", "/")
+    if norm.startswith("//"):
+        return "UNC / device namespace paths are not allowed"
+    if _WIN_DEVICE.match(os.path.basename(norm.rstrip("/"))):
+        return "Windows device names are not allowed"
+    return None
 
 
 def _number(key: str, value: Any) -> float:
@@ -108,17 +127,20 @@ def _number(key: str, value: Any) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{key}: boolean is not a number")
     if isinstance(value, (int, float)):
-        number = float(value)
+        try:
+            number = float(value)
+        except OverflowError:  # e.g. a 400-digit JSON integer (T-03309)
+            raise ValueError(f"{key}: number out of range") from None
     elif isinstance(value, str):
         try:
             number = float(value.strip())
-        except ValueError:
-            raise ValueError(f"{key}: {value[:32]!r} is not a number") from None
+        except (ValueError, OverflowError):
+            raise ValueError(f"{key}: value is not a number") from None
     else:
         raise ValueError(f"{key}: expected a number, got {type(value).__name__}")
     # nan/inf slip past min()/max() clamping (security audit 2026-11-05 #7).
     if not math.isfinite(number):
-        raise ValueError(f"{key}: {value!r} is not a finite number")
+        raise ValueError(f"{key}: value is not a finite number")
     return number
 
 
@@ -152,20 +174,35 @@ def validate(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _read_file(path: str) -> Dict[str, float]:
-    """Bounded read of a config file; raises _ConfigError on any defect (whole file rejected)."""
+    """Bounded read of a config file; raises _ConfigError on any defect (whole file rejected).
+
+    Only regular files are read, and the open never blocks (T-03309): a FIFO, a device such
+    as CON or /dev/stdin, or a UNC path used to hang or crash the server at import.
+    """
+    name = os.path.basename(path.replace("\\", "/").rstrip("/")) or "config"
+    reason = _special_path_reason(path)
+    if reason:
+        raise _ConfigError(AGENTLOOPCONF_ERR_IO, f"cannot read {name}: {reason}")
     try:
-        with open(path, "rb") as fh:
-            raw = fh.read(MAX_CONFIG_FILE_BYTES + 1)
+        if not stat.S_ISREG(os.stat(path).st_mode):
+            raise _ConfigError(AGENTLOOPCONF_ERR_IO, f"cannot read {name}: not a regular file")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):  # swapped after the stat()
+                raise _ConfigError(AGENTLOOPCONF_ERR_IO, f"cannot read {name}: not a regular file")
+            raw = os.read(fd, MAX_CONFIG_FILE_BYTES + 1)
+        finally:
+            os.close(fd)
     except OSError as exc:
-        raise _ConfigError(AGENTLOOPCONF_ERR_IO, f"cannot read {path}: {exc}") from exc
+        raise _ConfigError(AGENTLOOPCONF_ERR_IO, f"cannot read {name}: {exc.strerror or 'I/O error'}") from exc
     if len(raw) > MAX_CONFIG_FILE_BYTES:
-        raise _ConfigError(AGENTLOOPCONF_ERR_FILE_SIZE, f"{path} exceeds {MAX_CONFIG_FILE_BYTES} bytes")
+        raise _ConfigError(AGENTLOOPCONF_ERR_FILE_SIZE, f"{name} exceeds {MAX_CONFIG_FILE_BYTES} bytes")
     try:
         doc = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
-        raise _ConfigError(AGENTLOOPCONF_ERR_PARSE, f"{path} is not valid JSON: {exc}") from exc
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:  # ValueError covers >4300-digit ints
+        raise _ConfigError(AGENTLOOPCONF_ERR_PARSE, f"{name} is not valid JSON ({type(exc).__name__})") from exc
     if not isinstance(doc, dict):
-        raise _ConfigError(AGENTLOOPCONF_ERR_PARSE, f"{path} must contain a JSON object")
+        raise _ConfigError(AGENTLOOPCONF_ERR_PARSE, f"{name} must contain a JSON object")
     values: Dict[str, float] = {}
     for key, value in doc.items():
         _check_key(key)
@@ -177,8 +214,23 @@ def _read_file(path: str) -> Dict[str, float]:
 
 
 def resolve(arg_config: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Full precedence ladder -> {"config", "source", "errors"}; never raises (AGENTLOOPCONF-INV1)."""
+    """Full precedence ladder -> {"config", "source", "rejected", "errors"}; never raises (AGENTLOOPCONF-INV1).
+
+    The MCP server calls this at import, so any unexpected failure falls back to defaults.
+    """
+    try:
+        out = _resolve(arg_config, overrides)
+    except Exception as exc:  # last line of defence for AGENTLOOPCONF-INV1
+        out = {"config": default_config(), "source": {**{k: "default" for k in FIELDS}, "_file": "config_invalid"},
+               "rejected": {}, "errors": [f"{AGENTLOOPCONF_ERR_PARSE}: configuration ignored ({type(exc).__name__})"]}
+    from aiosh_mcp.agent_loop_data_model import mask_secrets
+    out["errors"] = [mask_secrets(e)[:MAX_ERROR_CHARS] for e in out["errors"]]
+    return out
+
+
+def _resolve(arg_config: Optional[str], overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     errors: List[str] = []
+    rejected: Dict[str, str] = {}
     values: Dict[str, float] = {k: float(f.default) for k, f in FIELDS.items()}
     source: Dict[str, str] = {k: "default" for k in FIELDS}
 
@@ -213,8 +265,8 @@ def resolve(arg_config: Optional[str] = None, overrides: Optional[Dict[str, Any]
         try:
             values[key], source[key] = _number(key, raw), "env"
         except ValueError:
-            source[key] = "env_invalid"
-            errors.append(f"{AGENTLOOPCONF_ERR_ENV}: {f.env} is not a number")
+            rejected[key] = "env_invalid"  # source keeps the level actually in effect
+            errors.append(f"{AGENTLOOPCONF_ERR_ENV}: {f.env} is not a finite number")
 
     # Level 1: explicit overrides (strongest).
     for key, value in (overrides or {}).items():
@@ -222,10 +274,19 @@ def resolve(arg_config: Optional[str] = None, overrides: Optional[Dict[str, Any]
             _check_key(key)
             values[key], source[key] = _number(key, value), "argument"
         except (_ConfigError, ValueError) as exc:
+            if key in FIELDS:
+                rejected[key] = "argument_invalid"
             errors.append(str(exc))
 
     config = {key: _clamp(key, values[key], errors) for key in FIELDS}
-    return {"config": config, "source": source, "errors": errors}
+    # A DB lock wait longer than the MCP call bound guarantees "outcome unknown" results:
+    # keep the busy wait under half the call timeout (T-03309).
+    cap = max(int(FIELDS["db_busy_timeout_ms"].lo), int(config["mcp_call_timeout_s"] * 1000 // 2))
+    if config["db_busy_timeout_ms"] > cap:
+        errors.append(f"{AGENTLOOPCONF_ERR_BOUNDS}: db_busy_timeout_ms={config['db_busy_timeout_ms']} lowered to "
+                      f"{cap} (must stay under half of mcp_call_timeout_s)")
+        config["db_busy_timeout_ms"] = cap
+    return {"config": config, "source": source, "rejected": rejected, "errors": errors}
 
 
 def loop_config_for(loop_id: str, resolved: Optional[Dict[str, Any]] = None, **explicit: Any) -> LoopConfig:

@@ -139,3 +139,42 @@ def test_audit_rows_unchanged_on_success(tmp_path):
                         "--plan", _plan(tmp_path, 2)], service=AgentLoopService(gate=PepCapabilityGate(db)))
     assert res.exit_code == EXIT_SUCCESS
     assert [t for t, _ in audit_tools(db)].count("aios.agent_loop.abort") == 0
+
+
+def test_main_survives_windows_closed_pipe(tmp_path, monkeypatch):
+    """On Windows a closed pipe surfaces as OSError(EINVAL), not BrokenPipeError."""
+    import errno
+
+    class ClosedPipeWin:
+        def write(self, _):
+            raise OSError(errno.EINVAL, "Invalid argument")
+
+        def flush(self):
+            raise OSError(errno.EINVAL, "Invalid argument")
+
+        def fileno(self):
+            raise ValueError("no fd")
+
+    monkeypatch.setattr("sys.stdout", ClosedPipeWin())
+    p = tmp_path / "plan.json"
+    p.write_text(json.dumps({"turns": [{"action_intent": "x"}]}), encoding="utf-8")
+    assert main(["validate", "--plan", str(p)]) == EXIT_SUCCESS
+
+
+def test_real_closed_pipe_subprocess(tmp_path):
+    """End-to-end: the reader closes the pipe immediately; no traceback, exit code kept."""
+    import subprocess
+    import sys
+    from pathlib import Path as _P
+
+    p = tmp_path / "plan.json"
+    p.write_text(json.dumps({"turns": [{"action_intent": "x"}]}), encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, "-m", "aiosh_mcp.agent_loop_cli", "validate", "--plan", str(p)],
+                            cwd=_P(__file__).resolve().parents[1],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc.stdout.close()
+    err = proc.stderr.read()
+    proc.stderr.close()
+    proc.wait(timeout=60)
+    assert b"Traceback" not in err
+    assert proc.returncode == EXIT_SUCCESS

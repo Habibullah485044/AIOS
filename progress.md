@@ -2048,3 +2048,10 @@ All edits are docs / control-plane only.
 - Hardening: fail-closed gate, honest audit-failure termination, input caps, capacity eviction, thread lock.
 - Docs: `docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md` (example verified by running it).
 - Known env gap: 136 aiosh-mcp tests need the unbuilt Rust `aiosh-mcp.exe`; `test_release_*smoke` write backup zips into the CWD.
+
+## 2026-11-05 — Agent Loop Hardening CLI surface epic closed (T-03283..T-03292)
+
+- Shipped `python -m aiosh_mcp.agent_loop_cli` (`aiosh-agent-loop`): `validate` / `run` / `history`. It is a one-shot
+  runner because loop state is in-memory; history comes from the audit ring. Each task was one merged PR (#393..#403).
+  #401 corrected the T-03290 evidence: a Windows closed pipe raises OSError(EINVAL), which was missed at first.
+- Registered CI suite #33 `agent_loop_integration`. A TS-issued grant was verified redeemable by the Python CLI.

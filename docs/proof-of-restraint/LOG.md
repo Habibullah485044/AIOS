@@ -1396,3 +1396,15 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   post-anchor tamper REJECTED).
 - Evidence: docs/tasks/evidence/T-03279-security.md, docs/tasks/evidence/T-03280-core-service-hardening.md,
   docs/tasks/evidence/T-03282-verify.md.
+
+## T-03292 - AI Control Plane Agent Loop Hardening / CLI surface: Verification & Evidence (2026-11-05)
+- Milestone closeout for the Agent Loop Hardening CLI surface (T-03283..T-03292).
+- **Touched grants and audit:** the new `run` subcommand is a state-changing path. It redeems a PEP grant
+  through `PepCapabilityGate`; plan and config are validated before redemption (LOOPCLI-INV3); every started
+  loop ends with an audited terminal row, even on Ctrl-C or a crash (T-03290).
+- Security review (T-03289) fixed grant exposure via argv (`--token-env` and `--token-stdin` added),
+  a stat/read race (TOCTOU), and RecursionError handling. No bypass is open.
+- Verification battery: CLI suites 63/63 PASSED, all agent-loop suites 150/150, PoR pytest suites PASSED, conformance
+  C1..C6 PASS, demo_por.py PASSED. A TS-issued grant was redeemed by the Python CLI on a shared ring.
+- Evidence: docs/tasks/evidence/T-03289-security.md, docs/tasks/evidence/T-03290-cli-surface-hardening.md,
+  docs/tasks/evidence/T-03292-verify.md.

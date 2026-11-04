@@ -105,7 +105,8 @@ class PepCapabilityGate:
             })
 
 
-def read_loop_history(db_path: Optional[str], loop_id: str, limit: int) -> List[Dict[str, Any]]:
+def read_loop_history(db_path: Optional[str], loop_id: str, limit: int,
+                      after_id: int = 0) -> List[Dict[str, Any]]:
     """Read-only ``aios.agent_loop.*`` audit rows for ``loop_id``, oldest first (T-03296).
 
     Never creates or migrates the DB: a missing file or table yields ``[]``.
@@ -124,8 +125,9 @@ def read_loop_history(db_path: Optional[str], loop_id: str, limit: int) -> List[
         rows = conn.execute(
             """SELECT id, ts, tool, outcome, outcome_detail, args_json FROM audit_ring
                WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
+                 AND id > ?
                ORDER BY id LIMIT ?""",
-            (loop_id, limit),
+            (loop_id, after_id, limit),
         ).fetchall() if has_ring else []
     except sqlite3.Error as exc:
         raise HistoryReadError(f"cannot read audit DB: {exc}") from exc

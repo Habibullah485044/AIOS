@@ -158,4 +158,5 @@ async def test_history_missing_db_empty(tmp_path):
     missing = str(tmp_path / "none" / "audit.db")
     register_agent_loop_mcp_tools(app, service=AgentLoopService(gate=PepCapabilityGate(missing)), db_path=missing)
     out = await call(app, "aios_agent_loop_history", {"loop_id": "loop-mcp-unit-01"})
-    assert out == {"ok": True, "data": {"loop_id": "loop-mcp-unit-01", "events": []}}
+    assert out == {"ok": True, "data": {"loop_id": "loop-mcp-unit-01", "events": [],
+                                        "truncated": False, "next_after_id": None}}

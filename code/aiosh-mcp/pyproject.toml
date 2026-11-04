@@ -9,6 +9,10 @@ dependencies = [
     "mcp>=1.0.0",
 ]
 
+[project.scripts]
+# T-03288: operator CLI for hardened agent loops (also `python -m aiosh_mcp.agent_loop_cli`).
+aiosh-agent-loop = "aiosh_mcp.agent_loop_cli:main"
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"

@@ -3285,3 +3285,4 @@
 {"seq":3285,"ts":"2026-11-04T20:31:14Z","event":"completed","task_id":3285,"note":"CLI scaffold: agent_loop_cli.py interfaces + complete_loop stub; imports clean","evidence":["docs/tasks/evidence/T-03285-cli-surface-scaffold.md"]}
 {"seq":3286,"ts":"2026-11-04T20:34:54Z","event":"completed","task_id":3286,"note":"CLI implemented (validate/run/history, exit codes, ro history) + service.complete_loop; test-first","evidence":["docs/tasks/evidence/T-03286-cli-surface-implementation.md"]}
 {"seq":3287,"ts":"2026-11-04T20:37:09Z","event":"completed","task_id":3287,"note":"32 CLI unit tests (valid/invalid/boundary/failure); mutation-verified","evidence":["docs/tasks/evidence/T-03287-cli-surface-unit-test.md"]}
+{"seq":3288,"ts":"2026-11-04T20:40:35Z","event":"completed","task_id":3288,"note":"CLI integrated: console script, CI suite #33, subprocess + CLI/MCP shared-ring parity","evidence":["docs/tasks/evidence/T-03288-cli-surface-integration.md"]}

@@ -68,5 +68,8 @@ class AllowAllGate:
     def loop_id_used(self, loop_id):
         return False
 
-    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None):
+    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None, classification=None):
         self.events.append((event, loop_id, outcome))
+
+    def irreversible_budget(self, grant_id):
+        return None

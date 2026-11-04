@@ -50,9 +50,11 @@ def svc(tmp_path):
 
 
 @pytest.mark.parametrize("tool,args,outcome", [
-    ("fs.write", {"path": "/tmp/out.txt"}, "ok"),
-    ("fs.write", {"path": "/etc/passwd"}, "refused"),
-    ("fs.write", {"path": "/tmp/../etc/passwd"}, "refused"),
+    # fs.read: the constitution allows it, so these exercise scope.paths (fs.write is refused by P2 since T-03326)
+    ("fs.read", {"path": "/tmp/out.txt"}, "ok"),
+    ("fs.read", {"path": "/etc/passwd"}, "refused"),
+    ("fs.read", {"path": "/tmp/../etc/passwd"}, "refused"),
+    ("fs.write", {"path": "/tmp/out.txt"}, "refused"),
     ("network.scan", {"target": "10.0.0.7"}, "ok"),
     ("network.scan", {"target": "8.8.8.8"}, "refused"),
     ("fs.read", {"note": "no target key"}, "ok"),

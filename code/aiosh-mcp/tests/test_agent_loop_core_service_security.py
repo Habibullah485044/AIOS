@@ -87,7 +87,7 @@ def test_s6_caller_cannot_self_approve_out_of_scope_tool(service, db):
     ok = service.advance_turn("loop-sec-policy-01", "read", tool_name="aios.fs.read",
                               policy_allowed=True, capability_token="gr_sec_policy")
     assert ok.outcome == "ok"
-    bad = service.advance_turn("loop-sec-policy-01", "write", tool_name="fs.write",
+    bad = service.advance_turn("loop-sec-policy-01", "fetch", tool_name="aios.net.fetch",
                                policy_allowed=True, capability_token="gr_sec_policy")
     assert bad.outcome == "refused"
     assert LOOPSERV_ERR_POLICY_REFUSED in bad.error_message

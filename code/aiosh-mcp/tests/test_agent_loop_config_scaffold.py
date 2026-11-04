@@ -41,11 +41,3 @@ def test_loop_config_bounds_agree_with_validate_bounds():
 def test_locked_keys_are_not_tunable():
     assert not set(alc.LOCKED_KEYS) & set(alc.FIELDS)
     assert {"require_grant", "audit_mutations", "max_args_bytes"} <= set(alc.LOCKED_KEYS)
-
-
-def test_stubs_fail_loudly():
-    import pytest
-    for call in (alc.default_config, lambda: alc.hygiene_ok("x"), lambda: alc.validate({}),
-                 alc.resolve, lambda: alc.loop_config_for("loop-config-scaffold")):
-        with pytest.raises(NotImplementedError):
-            call()

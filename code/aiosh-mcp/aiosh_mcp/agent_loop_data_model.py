@@ -414,6 +414,10 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
         """Returns the status, FSM state, and metrics for an agent loop (Pure read-only, PoR Invariant I-2)."""
         snap = _GLOBAL_LOOP_REGISTRY.get_loop(loop_id)
         if not snap:
+            # T-03296: loops started through the service tools are visible here too.
+            from aiosh_mcp.agent_loop_service import _GLOBAL_AGENT_LOOP_SERVICE
+            snap = _GLOBAL_AGENT_LOOP_SERVICE._loops.get(loop_id)
+        if not snap:
             env = LoopResultEnvelope(
                 ok=False,
                 error=f"{LOOPDATA_ERR_NOT_FOUND}: loop_id '{loop_id}' not found",

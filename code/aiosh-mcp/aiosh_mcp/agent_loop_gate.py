@@ -9,7 +9,10 @@ audit row per consequential loop event (LOOPSERV-INV2).
 from __future__ import annotations
 
 import datetime as dt
+import json
+import sqlite3
 from contextlib import closing
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from aiosh_mcp import audit_client
@@ -19,6 +22,12 @@ from aiosh_mcp.agent_loop_data_model import mask_secrets
 AGENT_LOOP_START_TOOL = "aios.agent_loop.start"
 AGENT_LOOP_ACTOR_ID = "agent:mcp@aiosh-mcp/agent-loop"
 BUSY_TIMEOUT_MS = 5000
+#: Bounded wait for a locked audit DB on read (seconds).
+HISTORY_DB_TIMEOUT_S = 5.0
+
+
+class HistoryReadError(Exception):
+    """The audit DB exists but cannot be opened or queried."""
 
 
 class CapabilityRefused(Exception):
@@ -97,5 +106,30 @@ class PepCapabilityGate:
 
 
 def read_loop_history(db_path: Optional[str], loop_id: str, limit: int) -> List[Dict[str, Any]]:
-    """Read-only ``aios.agent_loop.*`` audit rows for ``loop_id``, oldest first (T-03295 scaffold)."""
-    raise NotImplementedError("T-03296: read_loop_history")
+    """Read-only ``aios.agent_loop.*`` audit rows for ``loop_id``, oldest first (T-03296).
+
+    Never creates or migrates the DB: a missing file or table yields ``[]``.
+    """
+    path = Path(db_path or audit_client.default_db_path())
+    if not path.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=HISTORY_DB_TIMEOUT_S)
+    except sqlite3.Error as exc:
+        raise HistoryReadError(f"cannot open audit DB: {exc}") from exc
+    try:
+        conn.row_factory = sqlite3.Row
+        has_ring = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone()
+        rows = conn.execute(
+            """SELECT id, ts, tool, outcome, outcome_detail, args_json FROM audit_ring
+               WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
+               ORDER BY id LIMIT ?""",
+            (loop_id, limit),
+        ).fetchall() if has_ring else []
+    except sqlite3.Error as exc:
+        raise HistoryReadError(f"cannot read audit DB: {exc}") from exc
+    finally:
+        conn.close()
+    return [{"id": r["id"], "ts": r["ts"], "tool": r["tool"], "outcome": r["outcome"],
+             "outcome_detail": r["outcome_detail"], "args": json.loads(r["args_json"])} for r in rows]

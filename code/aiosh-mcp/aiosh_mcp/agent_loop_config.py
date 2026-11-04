@@ -109,7 +109,10 @@ def _number(key: str, value: Any) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     if isinstance(value, str):
-        return float(value.strip())
+        try:
+            return float(value.strip())
+        except ValueError:
+            raise ValueError(f"{key}: {value[:32]!r} is not a number") from None
     raise ValueError(f"{key}: expected a number, got {type(value).__name__}")
 
 

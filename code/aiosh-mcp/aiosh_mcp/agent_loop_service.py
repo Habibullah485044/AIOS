@@ -54,6 +54,8 @@ MAX_ACTION_INTENT_CHARS = 4096
 MAX_REASON_CHARS = 1024
 MAX_TOKENS_PER_TURN = 1_000_000
 MAX_TOOL_ARGS_DEPTH = 32
+#: tool_args keys whose string value is the call's target for scope.paths / scope.networks.
+TARGET_ARG_KEYS = ("target", "path", "host")
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
 
 
@@ -73,7 +75,8 @@ class CapabilityGate(Protocol):
 
     def redeem(self, grant_id: str, loop_id: str) -> None: ...
 
-    def tool_refusal(self, grant_id: str, tool_name: Optional[str]) -> Optional[str]: ...
+    def tool_refusal(self, grant_id: str, tool_name: Optional[str],
+                     target: Optional[str] = None) -> Optional[str]: ...
 
     def loop_id_used(self, loop_id: str) -> bool: ...
 
@@ -153,7 +156,8 @@ class AgentLoopService:
         )
 
     @staticmethod
-    def _validate_tool_args(loop_id: str, tool_args: Optional[Dict[str, Any]]) -> None:
+    def _validate_tool_args(loop_id: str, tool_name: Optional[str],
+                            tool_args: Optional[Dict[str, Any]]) -> None:
         """Rejects args the audit row could not record faithfully (T-03299 M2).
 
         Oversized args used to be truncated to MAX_ARGS_SUMMARY_BYTES in the step record and
@@ -161,6 +165,9 @@ class AgentLoopService:
         """
         if tool_args is None:
             return
+        if tool_name is None:
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, "tool_args given without tool_name", loop_id)
         if not isinstance(tool_args, dict):
             raise AgentLoopServiceError(LOOPSERV_ERR_INVALID_INPUT, "tool_args must be an object", loop_id)
         stack = [(tool_args, 1)]
@@ -265,7 +272,7 @@ class AgentLoopService:
         """Advances agent loop through FSM: EVALUATE_POLICY -> EXECUTE_TOOL -> RECORD_STEP."""
         token = self._require_token(capability_token, loop_id, "advance")
         self._validate_turn_input(loop_id, action_intent, tool_name, tokens_consumed)
-        self._validate_tool_args(loop_id, tool_args)
+        self._validate_tool_args(loop_id, tool_name, tool_args)
         with self._lock:
             return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed)
 
@@ -308,7 +315,9 @@ class AgentLoopService:
         refusal = None if policy_allowed else "caller policy verdict"
         if refusal is None:
             try:
-                refusal = self._gate.tool_refusal(grant_id, tool_name)
+                target = next((v for k, v in (tool_args or {}).items()
+                               if k in TARGET_ARG_KEYS and isinstance(v, str)), None)
+                refusal = self._gate.tool_refusal(grant_id, tool_name, target)
             except Exception as exc:  # fail closed: an unreachable gate refuses the call
                 refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
 

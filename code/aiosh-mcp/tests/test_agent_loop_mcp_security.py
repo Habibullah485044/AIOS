@@ -81,6 +81,7 @@ async def test_m3_hostile_nesting_rejected(env):
         cur["a"] = {}
         cur = cur["a"]
     out = await call(app, "aios_agent_loop_advance", {"loop_id": lid, "action_intent": "x",
+                                                      "tool_name": "aios.fs.read",
                                                       "tool_args": deep, "capability_token": TOK})
     assert out["error_code"] == "LOOPSERV_ERR_INVALID_INPUT"
     assert "nested deeper" in out["error"]

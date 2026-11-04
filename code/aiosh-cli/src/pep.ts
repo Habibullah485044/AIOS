@@ -35,7 +35,8 @@ export function toolGlobMatch(tool: string, globs: string[]): boolean {
   if (globs.length === 0) return false;
   for (const glob of globs) {
     if (glob === tool) return true;
-    if (glob.endsWith(".*") && tool.startsWith(glob.slice(0, -2))) {
+    // "git.*" covers "git" and "git.x", never "github.delete_repo" (security audit 2026-11-05 #3a).
+    if (glob.endsWith(".*") && (tool === glob.slice(0, -2) || tool.startsWith(glob.slice(0, -1)))) {
       return true;
     }
   }
@@ -47,6 +48,8 @@ export function pathAllowed(
   target: string, paths: GrantScope["paths"]
 ): boolean {
   if (!paths) return true;
+  // '..' segments fail closed: '/tmp/../etc/x' must not pass allow=['/tmp'].
+  if (target.replace(/\\/g, "/").split("/").includes("..")) return false;
   const deny = paths.deny ?? [];
   for (const p of deny) {
     if (target === p || target.startsWith(p + "/") || p.endsWith("/")

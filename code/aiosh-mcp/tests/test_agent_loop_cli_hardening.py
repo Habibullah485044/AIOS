@@ -30,7 +30,7 @@ class InterruptOnSecondTool(AllowAllGate):
         self.calls = 0
         self.exc = exc
 
-    def tool_refusal(self, grant_id, tool_name):
+    def tool_refusal(self, grant_id, tool_name, target=None):
         self.calls += 1
         if self.calls == 2:
             raise self.exc
@@ -76,11 +76,11 @@ def test_interrupted_run_abort_row_in_real_ring(tmp_path, monkeypatch):
     real = gate.tool_refusal
     calls = {"n": 0}
 
-    def flaky(grant_id, tool_name):
+    def flaky(grant_id, tool_name, target=None):
         calls["n"] += 1
         if calls["n"] == 2:
             raise KeyboardInterrupt
-        return real(grant_id, tool_name)
+        return real(grant_id, tool_name, target)
 
     monkeypatch.setattr(gate, "tool_refusal", flaky)
     res = dispatch_cli(["run", "--loop-id", "loop-cli-hard-real", "--token", "gr_cli_hard",

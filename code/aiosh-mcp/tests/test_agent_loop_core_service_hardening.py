@@ -38,7 +38,7 @@ class FlakyGate(AllowAllGate):
             raise OSError("database is locked")
         super().redeem(grant_id, loop_id)
 
-    def tool_refusal(self, grant_id, tool_name):
+    def tool_refusal(self, grant_id, tool_name, target=None):
         if self.fail_tool_check:
             raise OSError("disk I/O error")
         return None

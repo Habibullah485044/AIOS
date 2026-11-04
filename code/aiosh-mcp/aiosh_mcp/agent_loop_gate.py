@@ -70,8 +70,13 @@ class PepCapabilityGate:
         if not res.get("ok"):
             raise CapabilityRefused(mask_secrets(str(res.get("reason", "grant redemption refused"))))
 
-    def tool_refusal(self, grant_id: str, tool_name: Optional[str]) -> Optional[str]:
-        """Returns a refusal reason if the bound grant no longer covers ``tool_name``."""
+    def tool_refusal(self, grant_id: str, tool_name: Optional[str],
+                     target: Optional[str] = None) -> Optional[str]:
+        """Returns a refusal reason if the bound grant no longer covers ``tool_name`` on ``target``.
+
+        ``target`` is checked like ``audit_client.grant_check``: ``scope.networks`` for
+        ``pentest.*`` / ``network.*`` tools when set, otherwise ``scope.paths``.
+        """
         with closing(self._open()) as conn:
             grant = audit_client.load_grant(conn, grant_id)
         if grant is None:
@@ -82,8 +87,17 @@ class PepCapabilityGate:
             return f"grant {grant_id} has malformed expires_at"
         if expires.tzinfo is None or expires < dt.datetime.now(dt.timezone.utc):
             return f"grant {grant_id} expired"
-        if tool_name and not audit_client.tool_glob_match(tool_name, grant["scope"].get("tools") or []):
+        scope = grant["scope"]
+        if tool_name and not audit_client.tool_glob_match(tool_name, scope.get("tools") or []):
             return f"tool '{tool_name}' not in grant scope.tools"
+        if target is not None:
+            networks = scope.get("networks") or []
+            is_network = bool(tool_name) and tool_name.startswith(("pentest.", "network."))
+            if is_network and networks:
+                if not audit_client.network_allowed(target, networks):
+                    return f"target '{target}' blocked by grant scope.networks"
+            elif not audit_client.path_allowed(target, scope.get("paths")):
+                return f"target '{target}' blocked by grant scope.paths"
         return None
 
     @staticmethod

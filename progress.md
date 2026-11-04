@@ -2055,3 +2055,10 @@ All edits are docs / control-plane only.
   runner because loop state is in-memory; history comes from the audit ring. Each task was one merged PR (#393..#403).
   #401 corrected the T-03290 evidence: a Windows closed pipe raises OSError(EINVAL), which was missed at first.
 - Registered CI suite #33 `agent_loop_integration`. A TS-issued grant was verified redeemable by the Python CLI.
+
+## 2026-11-05 — Agent Loop Hardening MCP/API surface epic closed (T-03293..T-03302)
+
+- `aiosh_mcp/agent_loop_mcp.py` defines 7 async tools with MCP `ToolAnnotations` and constrained input schemas
+  (3 are new: complete/list/history). A shared read-only history reader is used by both the CLI and MCP. PRs #404..#413.
+- Fixed an audit-evasion gap (silent 64 KiB args truncation) and an event-loop stall under DB locks.
+- Verified over real stdio JSON-RPC with the official MCP client. The documented tool calls were run as written.

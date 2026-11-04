@@ -192,7 +192,8 @@ SUITES: list[SuiteDef] = [
                  "-p", "no:cacheprovider",
                  "code/aiosh-mcp/tests/test_agent_loop_core_service_security.py",
                  "code/aiosh-mcp/tests/test_agent_loop_cli_integration.py",
-                 "code/aiosh-mcp/tests/test_agent_loop_mcp_integration.py"],
+                 "code/aiosh-mcp/tests/test_agent_loop_mcp_integration.py",
+                 "code/aiosh-mcp/tests/test_agent_loop_config_integration.py"],
      "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 

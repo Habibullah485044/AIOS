@@ -62,10 +62,9 @@ async def test_blocking_call_does_not_stall_other_requests(monkeypatch):
 
 @pytest.mark.anyio
 async def test_timeout_returns_explicit_envelope(monkeypatch):
-    monkeypatch.setattr(agent_loop_mcp, "TOOL_CALL_TIMEOUT_S", 0.3)
     app = FastMCP("hard-timeout")
     svc = AgentLoopService(gate=AllowAllGate())
-    register_agent_loop_mcp_tools(app, service=svc)
+    register_agent_loop_mcp_tools(app, service=svc, settings={"mcp_call_timeout_s": 0.3})
     await call(app, "aios_agent_loop_start", {"loop_id": "loop-mcp-hard-tmo", "capability_token": "t"})
     svc._gate = SlowAuditGate(1.0)
     out = await call(app, "aios_agent_loop_advance",
@@ -76,11 +75,11 @@ async def test_timeout_returns_explicit_envelope(monkeypatch):
 
 @pytest.mark.anyio
 async def test_history_pages_within_budget(tmp_path, monkeypatch):
-    monkeypatch.setattr(agent_loop_mcp, "MAX_RESPONSE_BYTES", 2000)
     db = str(tmp_path / "audit.db")
     mint_grant(db, "gr_mcp_hard", tools=["aios.agent_loop.start", "aios.fs.read"])
     app = FastMCP("hard-page")
-    register_agent_loop_mcp_tools(app, service=AgentLoopService(gate=PepCapabilityGate(db)), db_path=db)
+    register_agent_loop_mcp_tools(app, service=AgentLoopService(gate=PepCapabilityGate(db)), db_path=db,
+                                  settings={"history_page_bytes": 2000})
     lid = "loop-mcp-hard-page"
     await call(app, "aios_agent_loop_start", {"loop_id": lid, "capability_token": "gr_mcp_hard"})
     for i in range(12):

@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening MCP/API Surface (T-03295 scaffold / T-03296 impl / T-03300 hardening).
+"""AI Control Plane Agent Loop Hardening MCP/API Surface (T-03295 scaffold / T-03296 impl / T-03300 hardening / T-03308 config).
 
 Owns every ``aios_agent_loop_*`` service tool (spec: docs/tasks/evidence/T-03294-spec.md):
 annotated per the MCP ``ToolAnnotations`` hints, with input-schema constraints taken from
@@ -17,6 +17,8 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from aiosh_mcp.agent_loop_cli import MAX_HISTORY_LIMIT, MAX_TOKEN_CHARS
+from aiosh_mcp.agent_loop_config import default_config, loop_config_for
+from aiosh_mcp.agent_loop_config import resolve as resolve_config
 from aiosh_mcp.agent_loop_data_model import MAX_REGISTRY_CAPACITY
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopResultEnvelope
 from aiosh_mcp.agent_loop_gate import HistoryReadError, read_loop_history
@@ -49,7 +51,8 @@ ToolNameArg = Annotated[Optional[str], Field(default=None, pattern=r"^[A-Za-z0-9
 TokensArg = Annotated[int, Field(default=0, ge=0, le=MAX_TOKENS_PER_TURN)]
 HistoryLimitArg = Annotated[int, Field(default=100, ge=1, le=MAX_HISTORY_LIMIT)]
 AfterIdArg = Annotated[int, Field(default=0, ge=0, description="Return events with id > after_id (pagination cursor)")]
-StepsTailArg = Annotated[int, Field(default=100, ge=0, le=1000, description="How many most recent steps to include")]
+StepsTailArg = Annotated[Optional[int], Field(default=None, ge=0, le=1000,
+                                                description="Most recent steps to include (default: configured)")]
 
 # ---- annotations (LOOPMCP-INV2) -------------------------------------------------
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -66,6 +69,7 @@ TOOL_ANNOTATIONS: Dict[str, ToolAnnotations] = {
     "aios_agent_loop_snapshot": READ_ONLY,
     "aios_agent_loop_list": READ_ONLY,
     "aios_agent_loop_history": READ_ONLY,
+    "aios_agent_loop_config": READ_ONLY,
 }
 
 MAX_LIST_LOOPS = MAX_REGISTRY_CAPACITY
@@ -75,20 +79,21 @@ def _ok(data: Dict[str, Any]) -> Dict[str, Any]:
     return LoopResultEnvelope(ok=True, data=data).to_dict()
 
 
-async def _run(work: Callable[[], Dict[str, Any]], mutating: bool) -> Dict[str, Any]:
+async def _run(work: Callable[[], Dict[str, Any]], mutating: bool,
+               timeout_s: float = TOOL_CALL_TIMEOUT_S) -> Dict[str, Any]:
     """Runs blocking service/SQLite work off the event loop with a bounded wall-clock (T-03300).
 
     FastMCP calls sync tools on the event-loop thread, so a locked audit DB (busy_timeout 5 s)
     used to stall every other request on the stdio server.
     """
     try:
-        with anyio.fail_after(TOOL_CALL_TIMEOUT_S):
+        with anyio.fail_after(timeout_s):
             return await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
     except TimeoutError:
         hint = (" outcome unknown: check aios_agent_loop_snapshot / aios_agent_loop_history before retrying"
                 if mutating else "")
         return LoopResultEnvelope(ok=False, error_code=LOOPMCP_ERR_TIMEOUT,
-                                  error=f"{LOOPMCP_ERR_TIMEOUT}: tool call exceeded {TOOL_CALL_TIMEOUT_S}s;{hint}"
+                                  error=f"{LOOPMCP_ERR_TIMEOUT}: tool call exceeded {timeout_s}s;{hint}"
                                   ).to_dict()
     except HistoryReadError as exc:
         return LoopResultEnvelope(ok=False, error=str(exc), error_code=LOOPMCP_ERR_AUDIT_READ).to_dict()
@@ -104,13 +109,13 @@ def _snapshot_view(snap: Any, steps_tail: int) -> Dict[str, Any]:
     return {"snapshot": d, "steps_total": total}
 
 
-def _page_events(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _page_events(events: List[Dict[str, Any]], budget: int = MAX_RESPONSE_BYTES) -> Dict[str, Any]:
     """Keeps whole events until MAX_RESPONSE_BYTES; reports a cursor if more remain."""
     kept: List[Dict[str, Any]] = []
     size = 0
     for ev in events:
         size += len(json.dumps(ev, default=str))
-        if kept and size > MAX_RESPONSE_BYTES:
+        if kept and size > budget:
             return {"events": kept, "truncated": True, "next_after_id": kept[-1]["id"]}
         kept.append(ev)
     return {"events": kept, "truncated": False, "next_after_id": None}
@@ -120,12 +125,24 @@ def register_agent_loop_mcp_tools(
     mcp_app: Any,
     service: Optional[AgentLoopService] = None,
     db_path: Optional[str] = None,
+    settings: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Registers the seven agent-loop tools on ``mcp_app`` (T-03296; async + bounded since T-03300).
+    """Registers the eight agent-loop tools on ``mcp_app`` (T-03296; async + bounded since T-03300).
 
     ``service`` and ``db_path`` default to the process-wide service and ``$AIOSH_HOME/audit.db``;
     they are resolved per call so tests and operators can swap the gate at runtime.
+    ``settings`` (T-03308) is an already-resolved config dict; by default it comes from
+    ``agent_loop_config.resolve()`` once, at registration.
     """
+    resolved = resolve_config() if settings is None else {
+        "config": {**default_config(), **settings}, "source": {k: "argument" for k in settings}, "errors": []}
+    cfg = resolved["config"]
+    timeout_s = float(cfg["mcp_call_timeout_s"])
+    page_bytes = int(cfg["history_page_bytes"])
+    default_tail = int(cfg["snapshot_steps_tail"])
+
+    async def run(work: Callable[[], Dict[str, Any]], mutating: bool) -> Dict[str, Any]:
+        return await _run(work, mutating, timeout_s)
 
     def svc() -> AgentLoopService:
         return service if service is not None else _GLOBAL_AGENT_LOOP_SERVICE
@@ -134,21 +151,23 @@ def register_agent_loop_mcp_tools(
     async def aios_agent_loop_start(
         loop_id: LoopIdArg,
         capability_token: TokenArg = "",
-        max_iterations: Annotated[int, Field(ge=1, le=100)] = 25,
-        max_total_tokens: Annotated[int, Field(ge=100, le=1_000_000)] = 32768,
-        timeout_ms_per_step: Annotated[float, Field(ge=1000.0, le=120000.0)] = 30000.0,
-        total_timeout_ms: Annotated[float, Field(ge=5000.0, le=1_800_000.0)] = 300000.0,
-        consecutive_failure_limit: Annotated[int, Field(ge=1, le=10)] = 3,
+        max_iterations: Annotated[Optional[int], Field(ge=1, le=100)] = None,
+        max_total_tokens: Annotated[Optional[int], Field(ge=100, le=1_000_000)] = None,
+        timeout_ms_per_step: Annotated[Optional[float], Field(ge=1000.0, le=120000.0)] = None,
+        total_timeout_ms: Annotated[Optional[float], Field(ge=5000.0, le=1_800_000.0)] = None,
+        consecutive_failure_limit: Annotated[Optional[int], Field(ge=1, le=10)] = None,
     ) -> dict:
-        """Starts a hardened agent loop (INIT -> OBSERVE). Mutating: redeems the capability token as a PEP grant."""
+        """Starts a hardened agent loop (INIT -> OBSERVE). Mutating: redeems the capability token as a PEP grant.
+        Omitted budgets use the configured defaults (aios_agent_loop_config)."""
         def work() -> Dict[str, Any]:
-            cfg = LoopConfig(loop_id=loop_id, max_iterations=max_iterations, max_total_tokens=max_total_tokens,
-                             timeout_ms_per_step=timeout_ms_per_step, total_timeout_ms=total_timeout_ms,
-                             consecutive_failure_limit=consecutive_failure_limit)
+            loop_cfg = loop_config_for(loop_id, resolved, max_iterations=max_iterations,
+                                       max_total_tokens=max_total_tokens, timeout_ms_per_step=timeout_ms_per_step,
+                                       total_timeout_ms=total_timeout_ms,
+                                       consecutive_failure_limit=consecutive_failure_limit)
             s = svc()
-            snap = s.start_loop(cfg, capability_token=capability_token)
+            snap = s.start_loop(loop_cfg, capability_token=capability_token)
             return _ok({"snapshot": snap.to_dict(), "run_id": s.run_id(loop_id)})
-        return await _run(work, mutating=True)
+        return await run(work, mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_advance", annotations=TOOL_ANNOTATIONS["aios_agent_loop_advance"])
     async def aios_agent_loop_advance(
@@ -169,24 +188,25 @@ def register_agent_loop_mcp_tools(
             snap = s.get_snapshot(loop_id)
             return _ok({"step": step.to_dict(), "state": snap.current_state.value,
                         "is_terminated": snap.is_terminated})
-        return await _run(work, mutating=True)
+        return await run(work, mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_abort", annotations=TOOL_ANNOTATIONS["aios_agent_loop_abort"])
     async def aios_agent_loop_abort(loop_id: LoopIdArg, reason: ReasonArg, capability_token: TokenArg = "") -> dict:
         """Aborts an active loop (idempotent on an already-terminated loop). Mutating: loop-bound token."""
-        return await _run(lambda: _ok({"snapshot": svc().abort_loop(
+        return await run(lambda: _ok({"snapshot": svc().abort_loop(
             loop_id, reason, capability_token=capability_token).to_dict()}), mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_complete", annotations=TOOL_ANNOTATIONS["aios_agent_loop_complete"])
     async def aios_agent_loop_complete(loop_id: LoopIdArg, capability_token: TokenArg = "") -> dict:
         """Ends an active loop normally (OBSERVE -> COMPLETED). Mutating: loop-bound token."""
-        return await _run(lambda: _ok({"snapshot": svc().complete_loop(
+        return await run(lambda: _ok({"snapshot": svc().complete_loop(
             loop_id, capability_token=capability_token).to_dict()}), mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_snapshot", annotations=TOOL_ANNOTATIONS["aios_agent_loop_snapshot"])
-    async def aios_agent_loop_snapshot(loop_id: LoopIdArg, steps_tail: StepsTailArg = DEFAULT_STEPS_TAIL) -> dict:
+    async def aios_agent_loop_snapshot(loop_id: LoopIdArg, steps_tail: StepsTailArg = None) -> dict:
         """Returns the loop snapshot with its last ``steps_tail`` steps and ``steps_total``. Read-only, no token."""
-        return await _run(lambda: _ok(_snapshot_view(svc().get_snapshot(loop_id), steps_tail)), mutating=False)
+        tail = default_tail if steps_tail is None else steps_tail
+        return await run(lambda: _ok(_snapshot_view(svc().get_snapshot(loop_id), tail)), mutating=False)
 
     @mcp_app.tool(name="aios_agent_loop_list", annotations=TOOL_ANNOTATIONS["aios_agent_loop_list"])
     async def aios_agent_loop_list(include_terminated: bool = False) -> dict:
@@ -200,12 +220,18 @@ def register_agent_loop_mcp_tools(
                       "is_terminated": x.is_terminated}
                      for x in snaps if include_terminated or not x.is_terminated][:MAX_LIST_LOOPS]
             return _ok({"loops": loops})
-        return await _run(work, mutating=False)
+        return await run(work, mutating=False)
 
     @mcp_app.tool(name="aios_agent_loop_history", annotations=TOOL_ANNOTATIONS["aios_agent_loop_history"])
     async def aios_agent_loop_history(loop_id: LoopIdArg, limit: HistoryLimitArg = 100,
                                       after_id: AfterIdArg = 0) -> dict:
         """Returns this loop's aios.agent_loop.* audit rows after ``after_id``, oldest first, at most ~1 MiB per
         page (``truncated`` / ``next_after_id`` for the next page). Read-only (DB opened mode=ro), no token."""
-        return await _run(lambda: _ok({"loop_id": loop_id, **_page_events(
-            read_loop_history(db_path, loop_id, limit, after_id=after_id))}), mutating=False)
+        return await run(lambda: _ok({"loop_id": loop_id, **_page_events(
+            read_loop_history(db_path, loop_id, limit, after_id=after_id), page_bytes)}), mutating=False)
+
+    @mcp_app.tool(name="aios_agent_loop_config", annotations=TOOL_ANNOTATIONS["aios_agent_loop_config"])
+    async def aios_agent_loop_config() -> dict:
+        """Returns the agent-loop configuration this server resolved at startup: values, where each came from
+        (argument/env/file/default/env_invalid/config_invalid) and any rejected input. Read-only, no token."""
+        return _ok({"config": cfg, "source": resolved["source"], "errors": resolved["errors"]})

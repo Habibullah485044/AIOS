@@ -349,8 +349,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         print(render(result, json_mode), file=stream)
         stream.flush()
-    except BrokenPipeError:
-        # Reader went away (e.g. `| head`): silence the interpreter's flush-at-exit error.
+    except OSError:
+        # Reader went away (e.g. `| head`): BrokenPipeError on POSIX, OSError(EINVAL) on
+        # Windows. Keep the exit code and silence the interpreter's flush-at-exit error.
         try:
             os.dup2(os.open(os.devnull, os.O_WRONLY), stream.fileno())
         except (OSError, ValueError, AttributeError):

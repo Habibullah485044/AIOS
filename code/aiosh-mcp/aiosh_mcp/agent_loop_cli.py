@@ -1,9 +1,9 @@
-"""AI Control Plane Agent Loop Hardening CLI Surface (T-03285 scaffold / T-03286 impl).
+"""AI Control Plane Agent Loop Hardening CLI Surface (T-03285 scaffold / T-03286 impl / T-03289 sec).
 
 One-shot operator CLI over AgentLoopService (spec: docs/tasks/evidence/T-03284-spec.md):
 
     python -m aiosh_mcp.agent_loop_cli validate --plan plan.json
-    python -m aiosh_mcp.agent_loop_cli run --loop-id ID --token GRANT --plan plan.json [--json]
+    python -m aiosh_mcp.agent_loop_cli run --loop-id ID --token-env AIOS_LOOP_GRANT --plan plan.json [--json]
     python -m aiosh_mcp.agent_loop_cli history --loop-id ID [--limit N] [--json]
 
 Loop state is in-memory, so `run` drives start -> turns -> complete in one process;
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from dataclasses import dataclass
@@ -44,6 +45,7 @@ MAX_PLAN_BYTES = 1024 * 1024
 MAX_PLAN_TURNS = 100
 MAX_HISTORY_LIMIT = 1000
 DEFAULT_HISTORY_LIMIT = 100
+MAX_TOKEN_CHARS = 256
 
 LOOPCLI_ERR_USAGE = "LOOPCLI_ERR_USAGE"
 LOOPCLI_ERR_PLAN = "LOOPCLI_ERR_PLAN"
@@ -135,9 +137,14 @@ def load_plan(path: str) -> List[PlanTurn]:
     try:
         if not p.is_file():
             raise PlanError(f"plan file not found: {path}")
-        if p.stat().st_size > MAX_PLAN_BYTES:
+        # Bounded read (T-03289): never trust a prior stat(), the file can grow in between.
+        with p.open("rb") as fh:
+            raw = fh.read(MAX_PLAN_BYTES + 1)
+        if len(raw) > MAX_PLAN_BYTES:
             raise PlanError(f"plan file exceeds {MAX_PLAN_BYTES} bytes")
-        doc = json.loads(p.read_text(encoding="utf-8"))
+        doc = json.loads(raw.decode("utf-8"))
+    except RecursionError as exc:
+        raise PlanError("plan file is nested too deeply") from exc
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PlanError(f"cannot read plan file: {exc}") from exc
     if not isinstance(doc, dict) or set(doc) != {"turns"} or not isinstance(doc["turns"], list):
@@ -157,7 +164,11 @@ def _build_parser() -> _Parser:
 
     r = sub.add_parser("run", add_help=False)
     r.add_argument("--loop-id", required=True)
-    r.add_argument("--token", required=True)
+    # Prefer --token-env / --token-stdin: --token is visible in the process list and shell history.
+    tok = r.add_mutually_exclusive_group(required=True)
+    tok.add_argument("--token")
+    tok.add_argument("--token-env", metavar="VAR")
+    tok.add_argument("--token-stdin", action="store_true")
     r.add_argument("--plan", required=True)
     r.add_argument("--max-iterations", type=int, default=25)
     r.add_argument("--max-total-tokens", type=int, default=32768)
@@ -172,8 +183,20 @@ def _build_parser() -> _Parser:
     return parser
 
 
+def _resolve_token(ns: argparse.Namespace) -> str:
+    """Returns the grant id from --token, --token-env VAR or one line of stdin (T-03289)."""
+    if ns.token_env:
+        return os.environ.get(ns.token_env, "").strip()
+    if ns.token_stdin:
+        return sys.stdin.readline(MAX_TOKEN_CHARS + 1).strip()[:MAX_TOKEN_CHARS + 1]
+    return (ns.token or "").strip()
+
+
 def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
     turns = load_plan(ns.plan)
+    ns.token = _resolve_token(ns)
+    if len(ns.token) > MAX_TOKEN_CHARS:
+        raise _UsageError(f"capability token longer than {MAX_TOKEN_CHARS} chars")
     cfg = LoopConfig(
         loop_id=ns.loop_id,
         max_iterations=ns.max_iterations,

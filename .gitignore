@@ -23,6 +23,10 @@ code/aiosh-mcp/dist/
 **/audit.db
 **/audit.db-shm
 **/audit.db-wal
+# Stray SQLite files from test runs must never be committed (2026-11-05: unused.db slipped into #431).
+*.db
+*.db-wal
+*.db-shm
 
 # OS / editor noise
 .DS_Store

@@ -26,8 +26,25 @@ MAX_ERROR_MSG_BYTES = 16384
 MAX_REGISTRY_CAPACITY = 256
 
 LOOP_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_\-]{8,64}$")
+# Token shapes (security audit 2026-11-05 #6). Audit rows are hash-chained and cannot be
+# redacted later, so anything that reaches them must be masked before the write.
 SECRET_PATTERN = re.compile(
-    r"(sk-[a-zA-Z0-9_\-]{20,}|ghp_[a-zA-Z0-9_\-]{20,}|Bearer\s+[a-zA-Z0-9_\-\.]{20,})",
+    r"(sk-[a-zA-Z0-9_\-]{20,}"
+    r"|gh[pousr]_[a-zA-Z0-9_\-]{20,}"
+    r"|github_pat_[a-zA-Z0-9_]{20,}"
+    r"|(?:AKIA|ASIA)[0-9A-Z]{16}"
+    r"|xox[abprs]-[a-zA-Z0-9\-]{10,}"
+    r"|eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}"
+    r"|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"
+    r"|(?:Basic|Digest)\s+[A-Za-z0-9+/=]{8,}"
+    r"|Bearer\s+[a-zA-Z0-9_\-\.]{20,})",
+    re.IGNORECASE,
+)
+#: Values of credential-named keys, in dict reprs, JSON or k=v form: 'password': 'x', "api_key": "x", token=x.
+SECRET_KV_PATTERN = re.compile(
+    r"""((?:password|passwd|pwd|secret|client_secret|api[_-]?key|access[_-]?key|private[_-]?key"""
+    r"""|auth[_-]?token|access[_-]?token|refresh[_-]?token|token|authorization|cookie|session[_-]?id)"""
+    r"""['"]?\s*[:=]\s*['"]?)([^'",\s}&]+)""",
     re.IGNORECASE,
 )
 
@@ -36,7 +53,8 @@ def mask_secrets(text: str) -> str:
     """Masks API keys, tokens, and authorization credentials."""
     if not text:
         return ""
-    return SECRET_PATTERN.sub("[REDACTED_SECRET]", text)
+    masked = SECRET_PATTERN.sub("[REDACTED_SECRET]", text)
+    return SECRET_KV_PATTERN.sub(lambda m: m.group(1) + "[REDACTED_SECRET]", masked)
 
 
 def truncate_safe(text: str, max_chars: int) -> str:

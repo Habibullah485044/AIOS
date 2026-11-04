@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl).
+"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl / T-03278 integ).
 
 Enforces LOOPSERV-INV1..LOOPSERV-INV5: deterministic FSM progression, audit atomicity,
 pre-execution policy evaluation, execution timeout watchdogs, and PoR capability gating.
@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from aiosh_mcp.agent_loop_data_model import (
+    LoopResultEnvelope,
     create_initial,
     mask_secrets,
     validate_loop_transition,
@@ -209,3 +210,93 @@ class AgentLoopService:
 
 
 _GLOBAL_AGENT_LOOP_SERVICE = AgentLoopService()
+
+
+def _error_envelope(exc: Exception) -> Dict[str, Any]:
+    """Maps service/data-model failures onto the standard result envelope (ADR-0035)."""
+    if isinstance(exc, AgentLoopServiceError):
+        return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code).to_dict()
+    msg = mask_secrets(str(exc))
+    code = msg.split(":", 1)[0] if msg.startswith("LOOPDATA_ERR_") else "LOOPSERV_ERR_INTERNAL"
+    return LoopResultEnvelope(ok=False, error=msg, error_code=code).to_dict()
+
+
+def register_agent_loop_service_tools(mcp_app: Any, service: Optional[AgentLoopService] = None) -> None:
+    """Registers the agent loop core service on FastMCP (T-03278).
+
+    Mutating tools (start/advance/abort) require a capability token (LOOPSERV-INV5);
+    the snapshot tool is read-only.
+    """
+    svc = service or _GLOBAL_AGENT_LOOP_SERVICE
+
+    @mcp_app.tool()
+    def aios_agent_loop_start(
+        loop_id: str,
+        capability_token: str = "",
+        max_iterations: int = 25,
+        max_total_tokens: int = 32768,
+        timeout_ms_per_step: float = 30000.0,
+        total_timeout_ms: float = 300000.0,
+        consecutive_failure_limit: int = 3,
+    ) -> dict:
+        """Starts a hardened agent loop (INIT -> OBSERVE). Mutating: requires capability token."""
+        try:
+            cfg = LoopConfig(
+                loop_id=loop_id,
+                max_iterations=max_iterations,
+                max_total_tokens=max_total_tokens,
+                timeout_ms_per_step=timeout_ms_per_step,
+                total_timeout_ms=total_timeout_ms,
+                consecutive_failure_limit=consecutive_failure_limit,
+            )
+            snap = svc.start_loop(cfg, capability_token=capability_token)
+            return LoopResultEnvelope(ok=True, data={"snapshot": snap.to_dict()}).to_dict()
+        except Exception as exc:
+            return _error_envelope(exc)
+
+    @mcp_app.tool()
+    def aios_agent_loop_advance(
+        loop_id: str,
+        action_intent: str,
+        capability_token: str = "",
+        tool_name: Optional[str] = None,
+        tool_args: Optional[Dict[str, Any]] = None,
+        tokens_consumed: int = 0,
+        policy_allowed: bool = True,
+    ) -> dict:
+        """Advances one loop turn through the policy gate. Mutating: requires capability token."""
+        try:
+            step = svc.advance_turn(
+                loop_id=loop_id,
+                action_intent=action_intent,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                tokens_consumed=tokens_consumed,
+                policy_allowed=policy_allowed,
+                capability_token=capability_token,
+            )
+            snap = svc.get_snapshot(loop_id)
+            return LoopResultEnvelope(
+                ok=True,
+                data={"step": step.to_dict(), "state": snap.current_state.value,
+                      "is_terminated": snap.is_terminated},
+            ).to_dict()
+        except Exception as exc:
+            return _error_envelope(exc)
+
+    @mcp_app.tool()
+    def aios_agent_loop_abort(loop_id: str, reason: str, capability_token: str = "") -> dict:
+        """Aborts an active loop. Mutating: requires capability token."""
+        try:
+            snap = svc.abort_loop(loop_id, reason, capability_token=capability_token)
+            return LoopResultEnvelope(ok=True, data={"snapshot": snap.to_dict()}).to_dict()
+        except Exception as exc:
+            return _error_envelope(exc)
+
+    @mcp_app.tool()
+    def aios_agent_loop_snapshot(loop_id: str) -> dict:
+        """Returns the service-held loop snapshot. Read-only (no capability token)."""
+        try:
+            return LoopResultEnvelope(ok=True, data={"snapshot": svc.get_snapshot(loop_id).to_dict()}).to_dict()
+        except Exception as exc:
+            return _error_envelope(exc)

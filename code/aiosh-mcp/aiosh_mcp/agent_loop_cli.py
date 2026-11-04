@@ -233,6 +233,7 @@ def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
         raise
     return CliResult(EXIT_SUCCESS, "run", data={
         "loop_id": ns.loop_id,
+        "run_id": service.run_id(ns.loop_id),
         "final_state": snap.current_state.value,
         "terminal_reason": snap.terminal_reason,
         "turns": steps,

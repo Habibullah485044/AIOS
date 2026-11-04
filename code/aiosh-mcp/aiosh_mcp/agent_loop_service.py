@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import secrets
 import re
 import threading
 import time
@@ -35,7 +36,7 @@ from aiosh_mcp.agent_loop_data_model import (
     MAX_ARGS_SUMMARY_BYTES,
     MAX_REGISTRY_CAPACITY,
 )
-from aiosh_mcp.agent_loop_gate import CapabilityRefused, PepCapabilityGate
+from aiosh_mcp.agent_loop_gate import CapabilityRefused, LoopIdTaken, PepCapabilityGate
 
 LOOPSERV_ERR_NOT_FOUND = "LOOPSERV_ERR_NOT_FOUND"
 LOOPSERV_ERR_ALREADY_EXISTS = "LOOPSERV_ERR_ALREADY_EXISTS"
@@ -74,6 +75,8 @@ class CapabilityGate(Protocol):
 
     def tool_refusal(self, grant_id: str, tool_name: Optional[str]) -> Optional[str]: ...
 
+    def loop_id_used(self, loop_id: str) -> bool: ...
+
     def audit(self, event: str, loop_id: str, grant_id: Optional[str], outcome: str,
               detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> None: ...
 
@@ -89,6 +92,8 @@ class AgentLoopService:
         self._configs: Dict[str, LoopConfig] = {}
         self._start_times: Dict[str, float] = {}
         self._grants: Dict[str, str] = {}
+        #: Random per-run id stamped on every audit row of a loop (audit finding #2).
+        self._runs: Dict[str, str] = {}
 
     @staticmethod
     def _require_token(capability_token: str, loop_id: Optional[str], action: str) -> str:
@@ -121,7 +126,8 @@ class AgentLoopService:
                             detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> None:
         """Writes the audit row; on failure terminates the loop and raises LOOPSERV_ERR_AUDIT."""
         try:
-            self._gate.audit(event, snap.loop_id, grant_id, outcome, detail=detail, args=args)
+            self._gate.audit(event, snap.loop_id, grant_id, outcome, detail=detail,
+                             args={"run_id": self._runs.get(snap.loop_id), **(args or {})})
         except Exception as exc:
             if not snap.is_terminated:
                 snap.transition_to(LoopState.ABORTED,
@@ -131,7 +137,7 @@ class AgentLoopService:
             ) from exc
 
     def _forget(self, loop_id: str) -> None:
-        for table in (self._loops, self._configs, self._start_times, self._grants):
+        for table in (self._loops, self._configs, self._start_times, self._grants, self._runs):
             table.pop(loop_id, None)
 
     def _ensure_capacity(self, loop_id: str) -> None:
@@ -197,6 +203,19 @@ class AgentLoopService:
                 )
             self._ensure_capacity(config.loop_id)
             try:
+                used = self._gate.loop_id_used(config.loop_id)
+            except Exception as exc:
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_GATE_UNAVAILABLE, f"capability gate unavailable: {exc}", config.loop_id
+                ) from exc
+            if used:
+                # Checked before redemption so a reused id does not burn the grant.
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_ALREADY_EXISTS,
+                    f"Loop '{config.loop_id}' was already started (loop ids are single-use)",
+                    config.loop_id,
+                )
+            try:
                 self._gate.redeem(token, config.loop_id)
             except CapabilityRefused as exc:
                 raise AgentLoopServiceError(LOOPSERV_ERR_UNAUTHORIZED, str(exc), config.loop_id) from exc
@@ -207,8 +226,13 @@ class AgentLoopService:
 
             snap = create_initial(config.loop_id, config)
             snap.transition_to(LoopState.OBSERVE)
+            run_id = secrets.token_hex(8)
             try:
-                self._gate.audit("start", config.loop_id, token, "ok", args=config.to_dict())
+                self._gate.audit("start", config.loop_id, token, "ok",
+                                 args={"run_id": run_id, **config.to_dict()})
+            except LoopIdTaken as exc:
+                # Lost a concurrent start race for this id; the grant redemption is audited.
+                raise AgentLoopServiceError(LOOPSERV_ERR_ALREADY_EXISTS, str(exc), config.loop_id) from exc
             except Exception as exc:
                 # Not registered: an unaudited loop must not exist (grant stays redeemed, which is audited).
                 raise AgentLoopServiceError(
@@ -219,7 +243,14 @@ class AgentLoopService:
             self._configs[config.loop_id] = config
             self._start_times[config.loop_id] = time.time()
             self._grants[config.loop_id] = token
+            self._runs[config.loop_id] = run_id
             return snap
+
+    def run_id(self, loop_id: str) -> str:
+        """The random run id stamped on this loop's audit rows."""
+        with self._lock:
+            self._require_loop(loop_id)
+            return self._runs.get(loop_id, "")
 
     def advance_turn(
         self,
@@ -354,6 +385,22 @@ class AgentLoopService:
                     f"Loop '{loop_id}' is terminated ({snap.current_state.value}): {snap.terminal_reason}",
                     loop_id,
                 )
+            # Audit finding #5: completing is a state change, so the bound grant must still
+            # be live and the loop must still be inside its total timeout.
+            config = self._configs.get(loop_id)
+            elapsed_ms = (time.time() - self._start_times.get(loop_id, time.time())) * 1000.0
+            if config and elapsed_ms > config.total_timeout_ms:
+                snap.transition_to(LoopState.ABORTED, terminal_reason=(
+                    f"{LOOPSERV_ERR_TIMEOUT}: total timeout ({config.total_timeout_ms}ms) exceeded"))
+                self._audit_or_terminate(snap, "timeout", grant_id, "error", detail=snap.terminal_reason)
+                raise AgentLoopServiceError(LOOPSERV_ERR_TIMEOUT, f"Total timeout exceeded for loop '{loop_id}'",
+                                            loop_id)
+            try:
+                refusal = self._gate.tool_refusal(grant_id, None)
+            except Exception as exc:
+                refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
+            if refusal is not None:
+                raise AgentLoopServiceError(LOOPSERV_ERR_UNAUTHORIZED, f"cannot complete: {refusal}", loop_id)
             snap.transition_to(LoopState.COMPLETED, terminal_reason="completed")
             self._audit_or_terminate(snap, "complete", grant_id, "ok")
             return snap

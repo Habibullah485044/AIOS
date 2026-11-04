@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 from contextlib import closing
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from aiosh_mcp import audit_client
 from aiosh_mcp.agent_loop_data_model import mask_secrets
@@ -94,3 +94,8 @@ class PepCapabilityGate:
                 "grant_token": grant_id,
                 "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True},
             })
+
+
+def read_loop_history(db_path: Optional[str], loop_id: str, limit: int) -> List[Dict[str, Any]]:
+    """Read-only ``aios.agent_loop.*`` audit rows for ``loop_id``, oldest first (T-03295 scaffold)."""
+    raise NotImplementedError("T-03296: read_loop_history")

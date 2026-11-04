@@ -34,6 +34,11 @@ def clean_env(monkeypatch, tmp_path):
         monkeypatch.delenv(f.env, raising=False)
     monkeypatch.delenv(alc.ENV_AGENT_LOOP_CONFIG, raising=False)
     monkeypatch.chdir(tmp_path)
+    # Degraded-config audit rows (T-03310) must never reach the developer's real ring.
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path))
+    alc.reset_process_config()
+    yield
+    alc.reset_process_config()
 
 
 async def call(app, name, args):

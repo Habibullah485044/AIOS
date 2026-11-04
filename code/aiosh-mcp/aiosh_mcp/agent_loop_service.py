@@ -90,8 +90,8 @@ class AgentLoopService:
     def __init__(self, gate: Optional[CapabilityGate] = None, capacity: Optional[int] = None) -> None:
         self._gate: CapabilityGate = gate if gate is not None else PepCapabilityGate()
         if capacity is None:  # T-03308: operator-configurable, clamped to 1..MAX_REGISTRY_CAPACITY
-            from aiosh_mcp.agent_loop_config import resolve
-            capacity = int(resolve()["config"]["registry_capacity"])
+            from aiosh_mcp.agent_loop_config import process_config
+            capacity = int(process_config()["config"]["registry_capacity"])
         self._capacity = capacity
         self._lock = threading.RLock()
         self._loops: Dict[str, LoopSnapshot] = {}

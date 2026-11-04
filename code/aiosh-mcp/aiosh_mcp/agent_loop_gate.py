@@ -48,12 +48,12 @@ class PepCapabilityGate:
 
     def __init__(self, db_path: Optional[str] = None, busy_timeout_ms: Optional[int] = None) -> None:
         self._db_path = db_path
+        if busy_timeout_ms is None:  # T-03310: fixed at construction from the process config
+            from aiosh_mcp.agent_loop_config import process_config
+            busy_timeout_ms = int(process_config()["config"]["db_busy_timeout_ms"])
         self._busy_timeout_ms = busy_timeout_ms
 
     def _busy_ms(self) -> int:
-        if self._busy_timeout_ms is None:  # T-03308: resolved lazily, clamped 100..30000
-            from aiosh_mcp.agent_loop_config import resolve
-            self._busy_timeout_ms = int(resolve()["config"]["db_busy_timeout_ms"])
         return self._busy_timeout_ms
 
     def _open(self):

@@ -645,11 +645,29 @@ def write_audit_row(
     proto: dict[str, Any],
     prev_hash: str | None = None,
 ) -> AuditRow:
-    """Append one row to the audit ring. Cross-substrate invariant with TS."""
+    """Append one row to the audit ring. Cross-substrate invariant with TS.
+
+    The chain-head read and the INSERT must happen under one write lock:
+    reading ``head_hash`` outside a transaction let concurrent writers
+    (threads, processes, the TS CLI) append rows with the same
+    ``prev_hash`` and fork the chain, so ``verify`` reported a break
+    nobody made. ``BEGIN IMMEDIATE`` takes the RESERVED lock before the
+    head read. A caller that already holds a write transaction (e.g.
+    ``grant_redeem`` after its UPDATE) is already serialised.
+    """
     ensure_pep_schema(conn)  # no-op if CLI has already created the table.
     ensure_audit_schema(conn)  # Sprint 2 migration: add classifier columns.
-    row = _insert_audit_row(conn, proto, prev_hash=prev_hash)
-    conn.commit()
+    began = False
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+        began = True
+    try:
+        row = _insert_audit_row(conn, proto, prev_hash=prev_hash)
+        conn.commit()
+    except BaseException:
+        if began:
+            conn.rollback()
+        raise
     return row
 
 

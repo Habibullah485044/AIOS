@@ -238,7 +238,16 @@ export class AuditRing {
     return this.anchorHash_();
   }
 
+  /** Append one row. The chain-head read and the INSERT run inside one
+   *  IMMEDIATE transaction: without it, concurrent writers (other CLI
+   *  processes, the Python MCP server) could read the same head and
+   *  fork the chain (security audit 2026-11-05, finding #1; mirrors
+   *  `audit_client.write_audit_row`). Nested calls become savepoints. */
   write(input: Omit<AuditRow, "id" | "prev_hash" | "hash">): AuditRow {
+    return this.db_.transaction(() => this.writeLocked_(input)).immediate();
+  }
+
+  private writeLocked_(input: Omit<AuditRow, "id" | "prev_hash" | "hash">): AuditRow {
     const prev_hash = this.headHash_();
     const proto: Omit<AuditRow, "id" | "hash"> = { ...input, prev_hash };
     const hash = sha256Hex(prev_hash + canonicalJson(proto));

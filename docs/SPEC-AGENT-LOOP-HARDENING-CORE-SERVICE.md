@@ -43,25 +43,46 @@ aiosh grant create --to agent:planner --tools "aios.agent_loop.start,aios.fs.rea
 
 The returned `grant_id` (`data.grant_id`) is the `capability_token` for every call on that loop.
 
-## 3. MCP tools (registered in `server.py`)
+## 3. MCP tools (registered in `server.py`, defined in `agent_loop_mcp.py`)
 
-| Tool | Arguments | Returns (`LoopResultEnvelope`) |
-|---|---|---|
-| `aios_agent_loop_start` | `loop_id`, `capability_token`, optional `max_iterations` (1..100), `max_total_tokens` (100..1e6), `timeout_ms_per_step`, `total_timeout_ms` (5000..1.8e6), `consecutive_failure_limit` (1..10) | `{"ok": true, "data": {"snapshot": {...}}}` |
-| `aios_agent_loop_advance` | `loop_id`, `action_intent`, `capability_token`, optional `tool_name`, `tool_args`, `tokens_consumed`, `policy_allowed` | `{"ok": true, "data": {"step": {...}, "state": "OBSERVE", "is_terminated": false}}` |
-| `aios_agent_loop_abort` | `loop_id`, `reason`, `capability_token` | `{"ok": true, "data": {"snapshot": {...}}}` |
-| `aios_agent_loop_snapshot` | `loop_id` | `{"ok": true, "data": {"snapshot": {...}}}` |
+All seven tools are `async`. Blocking work runs off the event loop, and each call is bounded at 15 s (T-03300).
+Each tool publishes MCP `ToolAnnotations` and an `inputSchema` whose limits match the server's limits (LOOPMCP-INV3).
+Annotations are hints for clients: the server still enforces every rule itself.
 
-On failure every tool returns `{"ok": false, "error": "...", "error_code": "<CODE>"}`. Tools never raise to the transport.
+| Tool | Annotations | Arguments (schema limits) | `data` on success |
+|---|---|---|---|
+| `aios_agent_loop_start` | mutating | `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`), `capability_token` (<= 256), optional `max_iterations` 1..100, `max_total_tokens` 100..1e6, `timeout_ms_per_step` 1000..120000, `total_timeout_ms` 5000..1.8e6, `consecutive_failure_limit` 1..10 | `snapshot` |
+| `aios_agent_loop_advance` | mutating | `loop_id`, `action_intent` 1..4096, `capability_token`, optional `tool_name` (`^[A-Za-z0-9_.-]{1,128}$`), `tool_args` (object, <= 64 KiB, depth <= 32), `tokens_consumed` 0..1e6, `policy_allowed` | `step`, `state`, `is_terminated` |
+| `aios_agent_loop_abort` | destructive, idempotent | `loop_id`, `reason` 1..1024, `capability_token` | `snapshot` |
+| `aios_agent_loop_complete` | destructive | `loop_id`, `capability_token` | `snapshot` |
+| `aios_agent_loop_snapshot` | read-only | `loop_id`, `steps_tail` 0..1000 (default 100) | `snapshot` (last N steps), `steps_total` |
+| `aios_agent_loop_list` | read-only | `include_terminated` (default false) | `loops` (max 256 rows of id, state, iteration, tokens, terminated) |
+| `aios_agent_loop_history` | read-only | `loop_id`, `limit` 1..1000 (default 100), `after_id` >= 0 | `loop_id`, `events`, `truncated`, `next_after_id` (pages are capped at about 1 MiB) |
 
-Example tool call (JSON-RPC `tools/call` params):
+Mutating tools need the grant: `start` redeems it, and the others require the loop-bound grant id.
+Read-only tools need no token and write nothing.
+
+How failures come back:
+- **Tool-level failures** return `{"ok": false, "error": "...", "error_code": "<CODE>"}`.
+- **Schema violations** come back as an MCP tool error (`isError: true`) before the tool body runs. Examples: a 3-char `loop_id`, or `limit` 0.
+- **A missing token** is not a schema error. It reaches the service and returns `LOOPSERV_ERR_UNAUTHORIZED`.
+
+Example `tools/call` params (verified against the server in T-03301):
 
 ```json
-{"name": "aios_agent_loop_advance",
- "arguments": {"loop_id": "loop-docs-demo-01", "action_intent": "read the README",
-               "tool_name": "aios.fs.read", "tool_args": {"path": "README.md"},
-               "tokens_consumed": 120, "capability_token": "gr_..."}}
+{"name": "aios_agent_loop_start",
+ "arguments": {"loop_id": "loop-docs-mcp-01", "capability_token": "gr_docs_mcp", "max_iterations": 10}}
 ```
+```json
+{"name": "aios_agent_loop_advance",
+ "arguments": {"loop_id": "loop-docs-mcp-01", "action_intent": "read the README",
+               "tool_name": "aios.fs.read", "tool_args": {"path": "README.md"},
+               "tokens_consumed": 120, "capability_token": "gr_docs_mcp"}}
+```
+```json
+{"name": "aios_agent_loop_history", "arguments": {"loop_id": "loop-docs-mcp-01", "limit": 100, "after_id": 0}}
+```
+To page through history, repeat the call with `after_id` set to `next_after_id` until `truncated` is `false`.
 
 ## 4. Python example (copy-pasteable; verified in T-03281 evidence)
 
@@ -164,18 +185,23 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 | `LOOPSERV_ERR_TERMINATED` | Loop is COMPLETED/FAILED/ABORTED |
 | `LOOPSERV_ERR_POLICY_REFUSED` | Step refused (in `step.error_message`; the call itself succeeds) |
 | `LOOPSERV_ERR_TIMEOUT` | `total_timeout_ms` exceeded; loop ABORTED |
-| `LOOPSERV_ERR_INVALID_INPUT` | `action_intent` > 4096 chars, `reason` > 1024, bad `tool_name`, `tokens_consumed` outside [0, 1e6] |
+| `LOOPSERV_ERR_INVALID_INPUT` | `action_intent` > 4096 chars, `reason` > 1024, bad `tool_name`, `tokens_consumed` outside [0, 1e6], `tool_args` > 64 KiB or nested deeper than 32 (rejected, never truncated: T-03299) |
 | `LOOPSERV_ERR_CAPACITY` | 256 loops held and none terminated |
 | `LOOPSERV_ERR_AUDIT` | Audit write failed; loop not created (start) or ABORTED (later events) |
 | `LOOPSERV_ERR_GATE_UNAVAILABLE` | Grant DB unreachable; fails closed |
 | `LOOPDATA_ERR_BOUNDS_EXCEEDED` | `LoopConfig` out of range or bad `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`) |
+| `LOOPMCP_ERR_TIMEOUT` | MCP call exceeded 15 s. For mutating tools the outcome is **unknown**, so check `snapshot`/`history` before retrying |
+| `LOOPMCP_ERR_AUDIT_READ` | `history`: the audit DB exists but is corrupt or unreadable |
 
 ## 7. Known limitations
 
 - **In-memory state.** Loops live in the process; a server restart loses them. The audit ring is the durable record.
 - **No per-step timeout.** `timeout_ms_per_step` is validated but not enforced, because the service does not run tools.
 - **One grant per loop.** A single-use grant is consumed by `start_loop`. Revoking it mid-loop refuses later tool calls, but `abort_loop` still works with the bound id.
-- **Two registries.** `aios_agent_loop_init`/`aios_agent_loop_status` (T-03268, data model) keep their own INIT-only registry, separate from the service. Use the `aios_agent_loop_*` service tools for running loops.
+- **Two registries.** `aios_agent_loop_init` (T-03268, data model) still creates INIT-only loops in its own registry, which the service cannot drive. `aios_agent_loop_status` can read both registries (T-03296). Use `aios_agent_loop_start` for running loops.
+- **Tokens travel as tool arguments.** MCP has no secret-argument channel, so `capability_token` can appear in client transcripts. The exposure is bounded because the grant is single-use and bound to one loop. Responses never echo it. A schema error for a token over 256 chars does echo a truncated copy back to the same caller.
+- **Timeouts report uncertainty.** A mutating call that hits the 15 s bound may still finish in its worker thread. The envelope says the outcome is unknown.
+- **Server-local view.** `list` only shows loops held by this server process.
 - **Caller-reported metrics.** `tokens_consumed` and `tool_args` are self-reported by the caller and only bounded, not verified.
 
 ## 8. Evidence
@@ -187,4 +213,5 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 - T-03278 integration: [T-03278-core-service-integration.md](tasks/evidence/T-03278-core-service-integration.md)
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
+- T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
 - T-03283..T-03290 CLI: [research](tasks/evidence/T-03283-research.md), [spec](tasks/evidence/T-03284-spec.md), [implementation](tasks/evidence/T-03286-cli-surface-implementation.md), [unit](tasks/evidence/T-03287-cli-surface-unit-test.md), [integration](tasks/evidence/T-03288-cli-surface-integration.md), [security](tasks/evidence/T-03289-security.md), [hardening](tasks/evidence/T-03290-cli-surface-hardening.md)

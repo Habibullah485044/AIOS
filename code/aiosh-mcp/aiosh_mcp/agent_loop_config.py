@@ -289,6 +289,60 @@ def _resolve(arg_config: Optional[str], overrides: Optional[Dict[str, Any]]) -> 
     return {"config": config, "source": source, "rejected": rejected, "errors": errors}
 
 
+_PROCESS_CONFIG: Optional[Dict[str, Any]] = None
+
+
+def process_config() -> Dict[str, Any]:
+    """The configuration this process runs with, resolved once (T-03310).
+
+    Service capacity, gate busy timeout and the MCP tools all read this, so the
+    ``aios_agent_loop_config`` tool reports exactly what is in effect.
+    """
+    global _PROCESS_CONFIG
+    if _PROCESS_CONFIG is None:
+        _PROCESS_CONFIG = resolve()
+    return _PROCESS_CONFIG
+
+
+def reset_process_config() -> None:
+    """Forget the cached resolution (tests / explicit operator reload)."""
+    global _PROCESS_CONFIG
+    _PROCESS_CONFIG = None
+
+
+def audit_degraded(resolved: Dict[str, Any], db_path: Optional[str] = None) -> Optional[str]:
+    """Writes one ``aios.agent_loop.config`` audit row when inputs were rejected (T-03310).
+
+    Falling back to defaults is a fail-open, so ADR-0035 §F-2 requires an honest audit row.
+    Returns None on success or when there is nothing to report, else the reason the row
+    could not be written (callers surface it; this never raises).
+    """
+    if not resolved.get("errors"):
+        return None
+    try:
+        from contextlib import closing
+        from aiosh_mcp import audit_client
+        with closing(audit_client.open_db(db_path)) as conn:
+            audit_client.write_audit_row(conn, {
+                "ts": audit_client.utcnow_iso(),
+                "actor": "agent",
+                "actor_id": "agent:mcp@aiosh-mcp/agent-loop",
+                "tool": "aios.agent_loop.config",
+                "command": "agent_loop.config resolve",
+                "args": {"rejected": resolved.get("rejected", {}), "file": resolved["source"].get("_file"),
+                         "errors": resolved["errors"][:20]},
+                "target": None,
+                "outcome": "degraded",
+                "outcome_detail": f"{len(resolved['errors'])} configuration input(s) rejected or adjusted",
+                "constitution_rev": None,
+                "grant_token": None,
+                "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True},
+            })
+        return None
+    except Exception as exc:
+        return f"{AGENTLOOPCONF_ERR_IO}: could not audit degraded configuration ({type(exc).__name__})"
+
+
 def loop_config_for(loop_id: str, resolved: Optional[Dict[str, Any]] = None, **explicit: Any) -> LoopConfig:
     """LoopConfig from resolved defaults plus explicit per-call values (explicit wins; None = use default)."""
     if resolved is None:

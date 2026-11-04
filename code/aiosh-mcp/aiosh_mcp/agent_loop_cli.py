@@ -191,6 +191,8 @@ def _build_parser() -> _Parser:
     c = sub.add_parser("config", add_help=False)
     c.add_argument("--config", dest="config_file", default=None)
     c.add_argument("--json", action="store_true")
+    # --strict: exit 2 when any input was rejected or adjusted (for CI / deployment checks).
+    c.add_argument("--strict", action="store_true")
 
     h = sub.add_parser("history", add_help=False)
     h.add_argument("--loop-id", required=True)
@@ -283,7 +285,12 @@ def dispatch_cli(
         if ns.subcommand is None:
             raise _UsageError("expected a subcommand: validate | run | history | config")
         if ns.subcommand == "config":
-            return CliResult(EXIT_SUCCESS, "config", data=resolve_config(arg_config=ns.config_file))
+            data = resolve_config(arg_config=ns.config_file)
+            data["degraded"] = bool(data["errors"])
+            if ns.strict and data["errors"]:
+                return CliResult(EXIT_USAGE, "config", data=data, error_code="AGENTLOOPCONF_ERR_STRICT",
+                                 error=f"{len(data['errors'])} configuration input(s) rejected or adjusted")
+            return CliResult(EXIT_SUCCESS, "config", data=data)
         if ns.subcommand == "validate":
             return CliResult(EXIT_SUCCESS, "validate", data={"turns": len(load_plan(ns.plan))})
         if ns.subcommand == "run":

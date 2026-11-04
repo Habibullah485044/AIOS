@@ -17,7 +17,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from aiosh_mcp.agent_loop_cli import MAX_HISTORY_LIMIT, MAX_TOKEN_CHARS
-from aiosh_mcp.agent_loop_config import default_config, loop_config_for
+from aiosh_mcp.agent_loop_config import audit_degraded, default_config, loop_config_for, process_config
 from aiosh_mcp.agent_loop_config import resolve as resolve_config
 from aiosh_mcp.agent_loop_data_model import MAX_REGISTRY_CAPACITY
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopResultEnvelope
@@ -135,11 +135,17 @@ def register_agent_loop_mcp_tools(
     ``agent_loop_config.resolve()`` once, at registration.
     """
     # ``settings`` is a programmatic/test hook: taken as given (no clamping) and labelled "settings".
-    resolved = resolve_config() if settings is None else {
+    resolved = process_config() if settings is None else {
         "config": {**default_config(), **settings},
         "source": {**{k: "default" for k in default_config()}, **{k: "settings" for k in settings}},
         "rejected": {}, "errors": []}
     cfg = resolved["config"]
+    if settings is None and resolved["errors"] and not resolved.get("_audited"):
+        # Fail-open to defaults must leave an honest audit row (ADR-0035 §F-2, T-03310).
+        failure = audit_degraded(resolved, db_path)
+        resolved["_audited"] = True
+        if failure:
+            resolved["errors"].append(failure)
     timeout_s = float(cfg["mcp_call_timeout_s"])
     page_bytes = int(cfg["history_page_bytes"])
     default_tail = int(cfg["snapshot_steps_tail"])
@@ -238,4 +244,5 @@ def register_agent_loop_mcp_tools(
         """Returns the agent-loop configuration this server resolved at startup: values, where each came from
         (argument/env/file/default/env_invalid/config_invalid) and any rejected input. Read-only, no token."""
         return _ok({"config": cfg, "source": resolved["source"], "rejected": resolved.get("rejected", {}),
+                    "degraded": bool(resolved["errors"]),
                     "errors": resolved["errors"]})

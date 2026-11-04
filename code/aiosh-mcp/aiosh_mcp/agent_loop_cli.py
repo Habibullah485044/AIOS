@@ -185,6 +185,7 @@ def _build_parser() -> _Parser:
     r.add_argument("--max-total-tokens", type=int, default=None)
     r.add_argument("--total-timeout-ms", type=float, default=None)
     r.add_argument("--consecutive-failure-limit", type=int, default=None)
+    r.add_argument("--config", dest="config_file", default=None)
     r.add_argument("--json", action="store_true")
 
     c = sub.add_parser("config", add_help=False)
@@ -214,7 +215,7 @@ def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
         raise _UsageError(f"capability token longer than {MAX_TOKEN_CHARS} chars")
     cfg = loop_config_for(
         ns.loop_id,
-        resolve_config(),
+        resolve_config(arg_config=ns.config_file),
         max_iterations=ns.max_iterations,
         max_total_tokens=ns.max_total_tokens,
         total_timeout_ms=ns.total_timeout_ms,

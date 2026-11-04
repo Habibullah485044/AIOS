@@ -134,8 +134,11 @@ def register_agent_loop_mcp_tools(
     ``settings`` (T-03308) is an already-resolved config dict; by default it comes from
     ``agent_loop_config.resolve()`` once, at registration.
     """
+    # ``settings`` is a programmatic/test hook: taken as given (no clamping) and labelled "settings".
     resolved = resolve_config() if settings is None else {
-        "config": {**default_config(), **settings}, "source": {k: "argument" for k in settings}, "errors": []}
+        "config": {**default_config(), **settings},
+        "source": {**{k: "default" for k in default_config()}, **{k: "settings" for k in settings}},
+        "rejected": {}, "errors": []}
     cfg = resolved["config"]
     timeout_s = float(cfg["mcp_call_timeout_s"])
     page_bytes = int(cfg["history_page_bytes"])
@@ -234,4 +237,5 @@ def register_agent_loop_mcp_tools(
     async def aios_agent_loop_config() -> dict:
         """Returns the agent-loop configuration this server resolved at startup: values, where each came from
         (argument/env/file/default/env_invalid/config_invalid) and any rejected input. Read-only, no token."""
-        return _ok({"config": cfg, "source": resolved["source"], "errors": resolved["errors"]})
+        return _ok({"config": cfg, "source": resolved["source"], "rejected": resolved.get("rejected", {}),
+                    "errors": resolved["errors"]})

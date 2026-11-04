@@ -99,7 +99,8 @@ async def test_mcp_config_tool_matches_cli_config(monkeypatch, tmp_path):
     cli_view = dispatch_cli(["config", "--json"]).data
     assert json.dumps(mcp_view, sort_keys=True) == json.dumps(cli_view, sort_keys=True)
     assert mcp_view["source"]["history_page_bytes"] == "file"
-    assert mcp_view["source"]["mcp_call_timeout_s"] == "env_invalid"
+    assert mcp_view["source"]["mcp_call_timeout_s"] == "default"
+    assert mcp_view["rejected"]["mcp_call_timeout_s"] == "env_invalid"
     assert mcp_view["config"]["mcp_call_timeout_s"] == 15.0
 
 

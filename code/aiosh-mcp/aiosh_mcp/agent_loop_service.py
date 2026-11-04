@@ -113,7 +113,7 @@ class AgentLoopService:
             elapsed_ms = (time.time() - self._start_times.get(loop_id, time.time())) * 1000.0
             if elapsed_ms > config.total_timeout_ms:
                 snap.transition_to(
-                    LoopState.FAILED,
+                    LoopState.ABORTED,
                     terminal_reason=f"{LOOPSERV_ERR_TIMEOUT}: total timeout ({config.total_timeout_ms}ms) exceeded",
                 )
                 raise AgentLoopServiceError(

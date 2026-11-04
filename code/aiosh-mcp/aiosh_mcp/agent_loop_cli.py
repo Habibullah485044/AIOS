@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening CLI Surface (T-03285 scaffold / T-03286 impl / T-03289 sec).
+"""AI Control Plane Agent Loop Hardening CLI Surface (T-03285 scaffold / T-03286 impl / T-03289 sec / T-03290 hardening).
 
 One-shot operator CLI over AgentLoopService (spec: docs/tasks/evidence/T-03284-spec.md):
 
@@ -40,6 +40,7 @@ EXIT_FAILURE: int = 1
 EXIT_USAGE: int = 2
 EXIT_UNAUTHORIZED: int = 3
 EXIT_TIMEOUT: int = 4
+EXIT_INTERRUPTED: int = 130  # 128 + SIGINT, shell convention
 
 MAX_PLAN_BYTES = 1024 * 1024
 MAX_PLAN_TURNS = 100
@@ -49,6 +50,11 @@ MAX_TOKEN_CHARS = 256
 
 LOOPCLI_ERR_USAGE = "LOOPCLI_ERR_USAGE"
 LOOPCLI_ERR_PLAN = "LOOPCLI_ERR_PLAN"
+LOOPCLI_ERR_AUDIT_READ = "LOOPCLI_ERR_AUDIT_READ"
+LOOPCLI_ERR_INTERRUPTED = "LOOPCLI_ERR_INTERRUPTED"
+
+#: Bounded wait for a locked audit DB on read (seconds).
+HISTORY_DB_TIMEOUT_S = 5.0
 
 _PLAN_KEYS = {"action_intent", "tool_name", "tool_args", "tokens_consumed", "policy_allowed"}
 _EXIT_BY_CODE = {
@@ -97,6 +103,10 @@ class PlanError(ValueError):
 
 
 class _UsageError(Exception):
+    pass
+
+
+class _AuditReadError(Exception):
     pass
 
 
@@ -206,18 +216,23 @@ def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
     )
     service.start_loop(cfg, capability_token=ns.token)
     steps: List[Dict[str, Any]] = []
-    for turn in turns:
-        if service.get_snapshot(ns.loop_id).is_terminated:
-            break
-        step = service.advance_turn(
-            ns.loop_id, turn.action_intent, tool_name=turn.tool_name, tool_args=turn.tool_args,
-            tokens_consumed=turn.tokens_consumed, policy_allowed=turn.policy_allowed,
-            capability_token=ns.token,
-        )
-        steps.append(step.to_dict())
-    snap = service.get_snapshot(ns.loop_id)
-    if not snap.is_terminated and snap.current_state == LoopState.OBSERVE:
-        snap = service.complete_loop(ns.loop_id, capability_token=ns.token)
+    try:
+        for turn in turns:
+            if service.get_snapshot(ns.loop_id).is_terminated:
+                break
+            step = service.advance_turn(
+                ns.loop_id, turn.action_intent, tool_name=turn.tool_name, tool_args=turn.tool_args,
+                tokens_consumed=turn.tokens_consumed, policy_allowed=turn.policy_allowed,
+                capability_token=ns.token,
+            )
+            steps.append(step.to_dict())
+        snap = service.get_snapshot(ns.loop_id)
+        if not snap.is_terminated and snap.current_state == LoopState.OBSERVE:
+            snap = service.complete_loop(ns.loop_id, capability_token=ns.token)
+    except BaseException as exc:
+        # Honest terminal row (T-03290): a started loop never ends silently in the audit ring.
+        _abort_quietly(service, ns.loop_id, ns.token, f"cli run interrupted: {type(exc).__name__}")
+        raise
     return CliResult(EXIT_SUCCESS, "run", data={
         "loop_id": ns.loop_id,
         "final_state": snap.current_state.value,
@@ -228,6 +243,14 @@ def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
     })
 
 
+def _abort_quietly(service: AgentLoopService, loop_id: str, token: str, reason: str) -> None:
+    try:
+        if not service.get_snapshot(loop_id).is_terminated:
+            service.abort_loop(loop_id, reason, capability_token=token)
+    except Exception:
+        pass  # the original failure is what gets reported
+
+
 def _cmd_history(ns: argparse.Namespace, db_path: Optional[str]) -> CliResult:
     if not (1 <= ns.limit <= MAX_HISTORY_LIMIT):
         raise _UsageError(f"--limit must be in [1, {MAX_HISTORY_LIMIT}]")
@@ -235,15 +258,23 @@ def _cmd_history(ns: argparse.Namespace, db_path: Optional[str]) -> CliResult:
     events: List[Dict[str, Any]] = []
     if path.is_file():
         # Read-only URI: history never creates or migrates the audit DB.
-        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True,
+                                   timeout=HISTORY_DB_TIMEOUT_S)
+        except sqlite3.Error as exc:
+            raise _AuditReadError(f"cannot open audit DB: {exc}") from exc
         try:
             conn.row_factory = sqlite3.Row
+            has_ring = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone()
             rows = conn.execute(
                 """SELECT id, ts, tool, outcome, outcome_detail, args_json FROM audit_ring
                    WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
                    ORDER BY id LIMIT ?""",
                 (ns.loop_id, ns.limit),
-            ).fetchall()
+            ).fetchall() if has_ring else []
+        except sqlite3.Error as exc:
+            raise _AuditReadError(f"cannot read audit DB: {exc}") from exc
         finally:
             conn.close()
         events = [{"id": r["id"], "ts": r["ts"], "tool": r["tool"], "outcome": r["outcome"],
@@ -272,6 +303,11 @@ def dispatch_cli(
         return _cmd_history(ns, db_path)
     except _UsageError as exc:
         return CliResult(EXIT_USAGE, sub, error_code=LOOPCLI_ERR_USAGE, error=str(exc))
+    except _AuditReadError as exc:
+        return CliResult(EXIT_FAILURE, sub, error_code=LOOPCLI_ERR_AUDIT_READ, error=str(exc))
+    except KeyboardInterrupt:
+        return CliResult(EXIT_INTERRUPTED, sub, error_code=LOOPCLI_ERR_INTERRUPTED,
+                         error="interrupted; any started loop was aborted and audited")
     except PlanError as exc:
         return CliResult(EXIT_USAGE, sub, error_code=LOOPCLI_ERR_PLAN, error=str(exc))
     except AgentLoopServiceError as exc:
@@ -310,7 +346,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     result = dispatch_cli(args)
     json_mode = "--json" in args
     stream = sys.stdout if result.exit_code == EXIT_SUCCESS or json_mode else sys.stderr
-    print(render(result, json_mode), file=stream)
+    try:
+        print(render(result, json_mode), file=stream)
+        stream.flush()
+    except BrokenPipeError:
+        # Reader went away (e.g. `| head`): silence the interpreter's flush-at-exit error.
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), stream.fileno())
+        except (OSError, ValueError, AttributeError):
+            pass
     return result.exit_code
 
 

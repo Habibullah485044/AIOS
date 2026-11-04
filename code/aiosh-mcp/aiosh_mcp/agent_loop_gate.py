@@ -107,6 +107,15 @@ class PepCapabilityGate:
                 return f"target '{target}' blocked by grant scope.paths"
         return None
 
+    def irreversible_budget(self, grant_id: str) -> Optional[int]:
+        """``scope.max_irreversible`` of the grant (None = no limit / unknown grant)."""
+        with closing(self._open()) as conn:
+            grant = audit_client.load_grant(conn, grant_id)
+        value = (grant or {}).get("scope", {}).get("max_irreversible")
+        if value is None or isinstance(value, bool):
+            return None
+        return max(0, int(value))
+
     @staticmethod
     def _claimed(conn, loop_id: str) -> bool:
         has_ring = conn.execute(
@@ -128,8 +137,13 @@ class PepCapabilityGate:
         outcome: str,
         detail: Optional[str] = None,
         args: Optional[Dict[str, Any]] = None,
+        classification: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Appends one hash-chained audit row for a loop event."""
+        """Appends one hash-chained audit row for a loop event.
+
+        ``classification`` (T-03326) carries the constitution classifier result for steps:
+        real ``c_flags``, ``policy_revision`` and the ``classify_*`` columns, as in ``_dispatch``.
+        """
         payload = {"loop_id": loop_id, **(args or {})}
         with closing(self._open()) as conn:
             if event in CLAIM_EVENTS:
@@ -151,6 +165,7 @@ class PepCapabilityGate:
                 "constitution_rev": None,
                 "grant_token": grant_id,
                 "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True},
+                **(classification or {}),
             })
 
 

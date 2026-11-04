@@ -43,10 +43,10 @@ class FlakyGate(AllowAllGate):
             raise OSError("disk I/O error")
         return None
 
-    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None):
+    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None, classification=None):
         if event in self.fail_audit_on:
             raise OSError("audit ring unwritable")
-        super().audit(event, loop_id, grant_id, outcome, detail, args)
+        super().audit(event, loop_id, grant_id, outcome, detail, args, classification)
 
 
 def test_start_audit_failure_registers_nothing():

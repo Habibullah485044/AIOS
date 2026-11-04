@@ -14,6 +14,7 @@ then clamp. Security and audit controls are locked and not representable
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -107,13 +108,18 @@ def _number(key: str, value: Any) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{key}: boolean is not a number")
     if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
+        number = float(value)
+    elif isinstance(value, str):
         try:
-            return float(value.strip())
+            number = float(value.strip())
         except ValueError:
             raise ValueError(f"{key}: {value[:32]!r} is not a number") from None
-    raise ValueError(f"{key}: expected a number, got {type(value).__name__}")
+    else:
+        raise ValueError(f"{key}: expected a number, got {type(value).__name__}")
+    # nan/inf slip past min()/max() clamping (security audit 2026-11-05 #7).
+    if not math.isfinite(number):
+        raise ValueError(f"{key}: {value!r} is not a finite number")
+    return number
 
 
 def _check_key(key: str) -> None:

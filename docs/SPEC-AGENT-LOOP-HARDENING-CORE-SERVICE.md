@@ -169,11 +169,62 @@ CLI limitations:
 - `--token` is still accepted for compatibility.
 - The plan's `tokens_consumed` values are declared by the operator, not measured.
 
+## 4b. Configuration (`agent_loop_config.py`, T-03303..T-03312)
+
+Every tunable can be configured. **No security control can be.** The server resolves config once per process
+(`process_config()`), and the service, gate and MCP tools all use that one result.
+
+Precedence, strongest first:
+1. explicit arguments
+2. per-field env `AIOSH_AGENT_LOOP_<FIELD>`
+3. a JSON file: `--config FILE`, else `AIOSH_AGENT_LOOP_CONFIG`, else `./docs/agent_loop_config.json`
+4. built-in defaults
+
+Every value is then clamped to its bounds.
+
+| Key | Default | Bounds | Env |
+|---|---|---|---|
+| `default_max_iterations` | 25 | 1..100 | `AIOSH_AGENT_LOOP_MAX_ITERATIONS` |
+| `default_max_total_tokens` | 32768 | 100..1e6 | `AIOSH_AGENT_LOOP_MAX_TOTAL_TOKENS` |
+| `default_timeout_ms_per_step` | 30000 | 1000..120000 | `AIOSH_AGENT_LOOP_TIMEOUT_MS_PER_STEP` |
+| `default_total_timeout_ms` | 300000 | 5000..1.8e6 | `AIOSH_AGENT_LOOP_TOTAL_TIMEOUT_MS` |
+| `default_consecutive_failure_limit` | 3 | 1..10 | `AIOSH_AGENT_LOOP_CONSECUTIVE_FAILURE_LIMIT` |
+| `registry_capacity` | 256 | 1..256 | `AIOSH_AGENT_LOOP_REGISTRY_CAPACITY` |
+| `mcp_call_timeout_s` | 15 | 1..60 | `AIOSH_AGENT_LOOP_MCP_CALL_TIMEOUT_S` |
+| `history_page_bytes` | 1048576 | 65536..4194304 | `AIOSH_AGENT_LOOP_HISTORY_PAGE_BYTES` |
+| `snapshot_steps_tail` | 100 | 0..1000 | `AIOSH_AGENT_LOOP_SNAPSHOT_STEPS_TAIL` |
+| `db_busy_timeout_ms` | 5000 | 100..30000, and at most half of `mcp_call_timeout_s` | `AIOSH_AGENT_LOOP_DB_BUSY_TIMEOUT_MS` |
+
+**Locked (rejected if present):** `max_args_bytes`, `max_args_depth`, `max_action_intent_chars`, `max_reason_chars`,
+`max_tokens_per_turn`, `tool_name_pattern`, `max_token_chars`, `require_grant`, `audit_mutations`.
+
+A file containing any unknown or locked key is **ignored as a whole**. So are oversize (> 64 KiB), non-JSON or
+non-numeric files, special files (devices, FIFOs, UNC paths), and files with non-finite numbers. Invalid env values are
+ignored per field. The server always starts: it falls back to defaults, writes one `aios.agent_loop.config` audit row with
+outcome `degraded`, and reports what it rejected.
+
+Example `docs/agent_loop_config.json`:
+```json
+{"default_max_iterations": 10, "registry_capacity": 32, "mcp_call_timeout_s": 20}
+```
+Inspect what is in effect, from the shell or over MCP (`aios_agent_loop_config`, read-only):
+```bash
+AIOSH_AGENT_LOOP_SNAPSHOT_STEPS_TAIL=many python -m aiosh_mcp.agent_loop_cli config --config docs/agent_loop_config.json --strict
+```
+Expected: three keys show `(file)`, `snapshot_steps_tail` stays `100 (default)`, there is one `warning:` line, and the exit code is **2** because of `--strict`.
+JSON output (`--json`) has `config`, `source` (where each value came from), `rejected` (key -> `env_invalid` / `argument_invalid`),
+`errors` (masked, at most 300 characters each) and `degraded`.
+
+Config limitations:
+- Config is read once at process start; there is no hot reload.
+- The default file path is relative to the server's working directory.
+- Callers can still override `LoopConfig` budgets per loop, within the same bounds.
+
 ## 5. Audit rows (LOOPSERV-INV2)
 
 Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_HOME/audit.db`):
 `pep.capability.redeem`, `aios.agent_loop.start`, `aios.agent_loop.step` (outcome `ok`/`refused`),
-`aios.agent_loop.abort`, `aios.agent_loop.timeout`, `aios.agent_loop.complete`. Arguments pass through `mask_secrets`
+`aios.agent_loop.abort`, `aios.agent_loop.timeout`, `aios.agent_loop.complete`, `aios.agent_loop.init`, and `aios.agent_loop.config` (outcome `degraded`, only when config input was rejected). Every loop row carries a random `run_id`, and a loop id can be started only once per ring. Arguments pass through `mask_secrets`
 (`sk-…`, `ghp_…`, `Bearer …`) before they are written.
 
 ## 6. Error codes
@@ -214,4 +265,5 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03303..T-03310 configuration: [research](tasks/evidence/T-03303-research.md), [spec](tasks/evidence/T-03304-spec.md), [implementation](tasks/evidence/T-03306-configuration-implementation.md), [unit](tasks/evidence/T-03307-configuration-unit-test.md), [integration](tasks/evidence/T-03308-configuration-integration.md), [security](tasks/evidence/T-03309-security.md), [hardening](tasks/evidence/T-03310-configuration-hardening.md)
 - T-03283..T-03290 CLI: [research](tasks/evidence/T-03283-research.md), [spec](tasks/evidence/T-03284-spec.md), [implementation](tasks/evidence/T-03286-cli-surface-implementation.md), [unit](tasks/evidence/T-03287-cli-surface-unit-test.md), [integration](tasks/evidence/T-03288-cli-surface-integration.md), [security](tasks/evidence/T-03289-security.md), [hardening](tasks/evidence/T-03290-cli-surface-hardening.md)

@@ -320,16 +320,19 @@ def render(result: CliResult, json_mode: bool) -> str:
     """Formats a result for stdout (masked, LOOPCLI-INV4)."""
     if json_mode:
         return mask_secrets(json.dumps(result.to_dict(), sort_keys=True))
-    if result.exit_code != EXIT_SUCCESS:
-        return mask_secrets(f"error [{result.error_code}] (exit {result.exit_code}): {result.error}")
     d = result.data or {}
-    if result.subcommand == "validate":
-        return f"plan OK: {d['turns']} turn(s)"
-    if result.subcommand == "config":
+    if result.subcommand == "config" and d:
+        # Always show the table; with --strict the error line follows it (T-03311).
         lines = [f"{k:<36} {v!s:<12} ({d['source'].get(k, 'default')})" for k, v in d["config"].items()]
         lines.append(f"config file: {d['source'].get('_file', 'default')}")
         lines += [f"warning: {e}" for e in d["errors"]]
+        if result.exit_code != EXIT_SUCCESS:
+            lines.append(f"error [{result.error_code}] (exit {result.exit_code}): {result.error}")
         return mask_secrets("\n".join(lines))
+    if result.exit_code != EXIT_SUCCESS:
+        return mask_secrets(f"error [{result.error_code}] (exit {result.exit_code}): {result.error}")
+    if result.subcommand == "validate":
+        return f"plan OK: {d['turns']} turn(s)"
     if result.subcommand == "run":
         lines = [f"[{t['step_index']}] {t['outcome']:<7} {t['tool_name'] or '-'}"
                  + (f"  {t['error_message']}" if t.get("error_message") else "") for t in d["turns"]]

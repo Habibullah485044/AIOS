@@ -184,14 +184,15 @@ SUITES: list[SuiteDef] = [
                  "-p", "no:cacheprovider",
                  "code/aiosh-mcp/tests/test_compliance_config.py"],
      "timeout_s": DEFAULT_TIMEOUT_S},
-    # T-03288: Agent Loop Hardening core service + CLI surface (PEP-gated
+    # T-03288/T-03298: Agent Loop Hardening core service + CLI + MCP stdio surface (PEP-gated
     # loop FSM, audit rows, one-shot CLI) — tail append keeps every
     # pre-existing index stable.
     {"name": "agent_loop_integration",
      "command": ["python3", "-m", "pytest", "-q", "--no-header",
                  "-p", "no:cacheprovider",
                  "code/aiosh-mcp/tests/test_agent_loop_core_service_security.py",
-                 "code/aiosh-mcp/tests/test_agent_loop_cli_integration.py"],
+                 "code/aiosh-mcp/tests/test_agent_loop_cli_integration.py",
+                 "code/aiosh-mcp/tests/test_agent_loop_mcp_integration.py"],
      "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 

@@ -1408,3 +1408,16 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   C1..C6 PASS, demo_por.py PASSED. A TS-issued grant was redeemed by the Python CLI on a shared ring.
 - Evidence: docs/tasks/evidence/T-03289-security.md, docs/tasks/evidence/T-03290-cli-surface-hardening.md,
   docs/tasks/evidence/T-03292-verify.md.
+
+## T-03302 - AI Control Plane Agent Loop Hardening / MCP/API surface: Verification & Evidence (2026-11-05)
+- Milestone closeout for the Agent Loop Hardening MCP/API surface (T-03293..T-03302).
+- **Touched audit and PEP dispatch:** there are 7 annotated tools (3 new: `complete`, `list`, `history`). The mutating tools require a
+  redeemed or loop-bound grant; the read-only tools write nothing, and their `readOnlyHint` was verified truthful (state and ring unchanged).
+- Security review (T-03299) fixed an **audit-evasion** gap: `tool_args` over 64 KiB used to be silently truncated in the
+  audit row, so a hidden payload could sit past the cut. Such args are now rejected before any write; hostile nesting is also rejected.
+- Hardening (T-03300): tools run off the event loop with a 15 s bound (honest "outcome unknown" envelope),
+  history is paginated, and snapshots carry only a step tail.
+- Verification battery: MCP suites 43/43, all agent-loop suites 193/193, PoR suites PASSED, conformance C1..C6 PASS,
+  demo_por.py PASSED. Over stdio JSON-RPC, MCP history equals the CLI history on a shared ring.
+- Evidence: docs/tasks/evidence/T-03299-security.md, docs/tasks/evidence/T-03300-mcp-api-surface-hardening.md,
+  docs/tasks/evidence/T-03302-verify.md.

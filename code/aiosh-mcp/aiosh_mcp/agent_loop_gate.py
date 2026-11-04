@@ -34,6 +34,15 @@ class CapabilityRefused(Exception):
     """Raised when a capability token cannot be redeemed."""
 
 
+class LoopIdTaken(Exception):
+    """A start/init row for this loop_id already exists in the audit ring."""
+
+
+#: Events that claim a loop_id for good; at most one may ever exist per id.
+CLAIM_EVENTS = ("start", "init")
+_CLAIM_TOOLS = tuple(f"aios.agent_loop.{e}" for e in CLAIM_EVENTS)
+
+
 class PepCapabilityGate:
     """Production gate backed by the ``pep_grants`` table and ``audit_ring``."""
 
@@ -77,6 +86,19 @@ class PepCapabilityGate:
             return f"tool '{tool_name}' not in grant scope.tools"
         return None
 
+    @staticmethod
+    def _claimed(conn, loop_id: str) -> bool:
+        has_ring = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone()
+        return bool(has_ring) and conn.execute(
+            "SELECT 1 FROM audit_ring WHERE tool IN (?, ?) AND json_extract(args_json, '$.loop_id') = ? LIMIT 1",
+            (*_CLAIM_TOOLS, loop_id)).fetchone() is not None
+
+    def loop_id_used(self, loop_id: str) -> bool:
+        """True if any process ever started or initialised ``loop_id`` (audit finding #2)."""
+        with closing(self._open()) as conn:
+            return self._claimed(conn, loop_id)
+
     def audit(
         self,
         event: str,
@@ -89,6 +111,12 @@ class PepCapabilityGate:
         """Appends one hash-chained audit row for a loop event."""
         payload = {"loop_id": loop_id, **(args or {})}
         with closing(self._open()) as conn:
+            if event in CLAIM_EVENTS:
+                # Check-and-claim under one write lock so two processes cannot both start the same id.
+                conn.execute("BEGIN IMMEDIATE")
+                if self._claimed(conn, loop_id):
+                    conn.rollback()
+                    raise LoopIdTaken(f"loop_id '{loop_id}' was already started")
             audit_client.write_audit_row(conn, {
                 "ts": audit_client.utcnow_iso(),
                 "actor": "agent",

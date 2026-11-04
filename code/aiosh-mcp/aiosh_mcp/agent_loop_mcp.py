@@ -145,7 +145,9 @@ def register_agent_loop_mcp_tools(
             cfg = LoopConfig(loop_id=loop_id, max_iterations=max_iterations, max_total_tokens=max_total_tokens,
                              timeout_ms_per_step=timeout_ms_per_step, total_timeout_ms=total_timeout_ms,
                              consecutive_failure_limit=consecutive_failure_limit)
-            return _ok({"snapshot": svc().start_loop(cfg, capability_token=capability_token).to_dict()})
+            s = svc()
+            snap = s.start_loop(cfg, capability_token=capability_token)
+            return _ok({"snapshot": snap.to_dict(), "run_id": s.run_id(loop_id)})
         return await _run(work, mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_advance", annotations=TOOL_ANNOTATIONS["aios_agent_loop_advance"])

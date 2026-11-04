@@ -112,7 +112,8 @@ class LoopConfig:
 
     def validate_bounds(self) -> None:
         """Enforces parameter bounds and loop_id syntax."""
-        if not self.loop_id or not LOOP_ID_PATTERN.match(self.loop_id.strip()):
+        # fullmatch on the raw value: a stripped or `$`-before-newline match let "id " alias "id".
+        if not isinstance(self.loop_id, str) or not LOOP_ID_PATTERN.fullmatch(self.loop_id):
             raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: invalid loop_id syntax: {self.loop_id}")
         if not (1 <= self.max_iterations <= 100):
             raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: max_iterations must be in [1, 100]")
@@ -339,13 +340,13 @@ class LoopSnapshot:
 
 def create_initial(loop_id: str, config: Optional[LoopConfig] = None) -> LoopSnapshot:
     """Creates a new initial LoopSnapshot in INIT state."""
-    if not loop_id or not LOOP_ID_PATTERN.match(loop_id.strip()):
+    if not isinstance(loop_id, str) or not LOOP_ID_PATTERN.fullmatch(loop_id):
         raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: invalid loop_id syntax: {loop_id}")
     if config is not None:
         config.validate_bounds()
     now_utc = datetime.now(timezone.utc).isoformat()
     return LoopSnapshot(
-        loop_id=loop_id.strip(),
+        loop_id=loop_id,
         current_state=LoopState.INIT,
         current_iteration=0,
         total_tokens_used=0,
@@ -412,11 +413,10 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
     @mcp_app.tool()
     def aios_agent_loop_status(loop_id: str) -> dict:
         """Returns the status, FSM state, and metrics for an agent loop (Pure read-only, PoR Invariant I-2)."""
-        snap = _GLOBAL_LOOP_REGISTRY.get_loop(loop_id)
-        if not snap:
-            # T-03296: loops started through the service tools are visible here too.
-            from aiosh_mcp.agent_loop_service import _GLOBAL_AGENT_LOOP_SERVICE
-            snap = _GLOBAL_AGENT_LOOP_SERVICE._loops.get(loop_id)
+        # Service first (audit finding #4): an INIT-only data-model entry must never
+        # shadow the real state of a running loop with the same id.
+        from aiosh_mcp.agent_loop_service import _GLOBAL_AGENT_LOOP_SERVICE
+        snap = _GLOBAL_AGENT_LOOP_SERVICE._loops.get(loop_id) or _GLOBAL_LOOP_REGISTRY.get_loop(loop_id)
         if not snap:
             env = LoopResultEnvelope(
                 ok=False,
@@ -451,14 +451,26 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
                 max_total_tokens=max_total_tokens,
             )
             cfg.validate_bounds()
-            if _GLOBAL_LOOP_REGISTRY.get_loop(loop_id) is not None:
-                return {"ok": False, "error": f"{LOOPDATA_ERR_INVALID_STATE}: loop_id '{loop_id}' already exists"}
+            from aiosh_mcp.agent_loop_gate import CapabilityRefused, LoopIdTaken
+            from aiosh_mcp.agent_loop_service import _GLOBAL_AGENT_LOOP_SERVICE
+            gate = _GLOBAL_AGENT_LOOP_SERVICE._gate
+            # Audit finding #4: ids are unique across the data-model registry, the service
+            # and every start/init row ever written to the ring.
+            if (_GLOBAL_LOOP_REGISTRY.get_loop(loop_id) is not None
+                    or loop_id in _GLOBAL_AGENT_LOOP_SERVICE._loops or gate.loop_id_used(loop_id)):
+                return {"ok": False, "error": f"{LOOPDATA_ERR_INVALID_STATE}: loop_id '{loop_id}' already exists",
+                        "error_code": LOOPDATA_ERR_INVALID_STATE}
             # T-03279: redeem the token as a PEP grant (PoR I-2); a non-empty string is not enough.
-            from aiosh_mcp.agent_loop_gate import CapabilityRefused, PepCapabilityGate
             try:
-                PepCapabilityGate().redeem(capability_token.strip(), loop_id)
+                gate.redeem(capability_token.strip(), loop_id)
             except CapabilityRefused as exc:
-                return {"ok": False, "error": f"{LOOPDATA_ERR_UNAUTHORIZED}: {exc}"}
+                return {"ok": False, "error": f"{LOOPDATA_ERR_UNAUTHORIZED}: {exc}",
+                        "error_code": LOOPDATA_ERR_UNAUTHORIZED}
+            try:
+                gate.audit("init", loop_id, capability_token.strip(), "ok", args=cfg.to_dict())
+            except LoopIdTaken:
+                return {"ok": False, "error": f"{LOOPDATA_ERR_INVALID_STATE}: loop_id '{loop_id}' already exists",
+                        "error_code": LOOPDATA_ERR_INVALID_STATE}
             snap = _GLOBAL_LOOP_REGISTRY.register_loop(cfg)
             return {
                 "ok": True,

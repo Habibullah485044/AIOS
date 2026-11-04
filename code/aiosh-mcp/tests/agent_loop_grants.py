@@ -65,5 +65,8 @@ class AllowAllGate:
     def tool_refusal(self, grant_id, tool_name):
         return None
 
+    def loop_id_used(self, loop_id):
+        return False
+
     def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None):
         self.events.append((event, loop_id, outcome))

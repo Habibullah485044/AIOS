@@ -9,6 +9,7 @@ Tests working behavior of AgentLoopService:
 """
 
 import pytest
+from agent_loop_grants import AllowAllGate
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopState
 from aiosh_mcp.agent_loop_service import (
     AgentLoopService,
@@ -21,7 +22,7 @@ from aiosh_mcp.agent_loop_service import (
 
 
 def test_start_loop_working_lifecycle():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-test-impl-01", max_iterations=10, max_total_tokens=4096)
     token = "por-valid-test-token"
 
@@ -38,7 +39,7 @@ def test_start_loop_working_lifecycle():
 
 
 def test_advance_turn_happy_path():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-test-impl-02", max_iterations=5, max_total_tokens=2048)
     token = "por-valid-test-token"
 
@@ -67,7 +68,7 @@ def test_advance_turn_happy_path():
 
 
 def test_advance_turn_policy_refusal():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-test-impl-03", max_iterations=5)
     token = "por-valid-test-token"
 
@@ -95,7 +96,7 @@ def test_advance_turn_policy_refusal():
 
 
 def test_abort_loop_and_terminated_rejection():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-test-impl-04")
     token = "por-valid-test-token"
 

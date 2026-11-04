@@ -8,8 +8,10 @@ import json
 
 import pytest
 
+from agent_loop_grants import mint_grant
 from aiosh_mcp.server import mcp
 from aiosh_mcp.agent_loop_data_model import LoopSnapshot
+from aiosh_mcp.agent_loop_gate import PepCapabilityGate
 from aiosh_mcp.agent_loop_service import (
     LOOPSERV_ERR_NOT_FOUND,
     LOOPSERV_ERR_TERMINATED,
@@ -22,10 +24,15 @@ def _reset() -> None:
     _GLOBAL_AGENT_LOOP_SERVICE._loops.clear()
     _GLOBAL_AGENT_LOOP_SERVICE._configs.clear()
     _GLOBAL_AGENT_LOOP_SERVICE._start_times.clear()
+    _GLOBAL_AGENT_LOOP_SERVICE._grants.clear()
 
 
 @pytest.fixture(autouse=True)
-def clean_service():
+def clean_service(tmp_path, monkeypatch):
+    """Isolated audit DB with a real PEP grant "tok" (T-03279: tokens are redeemed)."""
+    db = str(tmp_path / "audit.db")
+    mint_grant(db, "tok")
+    monkeypatch.setattr(_GLOBAL_AGENT_LOOP_SERVICE, "_gate", PepCapabilityGate(db))
     _reset()
     yield
     _reset()

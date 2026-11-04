@@ -315,6 +315,10 @@ class AgentLoopService:
             self._audit_or_terminate(snap, "abort", grant_id, "ok", detail=snap.terminal_reason)
             return snap
 
+    def complete_loop(self, loop_id: str, capability_token: str = "") -> LoopSnapshot:
+        """Ends an active loop normally (OBSERVE -> COMPLETED), audited (T-03285 scaffold)."""
+        raise NotImplementedError("T-03286: complete_loop")
+
     def get_snapshot(self, loop_id: str) -> LoopSnapshot:
         """Returns current loop snapshot. Pure read-only (0 capability tokens)."""
         with self._lock:

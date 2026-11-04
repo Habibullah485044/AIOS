@@ -195,6 +195,14 @@ SUITES: list[SuiteDef] = [
                  "code/aiosh-mcp/tests/test_agent_loop_mcp_integration.py",
                  "code/aiosh-mcp/tests/test_agent_loop_config_integration.py"],
      "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-03318: the whole agent-loop battery (unit/integration/security/hardening for data model,
+    # service, CLI, MCP, config; seeded model-based fuzz; TS->Py cross-substrate; chain concurrency)
+    # — tail append keeps every pre-existing index stable.
+    {"name": "agent_loop_battery",
+     "command": ["python3", "-m", "pytest", "-q", "--no-header", "-p", "no:cacheprovider",
+                 "-k", "agent_loop or audit_chain_concurrency or grant_scope or secret_masking",
+                 "code/aiosh-mcp/tests"],
+     "timeout_s": RUST_SMOKE_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

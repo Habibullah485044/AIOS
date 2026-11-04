@@ -1,0 +1,43 @@
+"""Scaffold tests for the Agent Loop Hardening MCP/API surface (T-03295)."""
+
+import pytest
+from mcp.server.fastmcp import FastMCP
+
+from aiosh_mcp import agent_loop_gate
+from aiosh_mcp.agent_loop_mcp import (
+    READ_ONLY,
+    TOOL_ANNOTATIONS,
+    LoopIdArg,
+    TokensArg,
+    register_agent_loop_mcp_tools,
+)
+
+
+def test_annotation_table_covers_seven_tools():
+    assert len(TOOL_ANNOTATIONS) == 7
+    read_only = {n for n, a in TOOL_ANNOTATIONS.items() if a.readOnlyHint}
+    assert read_only == {"aios_agent_loop_snapshot", "aios_agent_loop_list", "aios_agent_loop_history"}
+    destructive = {n for n, a in TOOL_ANNOTATIONS.items() if a.destructiveHint}
+    assert destructive == {"aios_agent_loop_abort", "aios_agent_loop_complete"}
+
+
+def test_annotated_constraints_reach_input_schema():
+    """Confirms T-03293 assumption A2 on the installed SDK: Field constraints are published."""
+    app = FastMCP("scaffold-probe")
+
+    @app.tool(annotations=READ_ONLY)
+    def probe(loop_id: LoopIdArg, tokens: TokensArg = 0) -> dict:
+        return {}
+
+    tool = app._tool_manager.get_tool("probe")
+    props = tool.parameters["properties"]
+    assert props["loop_id"]["pattern"] == r"^[a-zA-Z0-9_\-]{8,64}$"
+    assert (props["tokens"]["minimum"], props["tokens"]["maximum"]) == (0, 1_000_000)
+    assert tool.annotations.readOnlyHint is True
+
+
+def test_stubs_fail_loudly():
+    with pytest.raises(NotImplementedError):
+        register_agent_loop_mcp_tools(FastMCP("scaffold-stub"))
+    with pytest.raises(NotImplementedError):
+        agent_loop_gate.read_loop_history(None, "loop-scaffold-mcp", 10)

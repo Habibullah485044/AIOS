@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl / T-03278 integ / T-03279 sec).
+"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl / T-03278 integ / T-03279 sec / T-03280 hardening).
 
 Enforces LOOPSERV-INV1..LOOPSERV-INV5: deterministic FSM progression, audit atomicity,
 pre-execution policy evaluation, execution timeout watchdogs, and PoR capability gating.
@@ -8,11 +8,18 @@ PEP grant whose ``scope.tools`` covers ``aios.agent_loop.start``; the loop is th
 to that grant, and ``advance_turn``/``abort_loop`` must present the same grant id. Every
 tool invocation is re-checked against the bound grant's ``scope.tools`` before execution,
 so a caller-supplied ``policy_allowed=True`` can only narrow, never widen, what runs.
+
+Failure model (T-03280): every failure surfaces as an ``AgentLoopServiceError`` with an
+explicit code. The service fails closed: an unavailable gate refuses the start or the tool
+call, and an audit write that fails after a state change terminates the loop (FAILED/ABORTED)
+so no further unaudited turns can run.
 """
 
 from __future__ import annotations
 
 import hmac
+import re
+import threading
 import time
 from typing import Any, Dict, List, Optional, Protocol
 
@@ -24,6 +31,7 @@ from aiosh_mcp.agent_loop_data_model import (
     LoopSnapshot,
     LoopState,
     LoopStepRecord,
+    MAX_REGISTRY_CAPACITY,
 )
 from aiosh_mcp.agent_loop_gate import CapabilityRefused, PepCapabilityGate
 
@@ -34,6 +42,15 @@ LOOPSERV_ERR_UNAUTHORIZED = "LOOPSERV_ERR_UNAUTHORIZED"
 LOOPSERV_ERR_POLICY_REFUSED = "LOOPSERV_ERR_POLICY_REFUSED"
 LOOPSERV_ERR_TIMEOUT = "LOOPSERV_ERR_TIMEOUT"
 LOOPSERV_ERR_CIRCUIT_BREAKER = "LOOPSERV_ERR_CIRCUIT_BREAKER"
+LOOPSERV_ERR_INVALID_INPUT = "LOOPSERV_ERR_INVALID_INPUT"
+LOOPSERV_ERR_CAPACITY = "LOOPSERV_ERR_CAPACITY"
+LOOPSERV_ERR_AUDIT = "LOOPSERV_ERR_AUDIT"
+LOOPSERV_ERR_GATE_UNAVAILABLE = "LOOPSERV_ERR_GATE_UNAVAILABLE"
+
+MAX_ACTION_INTENT_CHARS = 4096
+MAX_REASON_CHARS = 1024
+MAX_TOKENS_PER_TURN = 1_000_000
+TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
 
 
 class AgentLoopServiceError(Exception):
@@ -61,8 +78,10 @@ class CapabilityGate(Protocol):
 class AgentLoopService:
     """Core Service orchestrating hardened agent loop state machines (LOOPSERV-INV1..LOOPSERV-INV5)."""
 
-    def __init__(self, gate: Optional[CapabilityGate] = None) -> None:
+    def __init__(self, gate: Optional[CapabilityGate] = None, capacity: int = MAX_REGISTRY_CAPACITY) -> None:
         self._gate: CapabilityGate = gate if gate is not None else PepCapabilityGate()
+        self._capacity = capacity
+        self._lock = threading.RLock()
         self._loops: Dict[str, LoopSnapshot] = {}
         self._configs: Dict[str, LoopConfig] = {}
         self._start_times: Dict[str, float] = {}
@@ -95,30 +114,86 @@ class AgentLoopService:
             )
         return bound
 
+    def _audit_or_terminate(self, snap: LoopSnapshot, event: str, grant_id: str, outcome: str,
+                            detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> None:
+        """Writes the audit row; on failure terminates the loop and raises LOOPSERV_ERR_AUDIT."""
+        try:
+            self._gate.audit(event, snap.loop_id, grant_id, outcome, detail=detail, args=args)
+        except Exception as exc:
+            if not snap.is_terminated:
+                snap.transition_to(LoopState.ABORTED,
+                                   terminal_reason=f"{LOOPSERV_ERR_AUDIT}: audit write failed for '{event}'")
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_AUDIT, f"audit write failed for '{event}': {exc}", snap.loop_id
+            ) from exc
+
+    def _forget(self, loop_id: str) -> None:
+        for table in (self._loops, self._configs, self._start_times, self._grants):
+            table.pop(loop_id, None)
+
+    def _ensure_capacity(self, loop_id: str) -> None:
+        """Evicts the oldest terminated loops; refuses the start if every slot is active."""
+        if len(self._loops) < self._capacity:
+            return
+        for lid in [k for k, v in self._loops.items() if v.is_terminated]:
+            self._forget(lid)
+            if len(self._loops) < self._capacity:
+                return
+        raise AgentLoopServiceError(
+            LOOPSERV_ERR_CAPACITY, f"active loop capacity ({self._capacity}) reached", loop_id
+        )
+
+    @staticmethod
+    def _validate_turn_input(loop_id: str, action_intent: str, tool_name: Optional[str],
+                             tokens_consumed: int) -> None:
+        if not isinstance(action_intent, str) or len(action_intent) > MAX_ACTION_INTENT_CHARS:
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, f"action_intent must be a string of at most {MAX_ACTION_INTENT_CHARS} chars",
+                loop_id)
+        if tool_name is not None and not TOOL_NAME_PATTERN.match(tool_name):
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, "tool_name must match [A-Za-z0-9_.-]{1,128}", loop_id)
+        if isinstance(tokens_consumed, bool) or not isinstance(tokens_consumed, int) \
+                or not (0 <= tokens_consumed <= MAX_TOKENS_PER_TURN):
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, f"tokens_consumed must be an int in [0, {MAX_TOKENS_PER_TURN}]", loop_id)
+
     def start_loop(self, config: LoopConfig, capability_token: str) -> LoopSnapshot:
         """Redeems the grant, initializes the loop in INIT and moves to OBSERVE (LOOPSERV-INV5)."""
         token = self._require_token(capability_token, config.loop_id, "start")
         config.validate_bounds()
-        if config.loop_id in self._loops:
-            raise AgentLoopServiceError(
-                LOOPSERV_ERR_ALREADY_EXISTS,
-                f"Loop '{config.loop_id}' already exists",
-                config.loop_id,
-            )
-        try:
-            self._gate.redeem(token, config.loop_id)
-        except CapabilityRefused as exc:
-            raise AgentLoopServiceError(LOOPSERV_ERR_UNAUTHORIZED, str(exc), config.loop_id) from exc
+        with self._lock:
+            if config.loop_id in self._loops:
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_ALREADY_EXISTS,
+                    f"Loop '{config.loop_id}' already exists",
+                    config.loop_id,
+                )
+            self._ensure_capacity(config.loop_id)
+            try:
+                self._gate.redeem(token, config.loop_id)
+            except CapabilityRefused as exc:
+                raise AgentLoopServiceError(LOOPSERV_ERR_UNAUTHORIZED, str(exc), config.loop_id) from exc
+            except Exception as exc:
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_GATE_UNAVAILABLE, f"capability gate unavailable: {exc}", config.loop_id
+                ) from exc
 
-        snap = create_initial(config.loop_id, config)
-        snap.transition_to(LoopState.OBSERVE)
+            snap = create_initial(config.loop_id, config)
+            snap.transition_to(LoopState.OBSERVE)
+            try:
+                self._gate.audit("start", config.loop_id, token, "ok", args=config.to_dict())
+            except Exception as exc:
+                # Not registered: an unaudited loop must not exist (grant stays redeemed, which is audited).
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_AUDIT, f"audit write failed for 'start': {exc}", config.loop_id
+                ) from exc
 
-        self._loops[config.loop_id] = snap
-        self._configs[config.loop_id] = config
-        self._start_times[config.loop_id] = time.time()
-        self._grants[config.loop_id] = token
-        self._gate.audit("start", config.loop_id, token, "ok", args=config.to_dict())
-        return snap
+            self._loops[config.loop_id] = snap
+            self._configs[config.loop_id] = config
+            self._start_times[config.loop_id] = time.time()
+            self._grants[config.loop_id] = token
+            return snap
 
     def advance_turn(
         self,
@@ -132,6 +207,13 @@ class AgentLoopService:
     ) -> LoopStepRecord:
         """Advances agent loop through FSM: EVALUATE_POLICY -> EXECUTE_TOOL -> RECORD_STEP."""
         token = self._require_token(capability_token, loop_id, "advance")
+        self._validate_turn_input(loop_id, action_intent, tool_name, tokens_consumed)
+        with self._lock:
+            return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed)
+
+    def _advance_locked(self, loop_id: str, token: str, tool_name: Optional[str],
+                        tool_args: Optional[Dict[str, Any]], tokens_consumed: int,
+                        policy_allowed: bool) -> LoopStepRecord:
         snap = self._require_loop(loop_id)
         grant_id = self._require_binding(loop_id, token)
 
@@ -150,7 +232,7 @@ class AgentLoopService:
                     LoopState.ABORTED,
                     terminal_reason=f"{LOOPSERV_ERR_TIMEOUT}: total timeout ({config.total_timeout_ms}ms) exceeded",
                 )
-                self._gate.audit("timeout", loop_id, grant_id, "error", detail=snap.terminal_reason)
+                self._audit_or_terminate(snap, "timeout", grant_id, "error", detail=snap.terminal_reason)
                 raise AgentLoopServiceError(
                     LOOPSERV_ERR_TIMEOUT,
                     f"Total timeout exceeded for loop '{loop_id}'",
@@ -167,7 +249,10 @@ class AgentLoopService:
         snap.transition_to(LoopState.EVALUATE_POLICY)
         refusal = None if policy_allowed else "caller policy verdict"
         if refusal is None:
-            refusal = self._gate.tool_refusal(grant_id, tool_name)
+            try:
+                refusal = self._gate.tool_refusal(grant_id, tool_name)
+            except Exception as exc:  # fail closed: an unreachable gate refuses the call
+                refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
 
         args_str = str(tool_args or {})
         start_state = LoopState.EVALUATE_POLICY
@@ -186,8 +271,8 @@ class AgentLoopService:
                 error_message=f"{LOOPSERV_ERR_POLICY_REFUSED}: Policy evaluation refused tool invocation: {refusal}",
             )
             snap.record_step(step, config)
-            self._gate.audit("step", loop_id, grant_id, "refused", detail=step.error_message,
-                             args={"step_index": step.step_index, "tool_name": tool_name})
+            self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
+                                     args={"step_index": step.step_index, "tool_name": tool_name})
             if not snap.is_terminated:
                 snap.transition_to(LoopState.OBSERVE)
             return step
@@ -206,9 +291,9 @@ class AgentLoopService:
             duration_ms=15.0,
         )
         snap.record_step(step, config)
-        self._gate.audit("step", loop_id, grant_id, "ok",
-                         args={"step_index": step.step_index, "tool_name": tool_name,
-                               "tool_args": step.tool_args_summary})
+        self._audit_or_terminate(snap, "step", grant_id, "ok",
+                                 args={"step_index": step.step_index, "tool_name": tool_name,
+                                       "tool_args": step.tool_args_summary})
         if not snap.is_terminated:
             snap.transition_to(LoopState.OBSERVE)
         return step
@@ -216,23 +301,29 @@ class AgentLoopService:
     def abort_loop(self, loop_id: str, reason: str, capability_token: str = "") -> LoopSnapshot:
         """Transitions active loop directly to ABORTED state (LOOPSERV-INV5)."""
         token = self._require_token(capability_token, loop_id, "abort")
-        snap = self._require_loop(loop_id)
-        grant_id = self._require_binding(loop_id, token)
+        if not isinstance(reason, str) or len(reason) > MAX_REASON_CHARS:
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, f"reason must be a string of at most {MAX_REASON_CHARS} chars", loop_id)
+        with self._lock:
+            snap = self._require_loop(loop_id)
+            grant_id = self._require_binding(loop_id, token)
 
-        if snap.is_terminated:
+            if snap.is_terminated:
+                return snap
+
+            snap.transition_to(LoopState.ABORTED, terminal_reason=reason)
+            self._audit_or_terminate(snap, "abort", grant_id, "ok", detail=snap.terminal_reason)
             return snap
-
-        snap.transition_to(LoopState.ABORTED, terminal_reason=reason)
-        self._gate.audit("abort", loop_id, grant_id, "ok", detail=snap.terminal_reason)
-        return snap
 
     def get_snapshot(self, loop_id: str) -> LoopSnapshot:
         """Returns current loop snapshot. Pure read-only (0 capability tokens)."""
-        return self._require_loop(loop_id)
+        with self._lock:
+            return self._require_loop(loop_id)
 
     def list_active_loops(self) -> List[LoopSnapshot]:
         """Lists active non-terminated loops in memory."""
-        return [s for s in self._loops.values() if not s.is_terminated]
+        with self._lock:
+            return [s for s in self._loops.values() if not s.is_terminated]
 
 
 _GLOBAL_AGENT_LOOP_SERVICE = AgentLoopService()

@@ -316,8 +316,20 @@ class AgentLoopService:
             return snap
 
     def complete_loop(self, loop_id: str, capability_token: str = "") -> LoopSnapshot:
-        """Ends an active loop normally (OBSERVE -> COMPLETED), audited (T-03285 scaffold)."""
-        raise NotImplementedError("T-03286: complete_loop")
+        """Ends an active loop normally (OBSERVE -> COMPLETED), audited (T-03286)."""
+        token = self._require_token(capability_token, loop_id, "complete")
+        with self._lock:
+            snap = self._require_loop(loop_id)
+            grant_id = self._require_binding(loop_id, token)
+            if snap.is_terminated:
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_TERMINATED,
+                    f"Loop '{loop_id}' is terminated ({snap.current_state.value}): {snap.terminal_reason}",
+                    loop_id,
+                )
+            snap.transition_to(LoopState.COMPLETED, terminal_reason="completed")
+            self._audit_or_terminate(snap, "complete", grant_id, "ok")
+            return snap
 
     def get_snapshot(self, loop_id: str) -> LoopSnapshot:
         """Returns current loop snapshot. Pure read-only (0 capability tokens)."""

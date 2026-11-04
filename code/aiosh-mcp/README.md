@@ -50,6 +50,13 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 
 ¹ The pentest, service action, and recovery tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously. Every `aios.fs_layout.*` call that reaches the gate writes exactly one hash-chained row too — on success, on a body refusal, and on a gate refusal alike (an unknown tool name is refused before the ring and leaves no row).
 
+## Agent Loop Tools (`aios_agent_loop_*`)
+
+Hardened agent-loop FSM with PEP-grant gating and audit rows: `aios_agent_loop_start`,
+`aios_agent_loop_advance`, `aios_agent_loop_abort`, `aios_agent_loop_snapshot`.
+Contract, examples, error codes and limitations:
+[docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md](../../docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md).
+
 ## Service Supervision Tools (`aios.service.*`)
 
 The Init & Service Supervision tools provide programmatic control over platform services via standard MCP JSON-RPC 2.0:

@@ -1436,3 +1436,14 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   PoR + chain-concurrency suites PASSED; conformance C1..C6 PASS; demo_por.py PASSED.
 - Evidence: docs/tasks/evidence/T-03309-security.md, docs/tasks/evidence/T-03310-configuration-hardening.md,
   docs/tasks/evidence/T-03312-verify.md.
+
+## T-03322 - AI Control Plane Agent Loop Hardening / automated tests: Verification & Evidence (2026-11-05)
+- Milestone closeout for the agent-loop automated test battery (T-03313..T-03322). No production behaviour changed in this epic.
+- The battery now guards PoR I-2 and audit fidelity continuously in CI (suite #34, 352 tests):
+  - a seeded model-based fuzzer checks, after every op, outcome codes and the **exact audit rows appended** against a spec-derived model
+  - a multi-process stress test asserts one linear chain
+  - a TS->Python cross-substrate test redeems a TS-issued grant
+  - an isolation guard keeps tests out of the developer's real ring
+- Verification: battery 352 passed; extended fuzz of 6000 ops with 0 divergences; conformance C1..C6 PASS; demo_por.py PASSED.
+- Evidence: docs/tasks/evidence/T-03316-automated-tests-implementation.md, docs/tasks/evidence/T-03319-security.md,
+  docs/tasks/evidence/T-03322-verify.md.

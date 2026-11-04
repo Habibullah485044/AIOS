@@ -2070,3 +2070,9 @@ All edits are docs / control-plane only.
 - An independent security audit of all agent-loop work found 7 issues my own reviews missed; all were fixed in #419..#422
   (chain fork under concurrency, history injection, grant-scope glob/path bypass, secret masking, NaN config).
 - Lesson recorded: gate every ship on a passing suite, and get an independent review for security tasks.
+
+## 2026-11-05 — Agent Loop Hardening automated-tests epic closed (T-03313..T-03322)
+
+- CI suite #34 `agent_loop_battery` runs all 352 agent-loop tests. Before this, CI ran 4 of 30 files.
+- New: a seeded model-based fuzzer (M1..M5), model unit tests, a multi-process stress test, a TS->Py cross-substrate test, and an isolation guard.
+- Mutation-checked: the battery catches each of the security bugs fixed this session when they are re-introduced. PRs #428..#438.

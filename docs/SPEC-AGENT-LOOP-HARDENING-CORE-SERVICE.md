@@ -93,11 +93,66 @@ print(ok.outcome, no.outcome, svc.get_snapshot("loop-docs-demo-01").current_stat
 # -> ok refused ABORTED
 ```
 
+## 4a. Operator CLI (`aiosh-agent-loop`, T-03283..T-03292)
+
+Module `code/aiosh-mcp/aiosh_mcp/agent_loop_cli.py`. Run it as `python -m aiosh_mcp.agent_loop_cli`, or as
+`aiosh-agent-loop` after `pip install -e code/aiosh-mcp`. Loop state is in-memory, so the CLI is a **one-shot runner**:
+`run` does start, every planned turn and complete in a single process. `history` reads the durable audit ring.
+
+| Subcommand | Token | What it does |
+|---|---|---|
+| `validate --plan FILE` | no | Checks a plan file (<= 1 MiB, 1..100 turns, same per-turn caps as the service) |
+| `run --loop-id ID (--token-env VAR \| --token-stdin \| --token GRANT) --plan FILE [--max-iterations N] [--max-total-tokens N] [--total-timeout-ms MS] [--consecutive-failure-limit N]` | **yes** | Redeems the grant, runs every turn through the policy gate, ends COMPLETED (or FAILED or ABORTED) |
+| `history --loop-id ID [--limit 1..1000]` | no | Lists `aios.agent_loop.*` audit rows for that loop, read-only |
+
+Every subcommand accepts `--json`. In JSON mode the CLI prints exactly one object, and its `exit_code` equals the process exit code.
+
+Plan file:
+```json
+{"turns": [
+  {"action_intent": "read README", "tool_name": "aios.fs.read", "tool_args": {"path": "README.md"}, "tokens_consumed": 120},
+  {"action_intent": "write file", "tool_name": "fs.write"}
+]}
+```
+
+Copy-pasteable session (bash). Prefer `--token-env`: `--token` is visible in `ps` output and shell history.
+```bash
+GRANT=$(aiosh grant create --to agent:planner --tools "aios.agent_loop.start,aios.fs.read" --ttl 900 | jq -r .data.grant_id)
+export AIOS_LOOP_GRANT="$GRANT"
+python -m aiosh_mcp.agent_loop_cli validate --plan plan.json
+python -m aiosh_mcp.agent_loop_cli run --loop-id loop-ops-demo-01 --token-env AIOS_LOOP_GRANT --plan plan.json
+python -m aiosh_mcp.agent_loop_cli history --loop-id loop-ops-demo-01
+```
+Output with the plan above (grant covers `aios.fs.read` only):
+```
+plan OK: 2 turn(s)
+[0] ok      aios.fs.read
+[1] refused fs.write  LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: tool 'fs.write' not in grant scope.tools
+loop loop-ops-demo-01: COMPLETED (2 turn(s), 1 refused, 0 skipped)
+```
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | success (refused steps are still success) |
+| 1 | runtime failure (audit, gate, capacity, corrupt DB) |
+| 2 | usage error or bad plan/config (rejected **before** the grant is spent) |
+| 3 | unauthorized |
+| 4 | timeout |
+| 130 | interrupted (the loop is aborted and audited first) |
+
+CLI limitations:
+- No interactive per-turn mode: a loop cannot be continued by a later invocation.
+- `history` needs no token. Protect `$AIOSH_HOME/audit.db` with file permissions.
+- `--token` is still accepted for compatibility.
+- The plan's `tokens_consumed` values are declared by the operator, not measured.
+
 ## 5. Audit rows (LOOPSERV-INV2)
 
 Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_HOME/audit.db`):
 `pep.capability.redeem`, `aios.agent_loop.start`, `aios.agent_loop.step` (outcome `ok`/`refused`),
-`aios.agent_loop.abort`, `aios.agent_loop.timeout`. Arguments pass through `mask_secrets`
+`aios.agent_loop.abort`, `aios.agent_loop.timeout`, `aios.agent_loop.complete`. Arguments pass through `mask_secrets`
 (`sk-…`, `ghp_…`, `Bearer …`) before they are written.
 
 ## 6. Error codes
@@ -132,3 +187,4 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 - T-03278 integration: [T-03278-core-service-integration.md](tasks/evidence/T-03278-core-service-integration.md)
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
+- T-03283..T-03290 CLI: [research](tasks/evidence/T-03283-research.md), [spec](tasks/evidence/T-03284-spec.md), [implementation](tasks/evidence/T-03286-cli-surface-implementation.md), [unit](tasks/evidence/T-03287-cli-surface-unit-test.md), [integration](tasks/evidence/T-03288-cli-surface-integration.md), [security](tasks/evidence/T-03289-security.md), [hardening](tasks/evidence/T-03290-cli-surface-hardening.md)

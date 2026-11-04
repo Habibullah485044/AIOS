@@ -54,6 +54,7 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 
 Hardened agent-loop FSM with PEP-grant gating and audit rows: `aios_agent_loop_start`,
 `aios_agent_loop_advance`, `aios_agent_loop_abort`, `aios_agent_loop_snapshot`.
+Operator CLI: `python -m aiosh_mcp.agent_loop_cli validate|run|history` (console script `aiosh-agent-loop`).
 Contract, examples, error codes and limitations:
 [docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md](../../docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md).
 

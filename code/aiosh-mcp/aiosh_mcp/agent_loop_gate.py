@@ -18,6 +18,7 @@ from aiosh_mcp.agent_loop_data_model import mask_secrets
 #: Tool name a grant's ``scope.tools`` must cover to start a loop.
 AGENT_LOOP_START_TOOL = "aios.agent_loop.start"
 AGENT_LOOP_ACTOR_ID = "agent:mcp@aiosh-mcp/agent-loop"
+BUSY_TIMEOUT_MS = 5000
 
 
 class CapabilityRefused(Exception):
@@ -32,6 +33,8 @@ class PepCapabilityGate:
 
     def _open(self):
         conn = audit_client.open_db(self._db_path)
+        # Bounded wait on a locked DB (T-03280) instead of failing or hanging.
+        conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
         audit_client.ensure_pep_schema(conn)
         return conn
 

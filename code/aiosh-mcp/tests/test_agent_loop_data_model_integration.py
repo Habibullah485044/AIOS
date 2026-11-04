@@ -16,7 +16,11 @@ from aiosh_mcp.agent_loop_data_model import (
 
 
 @pytest.fixture(autouse=True)
-def clean_registry():
+def clean_registry(tmp_path, monkeypatch):
+    # T-03279: init redeems a real PEP grant from the AIOSH_HOME audit DB.
+    from agent_loop_grants import mint_grant
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path))
+    mint_grant(str(tmp_path / "audit.db"), "por-cap-token-integ-valid")
     _GLOBAL_LOOP_REGISTRY.clear()
     yield
     _GLOBAL_LOOP_REGISTRY.clear()

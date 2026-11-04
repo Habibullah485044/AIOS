@@ -1,6 +1,7 @@
 """Scaffold tests for Agent Loop Hardening Core Service (T-03275 / T-03276)."""
 
 import pytest
+from agent_loop_grants import AllowAllGate
 from aiosh_mcp.agent_loop_data_model import LoopConfig
 from aiosh_mcp.agent_loop_service import (
     AgentLoopService,
@@ -12,7 +13,7 @@ from aiosh_mcp.agent_loop_service import (
 
 
 def test_service_scaffold_initialization():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     assert len(service.list_active_loops()) == 0
 
     with pytest.raises(AgentLoopServiceError) as exc:
@@ -21,7 +22,7 @@ def test_service_scaffold_initialization():
 
 
 def test_service_scaffold_por_token_enforcement():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-scaffold-01")
 
     # Missing capability token must fail with LOOPSERV_ERR_UNAUTHORIZED
@@ -39,7 +40,7 @@ def test_service_scaffold_por_token_enforcement():
 
 
 def test_service_basic_lifecycle():
-    service = AgentLoopService()
+    service = AgentLoopService(gate=AllowAllGate())
     cfg = LoopConfig(loop_id="loop-scaffold-02")
 
     snap = service.start_loop(cfg, capability_token="por-valid-token")

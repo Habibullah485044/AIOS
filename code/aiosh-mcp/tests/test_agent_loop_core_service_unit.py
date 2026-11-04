@@ -12,6 +12,7 @@ Covers:
 
 import time
 import pytest
+from agent_loop_grants import AllowAllGate
 from aiosh_mcp.agent_loop_data_model import (
     LoopConfig,
     LoopState,
@@ -31,7 +32,7 @@ from aiosh_mcp.agent_loop_service import (
 
 @pytest.fixture
 def service():
-    return AgentLoopService()
+    return AgentLoopService(gate=AllowAllGate())
 
 
 def test_core_service_multi_turn_progression(service):

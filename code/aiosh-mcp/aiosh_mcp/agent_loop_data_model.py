@@ -447,6 +447,14 @@ def register_agent_loop_data_model_tools(mcp_app: Any) -> None:
                 max_total_tokens=max_total_tokens,
             )
             cfg.validate_bounds()
+            if _GLOBAL_LOOP_REGISTRY.get_loop(loop_id) is not None:
+                return {"ok": False, "error": f"{LOOPDATA_ERR_INVALID_STATE}: loop_id '{loop_id}' already exists"}
+            # T-03279: redeem the token as a PEP grant (PoR I-2); a non-empty string is not enough.
+            from aiosh_mcp.agent_loop_gate import CapabilityRefused, PepCapabilityGate
+            try:
+                PepCapabilityGate().redeem(capability_token.strip(), loop_id)
+            except CapabilityRefused as exc:
+                return {"ok": False, "error": f"{LOOPDATA_ERR_UNAUTHORIZED}: {exc}"}
             snap = _GLOBAL_LOOP_REGISTRY.register_loop(cfg)
             return {
                 "ok": True,

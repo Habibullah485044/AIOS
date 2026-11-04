@@ -1,4 +1,4 @@
-"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl / T-03278 integ / T-03279 sec / T-03280 hardening).
+"""AI Control Plane Agent Loop Hardening Core Service (T-03275 scaffold / T-03276 impl / T-03278 integ / T-03279 sec / T-03280 hardening / T-03299 sec).
 
 Enforces LOOPSERV-INV1..LOOPSERV-INV5: deterministic FSM progression, audit atomicity,
 pre-execution policy evaluation, execution timeout watchdogs, and PoR capability gating.
@@ -18,6 +18,7 @@ so no further unaudited turns can run.
 from __future__ import annotations
 
 import hmac
+import json
 import re
 import threading
 import time
@@ -31,6 +32,7 @@ from aiosh_mcp.agent_loop_data_model import (
     LoopSnapshot,
     LoopState,
     LoopStepRecord,
+    MAX_ARGS_SUMMARY_BYTES,
     MAX_REGISTRY_CAPACITY,
 )
 from aiosh_mcp.agent_loop_gate import CapabilityRefused, PepCapabilityGate
@@ -50,6 +52,7 @@ LOOPSERV_ERR_GATE_UNAVAILABLE = "LOOPSERV_ERR_GATE_UNAVAILABLE"
 MAX_ACTION_INTENT_CHARS = 4096
 MAX_REASON_CHARS = 1024
 MAX_TOKENS_PER_TURN = 1_000_000
+MAX_TOOL_ARGS_DEPTH = 32
 TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
 
 
@@ -144,6 +147,29 @@ class AgentLoopService:
         )
 
     @staticmethod
+    def _validate_tool_args(loop_id: str, tool_args: Optional[Dict[str, Any]]) -> None:
+        """Rejects args the audit row could not record faithfully (T-03299 M2).
+
+        Oversized args used to be truncated to MAX_ARGS_SUMMARY_BYTES in the step record and
+        audit row, so a caller could hide the real arguments behind a benign prefix.
+        """
+        if tool_args is None:
+            return
+        if not isinstance(tool_args, dict):
+            raise AgentLoopServiceError(LOOPSERV_ERR_INVALID_INPUT, "tool_args must be an object", loop_id)
+        stack = [(tool_args, 1)]
+        while stack:  # iterative: no RecursionError on hostile nesting
+            node, depth = stack.pop()
+            if depth > MAX_TOOL_ARGS_DEPTH:
+                raise AgentLoopServiceError(
+                    LOOPSERV_ERR_INVALID_INPUT, f"tool_args nested deeper than {MAX_TOOL_ARGS_DEPTH}", loop_id)
+            children = node.values() if isinstance(node, dict) else node if isinstance(node, list) else ()
+            stack.extend((c, depth + 1) for c in children if isinstance(c, (dict, list)))
+        if len(str(tool_args)) > MAX_ARGS_SUMMARY_BYTES or                 len(json.dumps(tool_args, default=str)) > MAX_ARGS_SUMMARY_BYTES:
+            raise AgentLoopServiceError(
+                LOOPSERV_ERR_INVALID_INPUT, f"tool_args larger than {MAX_ARGS_SUMMARY_BYTES} bytes", loop_id)
+
+    @staticmethod
     def _validate_turn_input(loop_id: str, action_intent: str, tool_name: Optional[str],
                              tokens_consumed: int) -> None:
         if not isinstance(action_intent, str) or len(action_intent) > MAX_ACTION_INTENT_CHARS:
@@ -208,6 +234,7 @@ class AgentLoopService:
         """Advances agent loop through FSM: EVALUATE_POLICY -> EXECUTE_TOOL -> RECORD_STEP."""
         token = self._require_token(capability_token, loop_id, "advance")
         self._validate_turn_input(loop_id, action_intent, tool_name, tokens_consumed)
+        self._validate_tool_args(loop_id, tool_args)
         with self._lock:
             return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed)
 

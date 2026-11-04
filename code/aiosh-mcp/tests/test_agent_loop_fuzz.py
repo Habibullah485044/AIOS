@@ -14,13 +14,20 @@ import agent_loop_model as m
 
 SEEDS = [int(s) for s in os.environ.get("AIOSH_LOOP_FUZZ_SEEDS", ",".join(map(str, m.DEFAULT_SEEDS))).split(",")]
 N_OPS = int(os.environ.get("AIOSH_LOOP_FUZZ_OPS", m.DEFAULT_OPS))
+MAX_S = float(os.environ.get("AIOSH_LOOP_FUZZ_MAX_S", m.DEFAULT_MAX_SECONDS))
 
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_service_matches_reference_model(seed, tmp_path):
-    report = m.run_and_check(seed, N_OPS, str(tmp_path / "audit.db"))
+    report = m.run_and_check(seed, N_OPS, str(tmp_path / "audit.db"), max_seconds=MAX_S)
     assert report.ok, "\n".join(report.failures + ["--- last ops ---"] + report.log[-20:])
     assert report.ops_run == N_OPS
+
+
+def test_time_budget_is_a_reported_failure(tmp_path):
+    report = m.run_and_check(1, 500, str(tmp_path / "audit.db"), max_seconds=0.0)
+    assert not report.ok and "time budget" in report.failures[0]
+    assert report.ops_run == 0
 
 
 def test_generation_is_reproducible():

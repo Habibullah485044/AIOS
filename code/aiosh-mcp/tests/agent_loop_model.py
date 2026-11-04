@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import copy
 import random
+import time
 from contextlib import closing
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,8 @@ from typing import Any, Dict, List, Optional, Tuple
 OP_KINDS = ("start", "advance", "abort", "complete", "revoke", "snapshot", "foreign_start")
 DEFAULT_SEEDS = (1, 2, 3, 4, 5)
 DEFAULT_OPS = 200
+#: Wall-clock budget per seed; exceeding it is a reported failure, never a silent stop (T-03320).
+DEFAULT_MAX_SECONDS = 120.0
 
 START_TOOL = "aios.agent_loop.start"
 SCOPED_TOOLS = (START_TOOL, "aios.fs.*")
@@ -226,7 +229,7 @@ def _error_code(exc: BaseException) -> str:
     return msg.split(":", 1)[0] if msg.startswith("LOOPDATA_ERR_") else f"UNEXPECTED:{type(exc).__name__}"
 
 
-def run_and_check(seed: int, n_ops: int, db_path: str) -> FuzzReport:
+def run_and_check(seed: int, n_ops: int, db_path: str, max_seconds: float = DEFAULT_MAX_SECONDS) -> FuzzReport:
     """Runs ``n_ops`` model-checked operations against the real service on ``db_path``."""
     from agent_loop_grants import audit_tools, mint_grant, revoke_grant
     from aiosh_mcp import audit_client
@@ -246,7 +249,11 @@ def run_and_check(seed: int, n_ops: int, db_path: str) -> FuzzReport:
     def fail(i: int, msg: str) -> None:
         report.failures.append(f"seed={seed} op#{i}: {msg}")
 
+    deadline = time.monotonic() + max_seconds
     for i in range(n_ops):
+        if time.monotonic() > deadline:
+            fail(i, f"time budget of {max_seconds}s exceeded after {i} ops (possible hang or lock contention)")
+            break
         op = next_op(rng, model)
         for gid in [op.args.get("grant")]:
             if gid and gid.startswith("gr_fuzz_0") and gid not in minted:

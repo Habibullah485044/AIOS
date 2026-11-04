@@ -358,16 +358,20 @@ def tool_glob_match(tool: str, globs: Iterable[str]) -> bool:
     for glob in globs:
         if glob == tool:
             return True
-        if glob.endswith(".*") and tool.startswith(glob[:-2]):
+        # "git.*" covers "git" and "git.x", never "github.delete_repo" (security audit 2026-11-05 #3a).
+        if glob.endswith(".*") and (tool == glob[:-2] or tool.startswith(glob[:-1])):
             return True
     return False
 
 
 def path_allowed(target: str | None, paths: dict[str, list[str]] | None) -> bool:
     """Replicates `code/aiosh-cli/src/pep.ts:pathAllowed()` in Python.
-    Deny list wins over allow list."""
+    Deny list wins over allow list. A target with a '..' segment is refused
+    whenever a paths policy exists: '/tmp/../etc/x' must not pass allow=['/tmp']."""
     if not paths:
         return True
+    if target is not None and ".." in target.replace("\\", "/").split("/"):
+        return False
     deny = paths.get("deny", []) or []
     for p in deny:
         if target is not None and (target == p or target.startswith(p + "/")

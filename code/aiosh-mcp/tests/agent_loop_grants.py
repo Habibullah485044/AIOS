@@ -62,7 +62,7 @@ class AllowAllGate:
     def redeem(self, grant_id, loop_id):
         self.events.append(("redeem", loop_id, grant_id))
 
-    def tool_refusal(self, grant_id, tool_name):
+    def tool_refusal(self, grant_id, tool_name, target=None):
         return None
 
     def loop_id_used(self, loop_id):

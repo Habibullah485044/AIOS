@@ -255,6 +255,36 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 - **Server-local view.** `list` only shows loops held by this server process.
 - **Caller-reported metrics.** `tokens_consumed` and `tool_args` are self-reported by the caller and only bounded, not verified.
 
+## 9. Testing (automated battery, T-03313..T-03322)
+
+The whole battery runs in CI as suite #34 `agent_loop_battery` (`tools/ci_suites.py`). Run it locally from the repo root:
+```bash
+python -m pytest -q -p no:cacheprovider -k "agent_loop or audit_chain_concurrency or grant_scope or secret_masking" code/aiosh-mcp/tests
+```
+It takes about 75 s on a laptop.
+
+| Part | File | What it proves |
+|---|---|---|
+| Scenario tests | `tests/test_agent_loop_{data_model,core_service,cli,mcp,config}_*.py` | Hand-picked valid, invalid, boundary and abuse cases per surface |
+| Model-based fuzz | `tests/test_agent_loop_fuzz.py`, `tests/agent_loop_model.py` | For each seed, random op sequences (start/advance/abort/complete/revoke/snapshot/foreign_start) run against the real service and gate. After **every** op it checks: the outcome or error code matches a spec-derived model (M1); the exact audit rows appended (M2); snapshot invariants (M3); terminal states are absorbing (M4); one start row and one `run_id` per loop (M5). At the end the chain verifies |
+| Model unit tests | `tests/test_agent_loop_model_unit.py` | Pins every rule the model encodes, so model drift fails directly |
+| Multi-process stress | `tests/test_agent_loop_stress.py` | 4 processes x 5 loops x 6 turns on one ring: exact row counts, unique ids, no chain fork |
+| Cross-substrate | `tests/test_agent_loop_cross_substrate.py` | A TS `aiosh grant create` grant is redeemed by the Python service on a shared, verifying chain. Skips with a reason if `node` or `dist/` is missing |
+| Isolation guard | `tests/test_agent_loop_battery_isolation.py` | Tests never write to the real `$AIOSH_HOME` or leave files in the package; production code never imports the allow-all test gate |
+
+Fuzz knobs: `AIOSH_LOOP_FUZZ_SEEDS` (comma list, default `1,2,3,4,5`), `AIOSH_LOOP_FUZZ_OPS` (default 200), and
+`AIOSH_LOOP_FUZZ_MAX_S` (default 120; exceeding it is a reported failure). A failure prints `seed=N op#K` and the last 20 ops.
+Replay it exactly:
+```bash
+cd code/aiosh-mcp && AIOSH_LOOP_FUZZ_SEEDS=4 AIOSH_LOOP_FUZZ_OPS=1000 python -m pytest -q tests/test_agent_loop_fuzz.py -k matches_reference
+```
+
+Testing limitations:
+- The fuzz model covers the service API. The CLI and MCP layers are exercised by scenario and stdio tests, not by the fuzzer.
+- Time-based paths (total timeout) are covered by scenario tests only.
+- The stress test uses one host and one SQLite file. Network filesystems are untested.
+- About 136 other aiosh-mcp tests need the Rust `aiosh-mcp.exe` built (`cargo build`) and fail with `WinError 2` without it. They are outside this battery.
+
 ## 8. Evidence
 
 - T-03273 research: [T-03273-core-service-research.md](tasks/evidence/T-03273-core-service-research.md)
@@ -265,5 +295,6 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03313..T-03320 automated tests: [research](tasks/evidence/T-03313-research.md), [spec](tasks/evidence/T-03314-spec.md), [implementation](tasks/evidence/T-03316-automated-tests-implementation.md), [unit](tasks/evidence/T-03317-automated-tests-unit-test.md), [integration](tasks/evidence/T-03318-automated-tests-integration.md), [security](tasks/evidence/T-03319-security.md), [hardening](tasks/evidence/T-03320-automated-tests-hardening.md)
 - T-03303..T-03310 configuration: [research](tasks/evidence/T-03303-research.md), [spec](tasks/evidence/T-03304-spec.md), [implementation](tasks/evidence/T-03306-configuration-implementation.md), [unit](tasks/evidence/T-03307-configuration-unit-test.md), [integration](tasks/evidence/T-03308-configuration-integration.md), [security](tasks/evidence/T-03309-security.md), [hardening](tasks/evidence/T-03310-configuration-hardening.md)
 - T-03283..T-03290 CLI: [research](tasks/evidence/T-03283-research.md), [spec](tasks/evidence/T-03284-spec.md), [implementation](tasks/evidence/T-03286-cli-surface-implementation.md), [unit](tasks/evidence/T-03287-cli-surface-unit-test.md), [integration](tasks/evidence/T-03288-cli-surface-integration.md), [security](tasks/evidence/T-03289-security.md), [hardening](tasks/evidence/T-03290-cli-surface-hardening.md)

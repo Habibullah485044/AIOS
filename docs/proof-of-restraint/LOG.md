@@ -1421,3 +1421,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   demo_por.py PASSED. Over stdio JSON-RPC, MCP history equals the CLI history on a shared ring.
 - Evidence: docs/tasks/evidence/T-03299-security.md, docs/tasks/evidence/T-03300-mcp-api-surface-hardening.md,
   docs/tasks/evidence/T-03302-verify.md.
+
+## T-03312 - AI Control Plane Agent Loop Hardening / configuration: Verification & Evidence (2026-11-05)
+- Milestone closeout for the Agent Loop Hardening configuration epic (T-03303..T-03312).
+- **Touched audit:** a degraded configuration (rejected or adjusted input) now writes one `aios.agent_loop.config` row with
+  outcome `degraded`. Falling back to defaults is a fail-open, and it is now audited (ADR-0035 §F-2).
+- Config cannot weaken grant redemption, audit writes or input/args caps (locked keys). The security review (independent
+  and my own, T-03309) fixed an import-time server crash (huge JSON ints) and a hang (device/FIFO/UNC config paths).
+- Also in this window: cross-cutting security fixes from an independent audit of all agent-loop work.
+  #419 serialised audit-chain appends (BEGIN IMMEDIATE, Python + TS), because concurrent writers had forked the chain.
+  #420 made loop ids single-use with a run_id on every row, closing history injection. #421 fixed glob prefix matching
+  and '..' path bypass in grant scope (Python + TS). #422 broadened secret masking before audit writes.
+- Verification: config suites 98 passed / 1 skipped; full suite has no new failures (136 binary-missing + 1 known flake);
+  PoR + chain-concurrency suites PASSED; conformance C1..C6 PASS; demo_por.py PASSED.
+- Evidence: docs/tasks/evidence/T-03309-security.md, docs/tasks/evidence/T-03310-configuration-hardening.md,
+  docs/tasks/evidence/T-03312-verify.md.

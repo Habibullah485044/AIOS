@@ -2062,3 +2062,11 @@ All edits are docs / control-plane only.
   (3 are new: complete/list/history). A shared read-only history reader is used by both the CLI and MCP. PRs #404..#413.
 - Fixed an audit-evasion gap (silent 64 KiB args truncation) and an event-loop stall under DB locks.
 - Verified over real stdio JSON-RPC with the official MCP client. The documented tool calls were run as written.
+
+## 2026-11-05 — Agent Loop Hardening configuration epic closed (T-03303..T-03312) + security fixes
+
+- `agent_loop_config.py`: 10 clamped tunables and 9 locked controls, one resolution per process, an audited degraded fallback,
+  `aios_agent_loop_config` (MCP) and `agent_loop_cli config [--strict]`. PRs #414..#427.
+- An independent security audit of all agent-loop work found 7 issues my own reviews missed; all were fixed in #419..#422
+  (chain fork under concurrency, history injection, grant-scope glob/path bypass, secret masking, NaN config).
+- Lesson recorded: gate every ship on a passing suite, and get an independent review for security tasks.

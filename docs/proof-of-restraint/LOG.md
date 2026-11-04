@@ -1381,3 +1381,18 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - Hardening bounds: bounded string lengths (args <= 64 KiB, error trace <= 16 KiB), snapshot step cap (1000 steps), and bounded registry capacity (256 loops) with LRU termination eviction.
   - FastMCP production integration: aios_agent_loop_status (pure read-only, 0 tokens) and aios_agent_loop_init (PoR Invariant I-2 token gated).
 - Evidence: docs/tasks/evidence/T-03272-verify.md, docs/tasks/evidence/T-03272-data-model-verification-evidenc.md.
+
+## T-03282 - AI Control Plane Agent Loop Hardening / core service: Verification & Evidence (2026-11-05)
+- Milestone closeout for Agent Loop Hardening core service (T-03273..T-03282).
+- **Touched grants, audit and PEP:** T-03279 replaced a non-empty-string token check with real PEP grant
+  redemption (`audit_client.grant_redeem`) in `aiosh_mcp/agent_loop_gate.py`. It applies to `start_loop`,
+  the MCP tools `aios_agent_loop_{start,advance,abort}`, and the data-model `aios_agent_loop_init`.
+  This closed an open I-2 bypass.
+- Loops are bound to the redeemed grant id. Every tool step is re-checked against the grant's `scope.tools`,
+  expiry and revocation (caller `policy_allowed` can only narrow). Audit rows are written:
+  `aios.agent_loop.{start,step,abort,timeout}`.
+- Verification battery: agent-loop suites 87/87 PASSED (9 abuse scenarios, 13 hardening cases);
+  PoR pytest suites PASSED; conformance C1..C6 PASS; demo_por.py PASSED (unused grant PROVABLY_RESTRAINED,
+  post-anchor tamper REJECTED).
+- Evidence: docs/tasks/evidence/T-03279-security.md, docs/tasks/evidence/T-03280-core-service-hardening.md,
+  docs/tasks/evidence/T-03282-verify.md.

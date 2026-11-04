@@ -2039,3 +2039,12 @@ All edits are docs / control-plane only.
 - Hardening fixed two real gaps found by review: TOCTOU unbounded store read, and writes above the read cap that could produce a store neither substrate could reload (both substrates fixed, 4 new tests).
 - Verification: full registered baseline battery green (tools/ci_run.py, 31 suites), PoR C1..C6 + demo (anchor tamper rejected), evidence + security-policy checkers PASS.
 - Also repaired five pre-existing registered-gate breakages (stale 13→205 tool canary, shared-ring coupling in wire step, AIOSH_DB no-op isolation, Linux ELF native addon, TS CLI resolver missing `.exe`) — rust_smoke now EXIT=0 on every step.
+
+## 2026-11-05 — Agent Loop Hardening core service epic closed (T-03277..T-03282)
+
+- Unit, integration, security review, hardening, docs and verification shipped as one merged PR each (#387..#392).
+- Security review fixed a critical PoR I-2 bypass: any non-empty string was accepted as a capability token.
+  It also fixed loop hijack across grants, caller self-approval of out-of-scope tools, and missing audit rows.
+- Hardening: fail-closed gate, honest audit-failure termination, input caps, capacity eviction, thread lock.
+- Docs: `docs/SPEC-AGENT-LOOP-HARDENING-CORE-SERVICE.md` (example verified by running it).
+- Known env gap: 136 aiosh-mcp tests need the unbuilt Rust `aiosh-mcp.exe`; `test_release_*smoke` write backup zips into the CWD.

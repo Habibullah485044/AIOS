@@ -26,10 +26,11 @@ def test_entry_is_frozen_with_spec_fields():
     assert reg.ToolEntry.__dataclass_params__.frozen
 
 
-def test_stubs_fail_loudly():
-    for call in (lambda: reg.ToolCatalog([]), reg.default_catalog, lambda: reg.unknown_profile("x")):
-        with pytest.raises(NotImplementedError, match="T-03366"):
-            call()
+def test_scaffold_stubs_are_implemented():
+    """The T-03365 stubs raised NotImplementedError; T-03366 implemented them."""
+    assert len(reg.ToolCatalog([])) == 0
+    assert len(reg.default_catalog()) > 0
+    assert reg.unknown_profile("x").irreversible is True
 
 
 def test_error_carries_code():

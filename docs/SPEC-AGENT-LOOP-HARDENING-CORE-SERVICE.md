@@ -268,6 +268,54 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 `aios.agent_loop.abort`, `aios.agent_loop.timeout`, `aios.agent_loop.complete`, `aios.agent_loop.init`, and `aios.agent_loop.config` (outcome `degraded`, only when config input was rejected). Every loop row carries a random `run_id`, and a loop id can be started only once per ring. Arguments pass through `mask_secrets`
 (`sk-…`, `ghp_…`, `Bearer …`) before they are written.
 
+## 5b. Observability (T-03333..T-03342)
+
+**Metrics.** MCP `aios_agent_loop_metrics(window=10000)` and CLI `metrics [--window N] [--json]` are read-only and need no token.
+Both aggregate the newest `window` agent-loop rows (1..100000) **written by the agent-loop gate** (`actor_id = agent:mcp@aiosh-mcp/agent-loop`). They report:
+- event counts
+- ok, refused and irreversible step counts
+- measured step latency (p50/p95/max)
+- refusals grouped by structured reason: `constitution`, `irreversible_budget`, `scope`, `caller`, `target`, `gate_unavailable`, `other`
+- the top 20 grants by irreversible use, identified only by a 12-hex SHA-256 prefix (grant ids are bearer tokens and are never emitted)
+- the number of degraded-config rows
+
+MCP also returns `live`: this server's active and terminated loops, capacity, and counters (`steps_ok`, `steps_refused`, `audit_failures`, `gate_unavailable`, `budget_refusals`).
+
+**Health.** Health is computed over the fixed default window, so a caller can't hide signals by choosing a small one:
+- `failing`: any audit-write failure, or the ring is unreadable or the query timed out
+- `degraded`: config degraded, gate unavailable, or a degraded-config row
+- `ok`: otherwise
+
+**Cost bounds.** Rows are streamed, SQLite extracts only the needed fields, args over 8 KiB are not inspected, the query stops itself after 10 s,
+and metrics calls run one at a time on their own limiter.
+
+**Logging.** The library logger `aiosh_mcp.agent_loop` adds no handlers. It emits INFO for start, step, abort and complete, and WARNING for
+audit_failure, gate_unavailable, timeout and budget_race. Each line carries only an event, a loop id, a run id, an outcome and a reason **code**,
+as `extra={"agent_loop": {...}}`, with control characters escaped. It never contains grant ids, args or targets.
+Enable it from the host:
+```python
+import logging; logging.basicConfig(level=logging.INFO)   # or attach your own handler to "aiosh_mcp.agent_loop"
+```
+
+**Durations.** `duration_ms` on steps and rows is measured inside the service lock, from turn start to recording.
+
+Example, after the plan from §4a ran (2 reads, 1 refused write):
+```bash
+python -m aiosh_mcp.agent_loop_cli metrics
+```
+```
+health: ok
+window: 5 row(s) (ids 3..7)
+events: start=1, step=3, complete=1
+steps: ok=2 refused=1 irreversible_ok=0 duration_ms p50=6.451 p95=14.029 max=14.029
+refusals: constitution=1
+```
+
+Observability limitations:
+- The CLI has no live counters (it is one-shot), so its health reflects the ring only.
+- A local writer that forges the gate's own `actor_id` is still counted. Detecting that needs chain-verified aggregation.
+- Grant hashes are unsalted. Production ids (64 random bits) are not practically reversible, but low-entropy test ids are.
+
 ## 6. Error codes
 
 | Code | Meaning |
@@ -283,6 +331,7 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 | `LOOPSERV_ERR_GATE_UNAVAILABLE` | Grant DB unreachable; fails closed |
 | `LOOPDATA_ERR_BOUNDS_EXCEEDED` | `LoopConfig` out of range or bad `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`) |
 | `LOOPPOL_ERR_CONSTITUTION` / `LOOPPOL_ERR_IRREVERSIBLE_BUDGET` / `LOOPPOL_ERR_TARGET` | Step refused by P2 / P4 / a non-string target value (appears in `step.error_message`; the call itself succeeds) |
+| `LOOPOBS_ERR_READ` | Metrics: the audit DB is unreadable, or the metrics query exceeded its 10 s budget |
 | `LOOPMCP_ERR_TIMEOUT` | MCP call exceeded 15 s. For mutating tools the outcome is **unknown**, so check `snapshot`/`history` before retrying |
 | `LOOPMCP_ERR_AUDIT_READ` | `history`: the audit DB exists but is corrupt or unreadable |
 
@@ -337,6 +386,7 @@ Testing limitations:
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03333..T-03340 observability: [research](tasks/evidence/T-03333-research.md), [spec](tasks/evidence/T-03334-spec.md), [implementation](tasks/evidence/T-03336-observability-implementation.md), [unit](tasks/evidence/T-03337-observability-unit-test.md), [integration](tasks/evidence/T-03338-observability-integration.md), [security](tasks/evidence/T-03339-security.md), [hardening](tasks/evidence/T-03340-observability-hardening.md)
 - T-03323..T-03330 security policy: [research](tasks/evidence/T-03323-research.md), [spec](tasks/evidence/T-03324-spec.md), [implementation](tasks/evidence/T-03326-security-policy-implementation.md), [unit](tasks/evidence/T-03327-security-policy-unit-test.md), [integration](tasks/evidence/T-03328-security-policy-integration.md), [security](tasks/evidence/T-03329-security.md), [hardening](tasks/evidence/T-03330-security-policy-hardening.md)
 - T-03313..T-03320 automated tests: [research](tasks/evidence/T-03313-research.md), [spec](tasks/evidence/T-03314-spec.md), [implementation](tasks/evidence/T-03316-automated-tests-implementation.md), [unit](tasks/evidence/T-03317-automated-tests-unit-test.md), [integration](tasks/evidence/T-03318-automated-tests-integration.md), [security](tasks/evidence/T-03319-security.md), [hardening](tasks/evidence/T-03320-automated-tests-hardening.md)
 - T-03303..T-03310 configuration: [research](tasks/evidence/T-03303-research.md), [spec](tasks/evidence/T-03304-spec.md), [implementation](tasks/evidence/T-03306-configuration-implementation.md), [unit](tasks/evidence/T-03307-configuration-unit-test.md), [integration](tasks/evidence/T-03308-configuration-integration.md), [security](tasks/evidence/T-03309-security.md), [hardening](tasks/evidence/T-03310-configuration-hardening.md)

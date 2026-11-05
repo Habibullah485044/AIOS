@@ -3,8 +3,6 @@
 import re
 from pathlib import Path
 
-import pytest
-
 from aiosh_mcp import agent_loop_doc as doc
 
 PKG = Path(__file__).resolve().parents[1] / "aiosh_mcp"
@@ -22,7 +20,5 @@ def test_error_meanings_cover_every_code_both_ways():
     assert all(isinstance(v, str) and v for v in doc.ERROR_MEANINGS.values())
 
 
-def test_sections_and_stub():
+def test_sections():
     assert doc.SECTIONS == ("tools", "errors", "config", "cli", "policy")
-    with pytest.raises(NotImplementedError):
-        doc.reference()

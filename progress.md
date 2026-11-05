@@ -2076,3 +2076,9 @@ All edits are docs / control-plane only.
 - CI suite #34 `agent_loop_battery` runs all 352 agent-loop tests. Before this, CI ran 4 of 30 files.
 - New: a seeded model-based fuzzer (M1..M5), model unit tests, a multi-process stress test, a TS->Py cross-substrate test, and an isolation guard.
 - Mutation-checked: the battery catches each of the security bugs fixed this session when they are re-introduced. PRs #428..#438.
+
+## 2026-11-05 — Agent Loop Hardening security-policy epic closed (T-03323..T-03332)
+
+- Loop steps now pass P1 caller -> P2 constitution classifier -> P3 grant scope (all targets) -> P4 per-grant irreversible budget
+  (atomic, ring-counted). TS `--max-irreversible` takes effect for agent loops for the first time. PRs #439..#448.
+- An independent review found 7 bypasses in the first implementation; all were fixed with 22 regression tests.

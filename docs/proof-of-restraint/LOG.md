@@ -1447,3 +1447,14 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Verification: battery 352 passed; extended fuzz of 6000 ops with 0 divergences; conformance C1..C6 PASS; demo_por.py PASSED.
 - Evidence: docs/tasks/evidence/T-03316-automated-tests-implementation.md, docs/tasks/evidence/T-03319-security.md,
   docs/tasks/evidence/T-03322-verify.md.
+
+## T-03332 - AI Control Plane Agent Loop Hardening / security policy: Verification & Evidence (2026-11-05)
+- Milestone closeout for the per-step security policy (T-03323..T-03332).
+- **Touched PEP and audit:** every agent-loop step now passes dispatch Gate #1 (the Constitution classifier) before the grant scope.
+  Step rows record the real `c_flags` and `classify_*` columns and a SHA-256 of the unmasked args. `scope.max_irreversible`, set by
+  `aiosh grant create --max-irreversible` and previously enforced nowhere, is now enforced for agent loops: per grant, counted from the
+  ring, with an atomic check-and-write.
+- An independent review (T-03329) found and we fixed: target smuggling (scope checked only the first of 3 keys), tool-name aliasing
+  (`fs.Write`, bare `pentest`), Unicode/nesting evasion of R-09/R-11, hidden args in evidence, and budget multiplication across loops.
+- Open follow-ups: classifier rule-pack gaps (cross-substrate); `--max-irreversible` for dispatch/TS/Rust.
+- Verification: policy suites 60/60, battery 413 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

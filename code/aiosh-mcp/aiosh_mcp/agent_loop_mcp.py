@@ -8,7 +8,7 @@ the same constants the service enforces (LOOPMCP-INV1..LOOPMCP-INV4).
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Callable, Dict, List, Optional
+from typing import Annotated, Any, Callable, Dict, List, Literal, Optional
 
 import anyio
 import anyio.to_thread
@@ -79,6 +79,7 @@ TOOL_ANNOTATIONS: Dict[str, ToolAnnotations] = {
     "aios_agent_loop_history": READ_ONLY,
     "aios_agent_loop_config": READ_ONLY,
     "aios_agent_loop_metrics": READ_ONLY,
+    "aios_agent_loop_doc": READ_ONLY,
 }
 
 MAX_LIST_LOOPS = MAX_REGISTRY_CAPACITY
@@ -277,3 +278,13 @@ def register_agent_loop_mcp_tools(
                         "health": health(basis, live, config_degraded=bool(resolved["errors"]))})
         # One metrics scan at a time, on its own limiter: tokenless calls cannot exhaust the shared pool.
         return await _run(work, False, timeout_s, metrics_limiter)
+
+    @mcp_app.tool(name="aios_agent_loop_doc", annotations=TOOL_ANNOTATIONS["aios_agent_loop_doc"])
+    async def aios_agent_loop_doc(
+        section: Optional[Literal["tools", "errors", "config", "cli", "policy"]] = None,
+    ) -> dict:
+        """Reference for the agent-loop subsystem generated from code at call time (T-03348): tools with
+        schemas/annotations, every error code with its meaning, config fields/bounds/env names, CLI
+        subcommands, the step-policy order. Read-only, no token; never contains secrets or env values."""
+        from aiosh_mcp.agent_loop_doc import reference
+        return await run(lambda: _ok(reference(section)), mutating=False)

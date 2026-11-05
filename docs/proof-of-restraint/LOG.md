@@ -1458,3 +1458,17 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   (`fs.Write`, bare `pentest`), Unicode/nesting evasion of R-09/R-11, hidden args in evidence, and budget multiplication across loops.
 - Open follow-ups: classifier rule-pack gaps (cross-substrate); `--max-irreversible` for dispatch/TS/Rust.
 - Verification: policy suites 60/60, battery 413 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03342 - AI Control Plane Agent Loop Hardening / observability: Verification & Evidence (2026-11-05)
+- Milestone closeout for agent-loop observability (T-03333..T-03342). It is read-only and adds no state-changing path.
+- Audit-relevant changes:
+  - step rows now carry a **measured** `duration_ms`; the previous values were fabricated constants
+  - step rows carry a structured `refusal_reason`
+  - metrics trust only rows written by the agent-loop gate's actor
+- The independent review (T-03339) found and we fixed:
+  - grant ids and targets leaking into log lines
+  - log injection
+  - counters and health spoofable through text in caller-chosen targets
+  - forged-row dilution of health
+  - unbounded metrics cost
+- Verification: observability suites 48/48, battery 461 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

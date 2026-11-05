@@ -2082,3 +2082,9 @@ All edits are docs / control-plane only.
 - Loop steps now pass P1 caller -> P2 constitution classifier -> P3 grant scope (all targets) -> P4 per-grant irreversible budget
   (atomic, ring-counted). TS `--max-irreversible` takes effect for agent loops for the first time. PRs #439..#448.
 - An independent review found 7 bypasses in the first implementation; all were fixed with 22 regression tests.
+
+## 2026-11-05 — Agent Loop Hardening observability epic closed (T-03333..T-03342)
+
+- Measured step durations (they were hard-coded), ring-derived metrics (trusted writer only, hashed grants), live counters, health, and a masked library logger.
+- Exposed as MCP `aios_agent_loop_metrics` and `agent_loop_cli metrics`. PRs #449..#458.
+- The independent review found 3 confirmed issues (log leaks of grant ids, spoofable health, forged-row and cost DoS); all fixed with regression tests.

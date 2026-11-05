@@ -320,6 +320,7 @@ def dispatch_cli(
                 return CliResult(EXIT_SUCCESS, "recover", data=recover_orphans(db_path, _resolve_token(ns), ns.grace))
             except RecoveryError as exc:
                 return CliResult(_EXIT_BY_CODE.get(exc.code, EXIT_FAILURE), ns.subcommand,
+                                 data={"recovered": exc.recovered} if exc.recovered else None,
                                  error_code=exc.code, error=str(exc))
         if ns.subcommand == "doc":
             from aiosh_mcp.agent_loop_doc import reference

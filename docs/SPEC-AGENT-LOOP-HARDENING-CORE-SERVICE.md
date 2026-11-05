@@ -377,7 +377,8 @@ Loop state is in-memory. A process that dies mid-loop leaves an **orphaned run**
 | `LOOPSERV_ERR_GATE_UNAVAILABLE` | Grant DB unreachable; fails closed |
 | `LOOPDATA_ERR_BOUNDS_EXCEEDED` | `LoopConfig` out of range or bad `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`) |
 | `LOOPPOL_ERR_CONSTITUTION` / `LOOPPOL_ERR_IRREVERSIBLE_BUDGET` / `LOOPPOL_ERR_TARGET` | Step refused by P2 / P4 / a non-string target value (appears in `step.error_message`; the call itself succeeds) |
-| `LOOPREC_ERR_READ` | Recovery / ring validation: the audit DB is unreadable |
+| `LOOPREC_ERR_READ` | Recovery / ring validation: the audit DB is unreadable, or the scan exceeded its 10 s budget |
+| `LOOPREC_ERR_WRITE` | Recovery: a write failed (locked or full DB). The runs already closed are returned in `data.recovered`; the rest are untouched, so re-run recovery |
 | `LOOPOBS_ERR_READ` | Metrics: the audit DB is unreadable, or the metrics query exceeded its 10 s budget |
 | `LOOPMCP_ERR_TIMEOUT` | MCP call exceeded 15 s. For mutating tools the outcome is **unknown**, so check `snapshot`/`history` before retrying |
 | `LOOPMCP_ERR_AUDIT_READ` | `history`: the audit DB exists but is corrupt or unreadable |

@@ -313,7 +313,8 @@ def register_agent_loop_mcp_tools(
             try:
                 return _ok(recover_orphans(db_path, capability_token, grace_s, svc().live_run_ids()))
             except RecoveryError as exc:
-                return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code).to_dict()
+                return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code,
+                                          data={"recovered": exc.recovered}).to_dict()
         return await run(work, mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_doc", annotations=TOOL_ANNOTATIONS["aios_agent_loop_doc"])

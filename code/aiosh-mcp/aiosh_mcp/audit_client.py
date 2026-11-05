@@ -156,10 +156,11 @@ def default_db_path() -> str:
     return f"{base}/audit.db"
 
 
-def open_db(path: str | None = None) -> sqlite3.Connection:
+def open_db(path: str | None = None, timeout: float = 5.0) -> sqlite3.Connection:
+    """``timeout`` bounds the wait for a locked DB, including the schema setup below (T-03360)."""
     p = path or default_db_path()
     Path(p).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(p)
+    conn = sqlite3.connect(p, timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=FULL")
@@ -496,7 +497,9 @@ def grant_redeem(
         return {"ok": False, "reason": "empty or whitespace grant_id"}
 
     try:
-        conn.execute("PRAGMA busy_timeout = 5000;")
+        # Default only: a caller-configured wait (e.g. the agent-loop db_busy_timeout_ms) is kept (T-03360).
+        if not int(conn.execute("PRAGMA busy_timeout").fetchone()[0]):
+            conn.execute("PRAGMA busy_timeout = 5000;")
     except Exception:
         pass
 

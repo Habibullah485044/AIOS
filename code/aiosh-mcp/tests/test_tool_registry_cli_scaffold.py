@@ -11,7 +11,7 @@ def test_constants_match_spec():
     assert (cli.EXIT_SUCCESS, cli.EXIT_FAILURE, cli.EXIT_USAGE) == (0, 1, 2)
     assert cli.SUBCOMMANDS == ("list", "get", "decide", "export", "check")
     codes = sorted(v for k, v in vars(cli).items() if k.startswith("TOOLCLI_ERR_"))
-    assert codes == ["TOOLCLI_ERR_IO", "TOOLCLI_ERR_UNAVAILABLE", "TOOLCLI_ERR_USAGE"]
+    assert codes == ["TOOLCLI_ERR_INTERRUPTED", "TOOLCLI_ERR_IO", "TOOLCLI_ERR_UNAVAILABLE", "TOOLCLI_ERR_USAGE"]
 
 
 def test_parser_has_the_spec_subcommands_and_never_exits():

@@ -22,6 +22,14 @@ from aiosh_mcp.agent_loop_config import resolve as resolve_config
 from aiosh_mcp.agent_loop_data_model import MAX_REGISTRY_CAPACITY
 from aiosh_mcp.agent_loop_data_model import LoopConfig, LoopResultEnvelope
 from aiosh_mcp.agent_loop_gate import HistoryReadError, read_loop_history
+from aiosh_mcp.agent_loop_observability import (
+    DEFAULT_WINDOW,
+    LOOPOBS_ERR_READ,
+    MAX_WINDOW,
+    ObservabilityReadError,
+    health,
+    ring_metrics,
+)
 from aiosh_mcp.agent_loop_service import (
     _GLOBAL_AGENT_LOOP_SERVICE,
     _error_envelope,
@@ -70,6 +78,7 @@ TOOL_ANNOTATIONS: Dict[str, ToolAnnotations] = {
     "aios_agent_loop_list": READ_ONLY,
     "aios_agent_loop_history": READ_ONLY,
     "aios_agent_loop_config": READ_ONLY,
+    "aios_agent_loop_metrics": READ_ONLY,
 }
 
 MAX_LIST_LOOPS = MAX_REGISTRY_CAPACITY
@@ -246,3 +255,20 @@ def register_agent_loop_mcp_tools(
         return _ok({"config": cfg, "source": resolved["source"], "rejected": resolved.get("rejected", {}),
                     "degraded": bool(resolved["errors"]),
                     "errors": resolved["errors"]})
+
+    @mcp_app.tool(name="aios_agent_loop_metrics", annotations=TOOL_ANNOTATIONS["aios_agent_loop_metrics"])
+    async def aios_agent_loop_metrics(
+        window: Annotated[int, Field(ge=1, le=MAX_WINDOW)] = DEFAULT_WINDOW,
+    ) -> dict:
+        """Agent-loop telemetry (T-03338): ring-derived metrics over the newest ``window`` agent-loop audit rows,
+        live gauges/counters of this server, and health (ok/degraded/failing). Read-only, no token;
+        grant ids are never emitted (hashed)."""
+        def work() -> Dict[str, Any]:
+            live = svc().stats()
+            try:
+                ring = ring_metrics(db_path, window)
+            except ObservabilityReadError as exc:
+                ring = {"error": str(exc)}
+            return _ok({"ring": ring, "live": live,
+                        "health": health(ring, live, config_degraded=bool(resolved["errors"]))})
+        return await run(work, mutating=False)

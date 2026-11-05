@@ -40,7 +40,8 @@ MCP_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 #: Prefixes whose targets are network addresses (same rule as audit_client.grant_check).
 NETWORK_PREFIXES = ("pentest.", "network.")
 #: Control characters and bidi overrides (MCPDM-INV3) are never allowed in a title or shown in errors.
-_FORBIDDEN_TEXT = re.compile("[\x00-\x1f\x7f‪-‮⁦-⁩]")
+_FORBIDDEN_TEXT = re.compile(
+    "[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]")   # C0/C1, line/para separators, bidi marks and overrides (T-03389 #5)
 #: Categories whose tools are always irreversible (spec §2.3 rule 5).
 _IRREVERSIBLE_CATEGORIES = ("fs.write", "system")
 #: Names the *existing* enforcement rules treat as irreversible: the union of audit_client.grant_check and

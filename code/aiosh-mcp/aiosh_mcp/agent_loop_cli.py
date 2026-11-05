@@ -335,6 +335,7 @@ def render(result: CliResult, json_mode: bool) -> str:
         return f"plan OK: {d['turns']} turn(s)"
     if result.subcommand == "run":
         lines = [f"[{t['step_index']}] {t['outcome']:<7} {t['tool_name'] or '-'}"
+                 + (f"  [{','.join(t['policy']['rule_ids'])}]" if t.get("policy", {}).get("rule_ids") else "")
                  + (f"  {t['error_message']}" if t.get("error_message") else "") for t in d["turns"]]
         lines.append(f"loop {d['loop_id']}: {d['final_state']} ({len(d['turns'])} turn(s), "
                      f"{d['refused']} refused, {d['turns_skipped']} skipped)")

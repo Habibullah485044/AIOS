@@ -179,6 +179,8 @@ class LoopStepRecord:
     tokens_consumed: int
     duration_ms: float
     error_message: Optional[str] = None
+    #: Policy summary for the step (T-03328): {"verdict", "rule_ids", "irreversible", ["irreversible_used"]}.
+    policy: Optional[Dict[str, Any]] = None
     recorded_at_utc: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -201,6 +203,7 @@ class LoopStepRecord:
             "duration_ms": self.duration_ms,
             "error_message": mask_secrets(self.error_message) if self.error_message else None,
             "recorded_at_utc": self.recorded_at_utc,
+            **({"policy": dict(self.policy)} if self.policy is not None else {}),
         }
 
     @classmethod
@@ -215,6 +218,7 @@ class LoopStepRecord:
             tokens_consumed=int(data.get("tokens_consumed", 0)),
             duration_ms=float(data.get("duration_ms", 0.0)),
             error_message=data.get("error_message"),
+            policy=data.get("policy"),
             recorded_at_utc=data.get("recorded_at_utc", datetime.now(timezone.utc).isoformat()),
         )
 

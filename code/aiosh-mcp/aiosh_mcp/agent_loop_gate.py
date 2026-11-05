@@ -187,7 +187,8 @@ def read_loop_history(db_path: Optional[str], loop_id: str, limit: int,
         has_ring = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone()
         rows = conn.execute(
-            """SELECT id, ts, tool, outcome, outcome_detail, args_json FROM audit_ring
+            """SELECT id, ts, tool, outcome, outcome_detail, args_json,
+                      classify_overall_verdict, classify_rule_ids_json FROM audit_ring
                WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
                  AND id > ?
                ORDER BY id LIMIT ?""",
@@ -198,4 +199,8 @@ def read_loop_history(db_path: Optional[str], loop_id: str, limit: int,
     finally:
         conn.close()
     return [{"id": r["id"], "ts": r["ts"], "tool": r["tool"], "outcome": r["outcome"],
-             "outcome_detail": r["outcome_detail"], "args": json.loads(r["args_json"])} for r in rows]
+             "outcome_detail": r["outcome_detail"], "args": json.loads(r["args_json"]),
+             # Constitution verdict recorded on step rows since T-03326 (None on other events / older rows).
+             "verdict": r["classify_overall_verdict"],
+             "rule_ids": json.loads(r["classify_rule_ids_json"]) if r["classify_rule_ids_json"] else []}
+            for r in rows]

@@ -104,6 +104,27 @@ def _classify_evidence(
     }
 
 
+_REGISTRY_FAILURE_LOGGED = False
+
+
+def _registry_require_grant(tool: str, target: Any, require_grant: bool) -> bool:
+    """Consults the tool registry service. Never raises and never loosens ``require_grant``."""
+    global _REGISTRY_FAILURE_LOGGED
+    try:
+        from . import tool_registry_service as trs
+        svc = trs.service()
+        decision = svc.decide(tool, target, require_grant=require_grant)
+        trs.report(decision, tool, surface="dispatch")
+        return bool(require_grant or svc.enforcement(decision).get("requires_grant"))
+    except Exception as exc:  # a broken catalog or bad mode must not break dispatch: legacy rules still apply
+        if not _REGISTRY_FAILURE_LOGGED:
+            _REGISTRY_FAILURE_LOGGED = True
+            import sys
+            print(f"aiosh-mcp: tool registry unavailable in dispatch ({type(exc).__name__}); legacy rules only",
+                  file=sys.stderr)
+        return require_grant
+
+
 def dispatch(
     *,
     tool: str,
@@ -173,6 +194,9 @@ def dispatch(
     # the generic irreversible classifier does not. Keep that policy
     # explicit at the dispatch boundary rather than in an un-audited
     # wrapper.
+    # Tool registry (T-03378): shadow mode reports where the catalog disagrees with these legacy rules and
+    # changes nothing; opt-in strict mode can only add the grant requirement (TOOLSVC-INV2/INV5).
+    require_grant = _registry_require_grant(tool, target, require_grant)
     with conn_ctx() as conn:
         verdict = audit_client.grant_check(conn, grant_id, tool, target)
         if require_grant and grant_id is None:

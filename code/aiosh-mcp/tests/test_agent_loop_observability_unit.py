@@ -14,13 +14,13 @@ from aiosh_mcp import agent_loop_observability as obs
 from aiosh_mcp import audit_client
 
 
-def ring(tmp_path, rows):
-    """rows: (tool, outcome, outcome_detail, args, grant)."""
+def ring(tmp_path, rows, actor_id=obs.TRUSTED_ACTOR_ID):
+    """rows: (tool, outcome, outcome_detail, args, grant), written as the agent-loop gate's actor."""
     db = str(tmp_path / "audit.db")
     with closing(audit_client.open_db(db)) as conn:
         for tool, outcome, detail, args, grant in rows:
             audit_client.write_audit_row(conn, {
-                "ts": audit_client.utcnow_iso(), "actor": "agent", "actor_id": "t", "tool": tool,
+                "ts": audit_client.utcnow_iso(), "actor": "agent", "actor_id": actor_id, "tool": tool,
                 "command": "c", "args": args, "target": None, "outcome": outcome, "outcome_detail": detail,
                 "constitution_rev": None, "grant_token": grant,
                 "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True}})
@@ -108,3 +108,24 @@ def test_history_ignores_lookalike_tools(tmp_path):
     db = ring(tmp_path, [("aios.agentXloop.step", "ok", None, {"loop_id": "loop-lookalike"}, None),
                          ("aios.agent_loop.step", "ok", None, {"loop_id": "loop-lookalike"}, None)])
     assert [e["tool"] for e in read_loop_history(db, "loop-lookalike", 10)] == ["aios.agent_loop.step"]
+
+
+def test_rows_from_untrusted_writers_are_ignored(tmp_path):
+    """T-03339 #3: forged 'ok' step rows from another actor cannot dilute or fake the metrics."""
+    db = ring(tmp_path, [step()] * 3, actor_id="agent:somebody-else")
+    assert obs.ring_metrics(db)["window"]["rows"] == 0
+
+
+def test_oversized_args_are_not_parsed(tmp_path):
+    big = {"loop_id": "l", "irreversible": "True", "duration_ms": "3.0", "pad": "x" * (obs.MAX_ARGS_JSON_SCAN + 10)}
+    db = ring(tmp_path, [("aios.agent_loop.step", "ok", None, big, "g1"), step(duration="2.0")])
+    m = obs.ring_metrics(db)
+    assert m["steps"]["ok"] == 2 and m["steps"]["irreversible_ok"] == 0
+    assert m["steps"]["duration_ms"]["count"] == 1
+
+
+def test_grant_list_is_capped(tmp_path):
+    db = ring(tmp_path, [step(irreversible="True", grant=f"g{i}") for i in range(obs.MAX_GRANT_ENTRIES + 5)])
+    m = obs.ring_metrics(db)
+    assert len(m["irreversible_by_grant"]) == obs.MAX_GRANT_ENTRIES
+    assert m["irreversible_grants_total"] == obs.MAX_GRANT_ENTRIES + 5

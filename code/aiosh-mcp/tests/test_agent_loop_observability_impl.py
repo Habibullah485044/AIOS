@@ -80,13 +80,16 @@ def test_live_stats(run):
 
 
 @pytest.mark.parametrize("detail,reason", [
-    ("LOOPSERV_ERR_POLICY_REFUSED: ... LOOPPOL_ERR_CONSTITUTION: c2", "constitution"),
-    ("... LOOPPOL_ERR_IRREVERSIBLE_BUDGET: used 1 of 1", "irreversible_budget"),
-    ("... tool 'x' not in grant scope.tools", "scope"),
-    ("... target '8.8.8.8' blocked by grant scope.networks", "scope"),
-    ("... caller policy verdict", "caller"),
-    ("... LOOPSERV_ERR_GATE_UNAVAILABLE: db locked", "gate_unavailable"),
-    ("... LOOPPOL_ERR_TARGET: non-string", "target"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPPOL_ERR_CONSTITUTION: c2", "constitution"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPPOL_ERR_IRREVERSIBLE_BUDGET: used 1 of 1", "irreversible_budget"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: tool 'x' not in grant scope.tools", "scope"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: target '8.8.8.8' blocked by grant scope.networks", "scope"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: caller policy verdict", "caller"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPSERV_ERR_GATE_UNAVAILABLE: db locked", "gate_unavailable"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPPOL_ERR_TARGET: non-string", "target"),
+    # T-03339: caller-chosen text that merely *contains* a code is not that code
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: target '/x/GATE_UNAVAILABLE' blocked by grant scope.paths", "scope"),
+    ("LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: target '/x/LOOPPOL_ERR_CONSTITUTION' blocked by grant scope.paths", "scope"),
     (None, "other"), ("weird", "other"),
 ])
 def test_classify_refusal(detail, reason):

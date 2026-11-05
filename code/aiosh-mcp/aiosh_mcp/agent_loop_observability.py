@@ -7,7 +7,6 @@ health classification and the module logger; LOOPOBS-INV1..LOOPOBS-INV3.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -21,28 +20,38 @@ DEFAULT_WINDOW = 10_000
 MAX_WINDOW = 100_000
 REFUSAL_REASONS = ("constitution", "irreversible_budget", "scope", "caller", "target", "gate_unavailable", "other")
 HEALTH_STATES = ("ok", "degraded", "failing")
+#: Only rows written by the agent-loop gate are counted (T-03339 #3): other ring writers are ignored.
+TRUSTED_ACTOR_ID = "agent:mcp@aiosh-mcp/agent-loop"
+#: Per-grant irreversible list is capped (top N by count) so one call cannot return 100k entries.
+MAX_GRANT_ENTRIES = 20
+#: args_json longer than this is not inspected for duration/irreversible/refusal fields.
+MAX_ARGS_JSON_SCAN = 8192
 
 
 class ObservabilityReadError(Exception):
     """The audit DB exists but cannot be opened or queried."""
 
 
+_REFUSAL_PREFIXES = (
+    ("LOOPPOL_ERR_CONSTITUTION", "constitution"),
+    ("LOOPPOL_ERR_IRREVERSIBLE_BUDGET", "irreversible_budget"),
+    ("LOOPPOL_ERR_TARGET", "target"),
+    ("LOOPSERV_ERR_GATE_UNAVAILABLE", "gate_unavailable"),
+    ("caller policy verdict", "caller"),
+    ("tool '", "scope"), ("target '", "scope"), ("grant ", "scope"), ("no target in tool_args", "scope"),
+)
+_REFUSED_PREFIX = "LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: "
+
+
 def classify_refusal(outcome_detail: Optional[str]) -> str:
-    """Maps a refused step's ``outcome_detail`` onto one of ``REFUSAL_REASONS``."""
+    """Fallback for rows without ``refusal_reason`` (pre-T-03339). Prefix match on the refusal itself,
+    never a substring search: caller-chosen targets can contain any code text (T-03339 #2)."""
     d = outcome_detail or ""
-    if "LOOPPOL_ERR_CONSTITUTION" in d:
-        return "constitution"
-    if "LOOPPOL_ERR_IRREVERSIBLE_BUDGET" in d:
-        return "irreversible_budget"
-    if "LOOPPOL_ERR_TARGET" in d:
-        return "target"
-    if "GATE_UNAVAILABLE" in d:
-        return "gate_unavailable"
-    if "caller policy verdict" in d:
-        return "caller"
-    if any(k in d for k in ("grant scope", "not in grant", "blocked by grant", "no target in tool_args",
-                            "unknown or revoked", "expired")):
-        return "scope"
+    if d.startswith(_REFUSED_PREFIX):
+        d = d[len(_REFUSED_PREFIX):]
+    for prefix, reason in _REFUSAL_PREFIXES:
+        if d.startswith(prefix):
+            return reason
     return "other"
 
 
@@ -81,9 +90,16 @@ def ring_metrics(db_path: Optional[str] = None, window: int = DEFAULT_WINDOW) ->
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone():
             return out
         # substr(), not LIKE: '_' is a LIKE wildcard and 'aios.agent_loop.' contains one.
-        rows = conn.execute(
-            "SELECT id, ts, tool, outcome, outcome_detail, args_json, grant_token FROM audit_ring "
-            "WHERE substr(tool, 1, 16) = 'aios.agent_loop.' ORDER BY id DESC LIMIT ?", (window,)).fetchall()
+        # Streamed and extracted in SQLite (T-03339 #3): no fetchall() of whole args blobs, and only rows
+        # written by the agent-loop gate's actor are trusted.
+        rows = list(conn.execute(
+            "SELECT id, ts, tool, outcome, outcome_detail, grant_token, "
+            "  CASE WHEN length(args_json) <= ? THEN json_extract(args_json, '$.irreversible') END, "
+            "  CASE WHEN length(args_json) <= ? THEN json_extract(args_json, '$.duration_ms') END, "
+            "  CASE WHEN length(args_json) <= ? THEN json_extract(args_json, '$.refusal_reason') END "
+            "FROM audit_ring WHERE substr(tool, 1, 16) = 'aios.agent_loop.' AND actor_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (MAX_ARGS_JSON_SCAN, MAX_ARGS_JSON_SCAN, MAX_ARGS_JSON_SCAN, TRUSTED_ACTOR_ID, window)))
     except sqlite3.Error as exc:
         raise ObservabilityReadError(f"{LOOPOBS_ERR_READ}: cannot read audit DB: {exc}") from exc
     finally:
@@ -95,7 +111,7 @@ def ring_metrics(db_path: Optional[str] = None, window: int = DEFAULT_WINDOW) ->
                      "first_ts": rows[0][1], "last_ts": rows[-1][1]}
     durations: List[float] = []
     by_grant: Dict[str, int] = {}
-    for _id, _ts, tool, outcome, detail, args_json, grant in rows:
+    for _id, _ts, tool, outcome, detail, grant, irreversible, duration, refusal_reason in rows:
         event = tool[len("aios.agent_loop."):]
         if event in out["events"]:
             out["events"][event] += 1
@@ -103,28 +119,27 @@ def ring_metrics(db_path: Optional[str] = None, window: int = DEFAULT_WINDOW) ->
             out["degraded_config_rows"] += 1
         if event != "step":
             continue
-        try:
-            args = json.loads(args_json or "{}")
-        except ValueError:
-            args = {}
         if outcome == "ok":
             out["steps"]["ok"] += 1
-            if str(args.get("irreversible")) == "True":
+            if str(irreversible) == "True":
                 out["steps"]["irreversible_ok"] += 1
                 if grant:
                     key = hashlib.sha256(grant.encode()).hexdigest()[:12]   # grant ids are bearer tokens
                     by_grant[key] = by_grant.get(key, 0) + 1
         elif outcome == "refused":
             out["steps"]["refused"] += 1
-            out["refusals"][classify_refusal(detail)] += 1
+            reason = refusal_reason if refusal_reason in REFUSAL_REASONS else classify_refusal(detail)
+            out["refusals"][reason] += 1
         try:
-            durations.append(float(args["duration_ms"]))
-        except (KeyError, TypeError, ValueError):
+            durations.append(float(duration))
+        except (TypeError, ValueError):
             pass   # rows written before T-03336 carry no measured duration
     out["steps"]["duration_ms"] = {"count": len(durations), "p50": _pct(durations, 0.50),
                                    "p95": _pct(durations, 0.95),
                                    "max": round(max(durations), 3) if durations else None}
-    out["irreversible_by_grant"] = [{"grant_hash": k, "ok": v} for k, v in sorted(by_grant.items())]
+    top = sorted(by_grant.items(), key=lambda kv: (-kv[1], kv[0]))[:MAX_GRANT_ENTRIES]
+    out["irreversible_by_grant"] = [{"grant_hash": k, "ok": v} for k, v in top]
+    out["irreversible_grants_total"] = len(by_grant)
     return out
 
 
@@ -145,9 +160,13 @@ def log_event(event: str, loop_id: str, run_id: Optional[str], outcome: str, rea
     if not logger.isEnabledFor(level):
         return
     from aiosh_mcp.agent_loop_data_model import mask_secrets
-    fields = {"event": event, "loop_id": loop_id, "run_id": run_id, "outcome": outcome}
+
+    def clean(v: Any) -> Any:  # no control characters in log lines (T-03339 #2: log injection)
+        return None if v is None else "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in str(v))
+
+    fields = {"event": clean(event), "loop_id": clean(loop_id), "run_id": clean(run_id), "outcome": clean(outcome)}
     if reason:
-        fields["reason"] = mask_secrets(reason)[:200]
-    msg = f"agent_loop {event} loop={loop_id} run={run_id} outcome={outcome}" + (
+        fields["reason"] = clean(mask_secrets(reason)[:200])
+    msg = f"agent_loop {fields['event']} loop={fields['loop_id']} run={fields['run_id']} outcome={fields['outcome']}" + (
         f" reason={fields['reason']}" if reason else "")
     logger.log(level, mask_secrets(msg), extra={"agent_loop": fields})

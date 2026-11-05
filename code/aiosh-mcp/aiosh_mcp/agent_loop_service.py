@@ -303,12 +303,13 @@ class AgentLoopService:
         capability_token: str = "",
     ) -> LoopStepRecord:
         """Advances agent loop through FSM: EVALUATE_POLICY -> EXECUTE_TOOL -> RECORD_STEP."""
-        t0 = time.perf_counter()
         token = self._require_token(capability_token, loop_id, "advance")
         self._validate_turn_input(loop_id, action_intent, tool_name, tokens_consumed)
         self._validate_tool_args(loop_id, tool_name, tool_args)
         with self._lock:
-            return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed, t0)
+            # Timed inside the lock so another loop's contention is not billed to this step (T-03339).
+            return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed,
+                                        time.perf_counter())
 
     def _advance_locked(self, loop_id: str, token: str, tool_name: Optional[str],
                         tool_args: Optional[Dict[str, Any]], tokens_consumed: int,
@@ -354,16 +355,20 @@ class AgentLoopService:
         except ValueError as exc:
             targets, target_error = [], str(exc)
         policy = evaluate_step(tool_name, targets, tool_args or {})
+        # refusal_code is set by the gate that refused (T-03339): logs, counters and metrics use only the
+        # code, never the free text, which can carry grant ids or caller-chosen targets.
         refusal = None if policy_allowed else "caller policy verdict"
-        if refusal is None:
-            refusal = target_error
-        if refusal is None:
-            refusal = policy.refused_reason
+        refusal_code = "caller" if refusal else None
+        if refusal is None and target_error:
+            refusal, refusal_code = target_error, "target"
+        if refusal is None and policy.refused_reason:
+            refusal, refusal_code = policy.refused_reason, "constitution"
         if refusal is None:
             try:
                 refusal = self._gate.tool_refusal(grant_id, tool_name, targets)
+                refusal_code = "scope" if refusal else None
             except Exception as exc:  # fail closed: an unreachable gate refuses the call
-                refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
+                refusal, refusal_code = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}", "gate_unavailable"
         used = 0
         budget: Optional[int] = None
         if refusal is None and policy.irreversible:
@@ -372,9 +377,10 @@ class AgentLoopService:
                 # Per grant, from the ring (T-03329): a multi-use grant cannot multiply its budget across loops.
                 used = self._gate.irreversible_used(grant_id) if budget is not None else 0
             except Exception as exc:
-                refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
+                refusal, refusal_code = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}", "gate_unavailable"
             if refusal is None and budget is not None and used >= budget:
                 refusal = f"{LOOPPOL_ERR_IRREVERSIBLE_BUDGET}: used {used} of {budget}"
+                refusal_code = "irreversible_budget"
         policy_args = {"irreversible": policy.irreversible, "tool_args_sha256": args_digest(tool_args)}
         if budget is not None:
             policy_args["irreversible_used"] = used + (1 if refusal is None else 0)
@@ -426,9 +432,11 @@ class AgentLoopService:
                           reason=f"used {exc.used} of {exc.budget}", level=logging.WARNING)
                 # Another loop or process spent the last unit between our check and the write.
                 refusal = f"{LOOPPOL_ERR_IRREVERSIBLE_BUDGET}: used {exc.used} of {exc.budget}"
+                refusal_code = "irreversible_budget"
                 policy_args["irreversible_used"] = exc.used
                 step_policy["irreversible_used"] = exc.used
 
+        step_policy["refusal_reason"] = refusal_code or "other"
         snap.transition_to(LoopState.RECORD_STEP)
         step = LoopStepRecord(
             step_index=len(snap.steps),
@@ -446,15 +454,15 @@ class AgentLoopService:
         self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
                                  args={"step_index": step.step_index, "tool_name": tool_name,
                                        "tool_args": step.tool_args_summary, "duration_ms": step.duration_ms,
-                                       **policy_args},
+                                       "refusal_reason": refusal_code or "other", **policy_args},
                                  classification=policy.classification)
         self._counters["steps_refused"] += 1
-        if "GATE_UNAVAILABLE" in refusal:
+        if refusal_code == "gate_unavailable":
             self._counters["gate_unavailable"] += 1
             log_event("gate_unavailable", loop_id, self._runs.get(loop_id), "refused", level=logging.WARNING)
-        if refusal.startswith(LOOPPOL_ERR_IRREVERSIBLE_BUDGET):
+        if refusal_code == "irreversible_budget":
             self._counters["budget_refusals"] += 1
-        log_event("step", loop_id, self._runs.get(loop_id), "refused", reason=refusal.split(":", 1)[0])
+        log_event("step", loop_id, self._runs.get(loop_id), "refused", reason=refusal_code or "other")
         if not snap.is_terminated:
             snap.transition_to(LoopState.OBSERVE)
         return step

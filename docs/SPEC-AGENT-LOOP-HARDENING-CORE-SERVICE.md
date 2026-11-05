@@ -43,6 +43,47 @@ aiosh grant create --to agent:planner --tools "aios.agent_loop.start,aios.fs.rea
 
 The returned `grant_id` (`data.grant_id`) is the `capability_token` for every call on that loop.
 
+## 2b. Per-step security policy (T-03323..T-03332)
+
+Every `advance_turn` is evaluated in a fixed order. The first refusal wins, and a refused step is still recorded, with one audit row:
+
+1. **P1 caller verdict:** `policy_allowed=false` refuses. The caller can only narrow what is allowed.
+2. **P2 constitution:** the same C-1..C-4 classifier as dispatch Gate #1 (`classifier.classify`, rule pack `sprint-2-rule-pack-v1`).
+   A `refused` verdict refuses with `LOOPPOL_ERR_CONSTITUTION`. For example, every `fs.write` (R-03) and prompt-injection text in args (R-11) is refused.
+   Input is normalised first (NFKC, casefold, invisible characters removed, nested keys and strings flattened), and the classifier runs once per target.
+3. **P3 grant scope:** `scope.tools` (lowercase names only; globs end at a `.` boundary), revocation and expiry, then **every** target value.
+   Targets are the strings under target-like keys: `target(s)`, `path(s)`, `host(s)`, `url(s)`, `file(s)`, `dest`, `src`, `dir`, `cwd` and others; lists count.
+   These are checked against `scope.networks` (for `pentest`/`network` tools) or `scope.paths`. **A scoped grant with no checkable target is refused.**
+4. **P4 irreversible budget:** `pentest*`, `fs.write*`, `process*`, `shell*`, `system.reboot`/`shutdown`, and anything the classifier flags C-3,
+   count against the grant's `scope.max_irreversible`. The budget is counted **per grant, from the audit ring**, and the check plus the write are
+   one transaction, so loops, processes and restarts cannot overspend it.
+
+Each step row records the real `c_flags`, `policy_revision` and `classify_*` columns, `irreversible`, `irreversible_used`, and
+`tool_args_sha256` (a SHA-256 of the canonical, *unmasked* args, so evidence can be matched to what actually ran). MCP, CLI and history show
+`policy: {verdict, rule_ids, irreversible[, irreversible_used]}`.
+
+Example: a TS-issued budget of 1, enforced by a Python loop:
+```bash
+GRANT=$(aiosh grant create --to agent:scanner --tools "aios.agent_loop.start,pentest.*,fs.*"           --networks 10.0.0.0/24 --max-irreversible 1 --ttl 900 | jq -r .data.grant_id)
+AIOS_LOOP_GRANT=$GRANT python -m aiosh_mcp.agent_loop_cli run --loop-id loop-pol-docs-01           --token-env AIOS_LOOP_GRANT --plan plan.json
+```
+Here `plan.json` holds `pentest.nmap` 10.0.0.5, `pentest.nmap` 10.0.0.6, `pentest.nmap` 8.8.8.8, and `fs.write /tmp/report.txt`. Output:
+```
+[0] ok      pentest.nmap  [R-01,R-07]
+[1] refused pentest.nmap  [R-01,R-07]  LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPPOL_ERR_IRREVERSIBLE_BUDGET: used 1 of 1
+[2] refused pentest.nmap  [R-01,R-07]  LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: target '8.8.8.8' blocked by grant scope.networks
+[3] refused fs.write  [R-03,R-07]  LOOPSERV_ERR_POLICY_REFUSED: Policy evaluation refused tool invocation: LOOPPOL_ERR_CONSTITUTION: c2=0.95 (R-03) (rules R-03,R-07; policy sprint-2-rule-pack-v1)
+loop loop-pol-docs-01: COMPLETED (4 turn(s), 3 refused, 0 skipped)
+```
+
+Policy limitations:
+- The service records turns; **the caller executes tools**. The policy judges the declared `(tool, args)`, and the args digest makes any
+  divergence detectable afterwards, but this layer cannot prevent it.
+- The fixes for normalisation, target extraction and flattened injection scanning apply to the agent-loop path only. `_dispatch` still calls the raw classifier.
+- Known rule-pack gaps that need a cross-substrate rule-pack change: `process.run` with `bin:"/bin/rm"` is matched only exactly, and SQL keyword matching is case-sensitive.
+  P4 still counts `process.*` as irreversible.
+- `--max-irreversible` is enforced only for agent loops, not for direct dispatch, the TS CLI or Rust paths.
+
 ## 3. MCP tools (registered in `server.py`, defined in `agent_loop_mcp.py`)
 
 All seven tools are `async`. Blocking work runs off the event loop, and each call is bounded at 15 s (T-03300).
@@ -241,6 +282,7 @@ Each consequential event appends one hash-chained row to `audit_ring` (`$AIOSH_H
 | `LOOPSERV_ERR_AUDIT` | Audit write failed; loop not created (start) or ABORTED (later events) |
 | `LOOPSERV_ERR_GATE_UNAVAILABLE` | Grant DB unreachable; fails closed |
 | `LOOPDATA_ERR_BOUNDS_EXCEEDED` | `LoopConfig` out of range or bad `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`) |
+| `LOOPPOL_ERR_CONSTITUTION` / `LOOPPOL_ERR_IRREVERSIBLE_BUDGET` / `LOOPPOL_ERR_TARGET` | Step refused by P2 / P4 / a non-string target value (appears in `step.error_message`; the call itself succeeds) |
 | `LOOPMCP_ERR_TIMEOUT` | MCP call exceeded 15 s. For mutating tools the outcome is **unknown**, so check `snapshot`/`history` before retrying |
 | `LOOPMCP_ERR_AUDIT_READ` | `history`: the audit DB exists but is corrupt or unreadable |
 
@@ -295,6 +337,7 @@ Testing limitations:
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03323..T-03330 security policy: [research](tasks/evidence/T-03323-research.md), [spec](tasks/evidence/T-03324-spec.md), [implementation](tasks/evidence/T-03326-security-policy-implementation.md), [unit](tasks/evidence/T-03327-security-policy-unit-test.md), [integration](tasks/evidence/T-03328-security-policy-integration.md), [security](tasks/evidence/T-03329-security.md), [hardening](tasks/evidence/T-03330-security-policy-hardening.md)
 - T-03313..T-03320 automated tests: [research](tasks/evidence/T-03313-research.md), [spec](tasks/evidence/T-03314-spec.md), [implementation](tasks/evidence/T-03316-automated-tests-implementation.md), [unit](tasks/evidence/T-03317-automated-tests-unit-test.md), [integration](tasks/evidence/T-03318-automated-tests-integration.md), [security](tasks/evidence/T-03319-security.md), [hardening](tasks/evidence/T-03320-automated-tests-hardening.md)
 - T-03303..T-03310 configuration: [research](tasks/evidence/T-03303-research.md), [spec](tasks/evidence/T-03304-spec.md), [implementation](tasks/evidence/T-03306-configuration-implementation.md), [unit](tasks/evidence/T-03307-configuration-unit-test.md), [integration](tasks/evidence/T-03308-configuration-integration.md), [security](tasks/evidence/T-03309-security.md), [hardening](tasks/evidence/T-03310-configuration-hardening.md)
 - T-03283..T-03290 CLI: [research](tasks/evidence/T-03283-research.md), [spec](tasks/evidence/T-03284-spec.md), [implementation](tasks/evidence/T-03286-cli-surface-implementation.md), [unit](tasks/evidence/T-03287-cli-surface-unit-test.md), [integration](tasks/evidence/T-03288-cli-surface-integration.md), [security](tasks/evidence/T-03289-security.md), [hardening](tasks/evidence/T-03290-cli-surface-hardening.md)

@@ -2093,3 +2093,8 @@ All edits are docs / control-plane only.
 
 - A reference generated from code (MCP `aios_agent_loop_doc`, CLI `doc`) and a CI drift test that fails when the spec and code diverge or a doc example breaks.
 - 17 undocumented error codes found and documented. The never-raised `LOOPSERV_ERR_CIRCUIT_BREAKER` is now emitted. PRs #459..#468.
+
+## 2026-11-06 — Agent Loop Hardening recovery & validation epic closed (T-03353..T-03362)
+
+- Crash recovery for agent loops: `validate-ring` / `aios_agent_loop_validate` finds orphaned runs and ring problems; `recover` / `aios_agent_loop_recover` closes orphans with an honest `recovered` row under an exactly scoped grant.
+- Security review fixed 2 High issues (closing live cross-process runs; an `executescript()` commit dropping the caller's write lock in `write_audit_row`). PRs #469..#478.

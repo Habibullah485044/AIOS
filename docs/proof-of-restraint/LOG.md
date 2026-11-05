@@ -1479,3 +1479,19 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - Added: a code-generated reference (MCP `aios_agent_loop_doc`, CLI `doc`) and a CI drift test (identifiers in both directions, doc python
   examples executed, json examples schema-validated). 17 previously undocumented error codes are now documented.
 - Verification: doc suites 24/24, battery 485 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03362 - AI Control Plane Agent Loop Hardening / recovery & validation: Verification & Evidence (2026-11-06)
+- Milestone closeout for agent-loop recovery & validation (T-03353..T-03362). Adds one state-changing path:
+  recovery writes an `aios.agent_loop.recovered` row per orphaned run. It is gated by a redeemed grant that must list
+  `aios.agent_loop.recover` **exactly** (I-2), and each row is hash-chained (I-3).
+- Audit-relevant changes:
+  - `write_audit_row` no longer runs `executescript()` schema helpers inside a caller's transaction. Those helpers committed it
+    early, which silently reopened check-then-write races (T-03359 #2).
+  - Non-claim loop audits refuse once a run has a `recovered` row (`RunRecovered`), so a closed run cannot be written after its terminal row.
+  - `grant_redeem` keeps a caller-configured `busy_timeout` (T-03360).
+- The independent review (T-03359) found and we fixed:
+  - recovery closing live runs in other processes (now requires the run's own total timeout to have passed, plus a newest-row re-check under the lock);
+  - broad glob grants authorising recovery;
+  - unbounded validate cost;
+  - secret-shaped loop ids aliasing in the masked ring.
+- Verification: recovery suites 41/41, battery 527 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

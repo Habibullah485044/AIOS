@@ -25,6 +25,8 @@ TOOLREG_ERR_INCONSISTENT = "TOOLREG_ERR_INCONSISTENT"
 TOOLREG_ERR_DUPLICATE = "TOOLREG_ERR_DUPLICATE"
 TOOLREG_ERR_BOUNDS = "TOOLREG_ERR_BOUNDS"
 TOOLREG_ERR_UNKNOWN = "TOOLREG_ERR_UNKNOWN"
+#: The catalog failed to build; the registry MCP tools answer with this instead of taking the server down.
+TOOLREG_ERR_UNAVAILABLE = "TOOLREG_ERR_UNAVAILABLE"
 
 SCHEMA_VERSION = 1
 MAX_NAME_LEN = 64            # = mcp_server_core_data_model.MAX_TOOL_NAME_LEN
@@ -200,7 +202,11 @@ class ToolCatalog:
             _fail(TOOLREG_ERR_BOUNDS, f"catalog has {len(items)} entries; at most {MAX_CATALOG_ENTRIES}")
         by_name: Dict[str, ToolEntry] = {}
         folded: Dict[str, Tuple[str, ToolEntry, bool]] = {}
+        seen: set = set()
         for e in items:
+            if id(e) in seen:          # the same entry listed twice (T-03370; e.g. a bad merge of the seed)
+                _fail(TOOLREG_ERR_DUPLICATE, f"entry {e.canonical} is listed twice")
+            seen.add(id(e))
             if type(e) is not ToolEntry:
                 _fail(TOOLREG_ERR_INCONSISTENT, "catalog entries must be ToolEntry")
             if e.canonical.startswith(UNREGISTERED_PREFIX):        # synthetic names of unknown tools (T-03369 #5)
@@ -350,21 +356,49 @@ CategoryArg = Optional[Literal[tuple(c.value for c in Category)]]  # type: ignor
 NameArg = Annotated[str, Field(min_length=1, max_length=MAX_QUERY_LEN)]
 
 
-def register_tool_registry_tools(mcp_app: Any) -> None:
-    """Registers the read-only catalog tools on ``mcp_app`` (TOOLREG-INV5: no tool can change the catalog)."""
-    catalog = default_catalog()
+def _unavailable(reason: str) -> Dict[str, Any]:
+    return {"ok": False, "error_code": TOOLREG_ERR_UNAVAILABLE,
+            "error": f"{TOOLREG_ERR_UNAVAILABLE}: tool catalog unavailable ({reason})"}
 
-    @mcp_app.tool(name=LIST_TOOL, annotations=catalog.annotations(LIST_TOOL))
+
+def register_tool_registry_tools(mcp_app: Any) -> None:
+    """Registers the read-only catalog tools on ``mcp_app`` (TOOLREG-INV5: no tool can change the catalog).
+
+    T-03370: a catalog that fails to build (a bad seed edit) must not take the other ~67 server tools down at
+    import. The two tools are still registered and answer every call with ``TOOLREG_ERR_UNAVAILABLE``; the
+    failure is reported on stderr. CI still fails on it (the registry tests build the catalog directly).
+    """
+    import sys
+    from mcp.types import ToolAnnotations
+
+    try:
+        catalog: Optional[ToolCatalog] = default_catalog()
+        broken: Optional[str] = None
+    except ToolRegistryError as exc:
+        catalog, broken = None, exc.code
+        print(f"aiosh-mcp: {TOOLREG_ERR_UNAVAILABLE}: {_shown(exc)}", file=sys.stderr)
+
+    def ann(name: str) -> Any:
+        if catalog is not None:
+            return catalog.annotations(name)
+        return ToolAnnotations(readOnlyHint=True, openWorldHint=False)     # what the entries say when intact
+
+    @mcp_app.tool(name=LIST_TOOL, annotations=ann(LIST_TOOL))
     def aios_tool_registry_list(category: CategoryArg = None) -> dict:
         """Lists the trusted tool catalog (canonical name, MCP aliases, category, effect, irreversible,
         scope kind). Read-only, no token. Optionally filtered by category."""
+        if catalog is None:
+            return _unavailable(str(broken))
         entries = [e.to_dict() for e in catalog.entries() if category is None or e.category.value == category]
         return {"ok": True, "data": {"schema_version": SCHEMA_VERSION, "count": len(entries), "entries": entries}}
 
-    @mcp_app.tool(name=GET_TOOL, annotations=catalog.annotations(GET_TOOL))
+    @mcp_app.tool(name=GET_TOOL, annotations=ann(GET_TOOL))
     def aios_tool_registry_get(name: NameArg) -> dict:
         """Resolves a canonical or MCP tool name to its taxonomy. An unregistered name returns the
         fail-closed profile (irreversible, grant required) with registered=false. Read-only, no token."""
+        if catalog is None:
+            # Still fail closed: callers get the unknown profile shape plus an explicit error.
+            return {**_unavailable(str(broken)), "data": {"registered": False, "entry": unknown_profile(name).to_dict()}}
         entry = catalog.resolve(name)
         profile = entry or unknown_profile(name)
         return {"ok": True, "data": {"registered": entry is not None, "entry": profile.to_dict()}}

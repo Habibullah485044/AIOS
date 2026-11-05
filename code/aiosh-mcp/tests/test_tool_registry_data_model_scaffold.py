@@ -16,7 +16,7 @@ def test_enums_and_constants_match_spec():
     assert reg.MAX_NAME_LEN == MAX_TOOL_NAME_LEN
     codes = [v for k, v in vars(reg).items() if k.startswith("TOOLREG_ERR_")]
     assert sorted(codes) == sorted(["TOOLREG_ERR_INVALID_NAME", "TOOLREG_ERR_INCONSISTENT", "TOOLREG_ERR_DUPLICATE",
-                                    "TOOLREG_ERR_BOUNDS", "TOOLREG_ERR_UNKNOWN"])
+                                    "TOOLREG_ERR_BOUNDS", "TOOLREG_ERR_UNKNOWN", "TOOLREG_ERR_UNAVAILABLE"])
 
 
 def test_entry_is_frozen_with_spec_fields():

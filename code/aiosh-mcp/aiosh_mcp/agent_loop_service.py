@@ -36,7 +36,7 @@ from aiosh_mcp.agent_loop_data_model import (
     MAX_ARGS_SUMMARY_BYTES,
     MAX_REGISTRY_CAPACITY,
 )
-from aiosh_mcp.agent_loop_gate import CapabilityRefused, LoopIdTaken, PepCapabilityGate
+from aiosh_mcp.agent_loop_gate import BudgetExhausted, CapabilityRefused, LoopIdTaken, PepCapabilityGate
 from aiosh_mcp.agent_loop_policy import (
     LOOPPOL_ERR_IRREVERSIBLE_BUDGET,
     args_digest,
@@ -90,7 +90,8 @@ class CapabilityGate(Protocol):
     def irreversible_used(self, grant_id: str) -> int: ...
 
     def audit(self, event: str, loop_id: str, grant_id: Optional[str], outcome: str,
-              detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> None: ...
+              detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None,
+              classification: Optional[Dict[str, Any]] = None, budget_guard: Optional[int] = None) -> None: ...
 
 
 class AgentLoopService:
@@ -139,12 +140,21 @@ class AgentLoopService:
 
     def _audit_or_terminate(self, snap: LoopSnapshot, event: str, grant_id: str, outcome: str,
                             detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None,
-                            classification: Optional[Dict[str, Any]] = None) -> None:
-        """Writes the audit row; on failure terminates the loop and raises LOOPSERV_ERR_AUDIT."""
+                            classification: Optional[Dict[str, Any]] = None,
+                            budget_guard: Optional[int] = None) -> None:
+        """Writes the audit row; on failure terminates the loop and raises LOOPSERV_ERR_AUDIT.
+
+        ``BudgetExhausted`` (from an atomic budget-guarded write) is a policy outcome, not an
+        audit failure: it propagates unchanged and nothing was written.
+        """
         try:
             extra = {"classification": classification} if classification is not None else {}
+            if budget_guard is not None:
+                extra["budget_guard"] = budget_guard
             self._gate.audit(event, snap.loop_id, grant_id, outcome, detail=detail,
                              args={"run_id": self._runs.get(snap.loop_id), **(args or {})}, **extra)
+        except BudgetExhausted:
+            raise
         except Exception as exc:
             if not snap.is_terminated:
                 snap.transition_to(LoopState.ABORTED,
@@ -364,45 +374,57 @@ class AgentLoopService:
         args_str = str(tool_args or {})
         start_state = LoopState.EVALUATE_POLICY
 
-        if refusal is not None:
+        if refusal is None:
+            # Policy allowed: proceed to tool execution
+            snap.transition_to(LoopState.EXECUTE_TOOL)
             snap.transition_to(LoopState.RECORD_STEP)
             step = LoopStepRecord(
                 step_index=len(snap.steps),
-                state_at_start=start_state,
+                state_at_start=LoopState.EXECUTE_TOOL,
                 state_at_end=LoopState.RECORD_STEP,
                 tool_name=tool_name,
                 tool_args_summary=args_str,
-                outcome="refused",
+                outcome="ok",
                 tokens_consumed=tokens_consumed,
-                duration_ms=5.0,
-                error_message=f"{LOOPSERV_ERR_POLICY_REFUSED}: Policy evaluation refused tool invocation: {refusal}",
+                duration_ms=15.0,
                 policy=step_policy,
             )
-            snap.record_step(step, config)
-            self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
-                                     args={"step_index": step.step_index, "tool_name": tool_name,
-                                           "tool_args": step.tool_args_summary, **policy_args},
-                                     classification=policy.classification)
-            if not snap.is_terminated:
-                snap.transition_to(LoopState.OBSERVE)
-            return step
+            row_args = {"step_index": step.step_index, "tool_name": tool_name,
+                        "tool_args": step.tool_args_summary, **policy_args}
+            guarded = policy.irreversible and budget is not None
+            try:
+                if guarded:
+                    # Atomic budget check + ok row (T-03330); written before the in-memory record.
+                    self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
+                                             classification=policy.classification, budget_guard=budget)
+                snap.record_step(step, config)
+                if not guarded:
+                    self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
+                                             classification=policy.classification)
+                if not snap.is_terminated:
+                    snap.transition_to(LoopState.OBSERVE)
+                return step
+            except BudgetExhausted as exc:
+                # Another loop or process spent the last unit between our check and the write.
+                refusal = f"{LOOPPOL_ERR_IRREVERSIBLE_BUDGET}: used {exc.used} of {exc.budget}"
+                policy_args["irreversible_used"] = exc.used
+                step_policy["irreversible_used"] = exc.used
 
-        # Policy allowed: proceed to tool execution
-        snap.transition_to(LoopState.EXECUTE_TOOL)
         snap.transition_to(LoopState.RECORD_STEP)
         step = LoopStepRecord(
             step_index=len(snap.steps),
-            state_at_start=LoopState.EXECUTE_TOOL,
+            state_at_start=start_state,
             state_at_end=LoopState.RECORD_STEP,
             tool_name=tool_name,
             tool_args_summary=args_str,
-            outcome="ok",
+            outcome="refused",
             tokens_consumed=tokens_consumed,
-            duration_ms=15.0,
+            duration_ms=5.0,
+            error_message=f"{LOOPSERV_ERR_POLICY_REFUSED}: Policy evaluation refused tool invocation: {refusal}",
             policy=step_policy,
         )
         snap.record_step(step, config)
-        self._audit_or_terminate(snap, "step", grant_id, "ok",
+        self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
                                  args={"step_index": step.step_index, "tool_name": tool_name,
                                        "tool_args": step.tool_args_summary, **policy_args},
                                  classification=policy.classification)

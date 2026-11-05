@@ -69,7 +69,11 @@ class AllowAllGate:
     def loop_id_used(self, loop_id):
         return False
 
-    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None, classification=None):
+    def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None, classification=None,
+              budget_guard=None):
+        if budget_guard is not None and self.irreversible.get(grant_id, 0) >= budget_guard:
+            from aiosh_mcp.agent_loop_gate import BudgetExhausted
+            raise BudgetExhausted(self.irreversible.get(grant_id, 0), budget_guard)
         self.events.append((event, loop_id, outcome))
         if event == "step" and outcome == "ok" and (args or {}).get("irreversible"):
             self.irreversible.setdefault(grant_id, 0)

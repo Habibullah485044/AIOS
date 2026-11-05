@@ -24,16 +24,31 @@ from aiosh_mcp.tool_registry_data_model import Category, ToolRegistryError, _sho
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_USAGE = 2
+EXIT_INTERRUPTED = 130   # 128 + SIGINT, as the agent-loop CLI
 
 TOOLCLI_ERR_USAGE = "TOOLCLI_ERR_USAGE"
 TOOLCLI_ERR_IO = "TOOLCLI_ERR_IO"
 TOOLCLI_ERR_UNAVAILABLE = "TOOLCLI_ERR_UNAVAILABLE"
+TOOLCLI_ERR_INTERRUPTED = "TOOLCLI_ERR_INTERRUPTED"
 
 SUBCOMMANDS = ("list", "get", "decide", "export", "check")
 MAX_NAMES = 256
 MAX_NAME_CHARS = 256
 MAX_SHOWN_CHARS = 80
 MAX_SHOWN_PATH_CHARS = 260
+#: Defensive cap on an export (the largest possible catalog is < 1 MiB, T-03370).
+MAX_EXPORT_BYTES = 4 * 1024 * 1024
+
+USAGE = """usage: aiosh-tool-registry <command> [options]   (read-only view of the trusted tool catalog)
+
+  list [--category C] [--json]                    every registered tool, optionally one category
+  get <name> [--json]                             one tool by canonical or MCP name (exit 1 if unregistered)
+  decide <name> [--require-grant] [--mode shadow|strict] [--json]
+                                                  the registry service's decision for a call to <name>
+  export [--out FILE] [--json]                    the catalog as canonical JSON (atomic write with --out)
+  check <name>... [--json]                        exit 0 if every name is registered, 1 otherwise
+
+exit codes: 0 ok, 1 negative result or I/O error, 2 usage, 130 interrupted"""
 
 
 def _safe(text: Any) -> str:
@@ -124,6 +139,8 @@ def _export_to(path: str, text: str) -> Dict[str, Any]:
         mode = stat.S_IMODE(st.st_mode)
     parent = os.path.dirname(target) or "."
     data = text.encode("utf-8")
+    if len(data) > MAX_EXPORT_BYTES:
+        raise OSError(f"export is {len(data)} bytes; refusing more than {MAX_EXPORT_BYTES}")
     tmp = None
     try:
         # mkstemp inside the try: an interrupt right after it still removes the temp file (#10)
@@ -154,6 +171,9 @@ def dispatch_cli(argv: List[str]) -> CliResult:
     """Pure CLI core: argv in, CliResult out (spec §1). Never raises (TOOLCLI-INV2)."""
     argv = [a if isinstance(a, str) else str(a) for a in (argv or [])]
     sub = argv[0] if argv and argv[0] in SUBCOMMANDS else "unknown"
+    head = argv[: argv.index("--")] if "--" in argv else argv
+    if "-h" in head or "--help" in head:
+        return CliResult(EXIT_SUCCESS, sub if sub != "unknown" else "help", data={"usage": USAGE})
     try:
         if any("\0" in a for a in argv):
             raise _UsageError("argument contains a NUL byte")
@@ -216,6 +236,8 @@ def _human(result: CliResult) -> List[str]:
     if result.error_code:
         return [result.error or result.error_code]
     d = result.data or {}
+    if "usage" in d:
+        return d["usage"].splitlines()
     if result.subcommand == "list":
         return [f"{e['canonical']:<36} {e['category']:<14} {e['effect']:<11} "
                 f"{'irreversible' if e['irreversible'] else '-':<12} {e['scope_kind']}" for e in d["entries"]] + \
@@ -261,7 +283,12 @@ def _emit(text: str, stream: Any) -> bool:
 def main(argv: Optional[List[str]] = None) -> int:
     """Console entry point; returns the process exit code."""
     args = list(sys.argv[1:] if argv is None else argv)
-    result = dispatch_cli(args)
+    try:
+        result = dispatch_cli(args)
+    except KeyboardInterrupt:
+        # Ctrl-C: no traceback; nothing to undo (read-only, and export cleans its temp file itself)
+        _emit(f"{TOOLCLI_ERR_INTERRUPTED}: interrupted", sys.stderr)
+        return EXIT_INTERRUPTED
     if result.as_json:
         lines, stream = [json.dumps(result.to_dict(), ensure_ascii=True, sort_keys=True)], sys.stdout
     elif result.subcommand == "export" and result.data and "export" in result.data:

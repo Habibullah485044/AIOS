@@ -188,6 +188,10 @@ def _build_parser() -> _Parser:
     r.add_argument("--config", dest="config_file", default=None)
     r.add_argument("--json", action="store_true")
 
+    mt = sub.add_parser("metrics", add_help=False)
+    mt.add_argument("--window", type=int, default=10_000)
+    mt.add_argument("--json", action="store_true")
+
     c = sub.add_parser("config", add_help=False)
     c.add_argument("--config", dest="config_file", default=None)
     c.add_argument("--json", action="store_true")
@@ -277,13 +281,23 @@ def dispatch_cli(
     db_path: Optional[str] = None,
 ) -> CliResult:
     """Parses argv and runs one subcommand; never raises."""
-    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config"} else "unknown"
+    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config", "metrics"} else "unknown"
     try:
         if any("\0" in a for a in argv):
             raise _UsageError("argument contains prohibited NUL byte")
         ns = _build_parser().parse_args(argv)
         if ns.subcommand is None:
-            raise _UsageError("expected a subcommand: validate | run | history | config")
+            raise _UsageError("expected a subcommand: validate | run | history | config | metrics")
+        if ns.subcommand == "metrics":
+            from aiosh_mcp.agent_loop_observability import ObservabilityReadError, health, ring_metrics
+            try:
+                ring = ring_metrics(db_path, ns.window)
+            except ValueError as exc:
+                raise _UsageError(str(exc)) from exc
+            except ObservabilityReadError as exc:
+                raise _AuditReadError(str(exc)) from exc
+            return CliResult(EXIT_SUCCESS, "metrics", data={
+                "ring": ring, "health": health(ring, config_degraded=bool(resolve_config()["errors"]))})
         if ns.subcommand == "config":
             data = resolve_config(arg_config=ns.config_file)
             data["degraded"] = bool(data["errors"])
@@ -321,6 +335,16 @@ def render(result: CliResult, json_mode: bool) -> str:
     if json_mode:
         return mask_secrets(json.dumps(result.to_dict(), sort_keys=True))
     d = result.data or {}
+    if result.subcommand == "metrics" and result.exit_code == EXIT_SUCCESS:
+        r, st = d["ring"], d["ring"]["steps"]
+        dur = st["duration_ms"]
+        lines = [f"health: {d['health']}",
+                 f"window: {r['window']['rows']} row(s) (ids {r['window']['first_id']}..{r['window']['last_id']})",
+                 "events: " + ", ".join(f"{k}={v}" for k, v in r["events"].items() if v),
+                 f"steps: ok={st['ok']} refused={st['refused']} irreversible_ok={st['irreversible_ok']} "
+                 f"duration_ms p50={dur['p50']} p95={dur['p95']} max={dur['max']}",
+                 "refusals: " + (", ".join(f"{k}={v}" for k, v in r["refusals"].items() if v) or "none")]
+        return mask_secrets("\n".join(lines))
     if result.subcommand == "config" and d:
         # Always show the table; with --strict the error line follows it (T-03311).
         lines = [f"{k:<36} {v!s:<12} ({d['source'].get(k, 'default')})" for k, v in d["config"].items()]

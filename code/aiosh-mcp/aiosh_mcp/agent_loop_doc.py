@@ -128,7 +128,18 @@ def reference(section: Optional[str] = None) -> Dict[str, Any]:
     Returns a deep copy, so callers cannot mutate the per-process cache.
     """
     if section is None:
-        return {name: copy.deepcopy(_built(name)) for name in SECTIONS}
+        # T-03350: one broken builder (e.g. an import error after a refactor) must not take the whole
+        # reference down; the failing section is reported by name and exception type only.
+        out: Dict[str, Any] = {}
+        failed: Dict[str, str] = {}
+        for name in SECTIONS:
+            try:
+                out[name] = copy.deepcopy(_built(name))
+            except Exception as exc:
+                failed[name] = type(exc).__name__
+        if failed:
+            out["_unavailable"] = failed
+        return out
     if section not in _BUILDERS:
         raise ValueError(f"unknown section {section!r}; expected one of {', '.join(SECTIONS)}")
     return {section: copy.deepcopy(_built(section))}

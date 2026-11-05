@@ -155,4 +155,17 @@ def evaluate_step(tool: Optional[str], targets: Any, args: Dict[str, Any]) -> St
     if fields["classify_overall_verdict"] == "refused":
         refused = (f"{LOOPPOL_ERR_CONSTITUTION}: {fields['classify_verdict_reason'] or 'refused'} "
                    f"(rules {','.join(fields['classify_rule_ids'])}; policy {fields['policy_revision']})")
-    return StepPolicy(classification=fields, refused_reason=refused, irreversible=is_irreversible(tool, fields))
+    return StepPolicy(classification=fields, refused_reason=refused,
+                      irreversible=_registry_irreversible(tool, target_list, fields, is_irreversible(tool, fields)))
+
+
+def _registry_irreversible(tool: str, targets: Sequence[Optional[str]], fields: Dict[str, Any], legacy: bool) -> bool:
+    """Tool registry (T-03378): shadow reports disagreements; strict can only mark a step irreversible."""
+    try:
+        from aiosh_mcp import tool_registry_service as trs
+        svc = trs.service()
+        decision = svc.decide(tool, targets[0] if targets else None, classification=fields)
+        trs.report(decision, tool, surface="agent_loop")
+        return bool(legacy or svc.enforcement(decision).get("irreversible"))
+    except Exception:  # never let the registry break a loop step; the legacy rule still applies
+        return legacy

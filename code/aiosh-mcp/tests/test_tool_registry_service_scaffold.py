@@ -19,10 +19,10 @@ def test_decision_is_frozen_with_spec_fields():
     assert svc.ToolDecision.__dataclass_params__.frozen
 
 
-def test_stubs_fail_loudly():
-    for call in (svc.ToolRegistryService, svc.service):
-        with pytest.raises(NotImplementedError, match="T-03376"):
-            call()
+def test_scaffold_stubs_are_implemented():
+    """The T-03375 stubs raised NotImplementedError; T-03376 implemented them."""
+    assert svc.ToolRegistryService(mode="shadow").mode == "shadow"
+    assert isinstance(svc.service(), svc.ToolRegistryService)
 
 
 def test_error_carries_code():

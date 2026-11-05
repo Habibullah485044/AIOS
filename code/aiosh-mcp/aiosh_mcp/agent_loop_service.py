@@ -171,6 +171,14 @@ class AgentLoopService:
                 LOOPSERV_ERR_AUDIT, f"audit write failed for '{event}': {exc}", snap.loop_id
             ) from exc
 
+    def _audit_breaker(self, snap: LoopSnapshot, grant_id: str) -> None:
+        """A breaker FAILed the loop on this turn: write its terminal row, so the ring can tell
+        "ended by breaker" from "process died" (T-03356; T-03353 F5)."""
+        if snap.is_terminated and snap.current_state == LoopState.FAILED:
+            self._audit_or_terminate(snap, "failed", grant_id, "failed", detail=snap.terminal_reason)
+            log_event("failed", snap.loop_id, self._runs.get(snap.loop_id), "failed",
+                      reason=LOOPSERV_ERR_CIRCUIT_BREAKER, level=logging.WARNING)
+
     @staticmethod
     def _tag_breaker(snap: LoopSnapshot) -> None:
         """A breaker (consecutive failures, token budget, iteration ceiling) ended the loop: give callers
@@ -431,6 +439,7 @@ class AgentLoopService:
                 if not guarded:
                     self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
                                              classification=policy.classification)
+                self._audit_breaker(snap, grant_id)
                 self._counters["steps_ok"] += 1
                 log_event("step", loop_id, self._runs.get(loop_id), "ok")
                 if not snap.is_terminated:
@@ -466,6 +475,7 @@ class AgentLoopService:
                                        "tool_args": step.tool_args_summary, "duration_ms": step.duration_ms,
                                        "refusal_reason": refusal_code or "other", **policy_args},
                                  classification=policy.classification)
+        self._audit_breaker(snap, grant_id)
         self._counters["steps_refused"] += 1
         if refusal_code == "gate_unavailable":
             self._counters["gate_unavailable"] += 1

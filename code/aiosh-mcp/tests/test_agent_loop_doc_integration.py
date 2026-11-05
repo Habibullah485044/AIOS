@@ -28,7 +28,8 @@ async def test_stdio_doc_tool_and_cli_parity(tmp_path):
         everything = json.loads((await session.call_tool("aios_agent_loop_doc", {})).content[0].text)
         bad = await session.call_tool("aios_agent_loop_doc", {"section": "secrets"})
     assert bad.isError
-    assert len(errors["data"]["errors"]) == 34
+    from aiosh_mcp.agent_loop_doc import ERROR_MEANINGS
+    assert len(errors["data"]["errors"]) == len(ERROR_MEANINGS)
     assert {t["name"] for t in everything["data"]["tools"]} == {n for n in tools if n.startswith("aios_agent_loop_")}
     cli = dispatch_cli(["doc", "--section", "errors", "--json"])
     assert cli.exit_code == EXIT_SUCCESS and cli.data == errors["data"]

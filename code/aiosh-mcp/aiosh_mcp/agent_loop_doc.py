@@ -50,12 +50,14 @@ ERROR_MEANINGS: Dict[str, str] = {
     "AGENTLOOPCONF_ERR_LOCKED": "config tried to set a locked security control; whole file ignored",
     "AGENTLOOPCONF_ERR_BOUNDS": "config value clamped to its bounds (reported, applied clamped)",
     "AGENTLOOPCONF_ERR_ENV": "env value or env config path rejected; lower level kept",
+    "LOOPREC_ERR_READ": "recovery/validation: audit DB unreadable",
 }
 
 
 #: Modules whose ``*_ERR_*`` constants make up the error catalog.
 _MODULES = ("agent_loop_data_model", "agent_loop_service", "agent_loop_gate", "agent_loop_policy",
-            "agent_loop_mcp", "agent_loop_cli", "agent_loop_config", "agent_loop_observability")
+            "agent_loop_mcp", "agent_loop_cli", "agent_loop_config", "agent_loop_observability",
+            "agent_loop_recovery")
 
 
 def _tools() -> List[Dict[str, Any]]:

@@ -347,6 +347,9 @@ class AgentLoopService:
         policy_args = {"irreversible": policy.irreversible}
         if budget is not None:
             policy_args["irreversible_used"] = used + (1 if refusal is None else 0)
+        # Surfaced on the step (MCP advance / CLI run / snapshot), T-03328.
+        step_policy = {"verdict": policy.classification.get("classify_overall_verdict", "ok"),
+                       "rule_ids": list(policy.classification.get("classify_rule_ids") or []), **policy_args}
 
         args_str = str(tool_args or {})
         start_state = LoopState.EVALUATE_POLICY
@@ -363,6 +366,7 @@ class AgentLoopService:
                 tokens_consumed=tokens_consumed,
                 duration_ms=5.0,
                 error_message=f"{LOOPSERV_ERR_POLICY_REFUSED}: Policy evaluation refused tool invocation: {refusal}",
+                policy=step_policy,
             )
             snap.record_step(step, config)
             self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
@@ -384,6 +388,7 @@ class AgentLoopService:
             outcome="ok",
             tokens_consumed=tokens_consumed,
             duration_ms=15.0,
+            policy=step_policy,
         )
         snap.record_step(step, config)
         if policy.irreversible:

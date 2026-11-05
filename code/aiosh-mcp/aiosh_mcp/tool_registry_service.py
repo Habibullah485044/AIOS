@@ -82,6 +82,12 @@ def _mode(mode: Optional[str]) -> str:
     return value
 
 
+def _c3(classification: Any) -> bool:
+    """Classifier C-3 flag, only from a well-formed result (T-03377: decide() must never raise on odd shapes)."""
+    flags = classification.get("c_flags") if isinstance(classification, dict) else None
+    return isinstance(flags, dict) and flags.get("c3") is True
+
+
 def _hash(name: str) -> str:
     return hashlib.sha256(name.encode("utf-8", "surrogatepass")).hexdigest()[:12]
 
@@ -107,7 +113,7 @@ class ToolRegistryService:
         name = tool if type(tool) is str else ""
         entry = self._catalog.resolve(tool)
         profile = entry or self._catalog.profile(tool)
-        c3 = bool(((classification or {}).get("c_flags") or {}).get("c3"))
+        c3 = _c3(classification)
 
         leg_grant = legacy_requires_grant(name) or bool(require_grant)
         leg_irrev = legacy_irreversible(name)

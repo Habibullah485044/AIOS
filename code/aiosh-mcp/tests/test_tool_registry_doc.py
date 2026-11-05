@@ -18,8 +18,9 @@ TEXT = DOC.read_text(encoding="utf-8")
 
 
 def test_every_error_code_documented_both_ways():
-    codes = {v for k, v in vars(reg).items() if k.startswith("TOOLREG_ERR_")}
-    documented = set(re.findall(r"`(TOOLREG_ERR_[A-Z_]+)`", TEXT))
+    from aiosh_mcp import tool_registry_service as svc
+    codes = {v for mod in (reg, svc) for k, v in vars(mod).items() if k.startswith(("TOOLREG_ERR_", "TOOLSVC_ERR_"))}
+    documented = set(re.findall(r"`((?:TOOLREG|TOOLSVC)_ERR_[A-Z_]+)`", TEXT))
     assert codes == documented
 
 
@@ -30,11 +31,15 @@ def test_enums_and_counts_documented():
     assert f"**{len(reg.default_catalog())} entries**" in TEXT
 
 
-def test_python_example_runs_and_prints_what_the_doc_says(tmp_path):
-    block = re.findall(r"```python\n(.*?)```", TEXT, re.S)[0]
+PY_BLOCKS = re.findall(r"```python\n(.*?)```", TEXT, re.S)
+
+
+@pytest.mark.parametrize("block", PY_BLOCKS, ids=[f"example{i}" for i in range(len(PY_BLOCKS))])
+def test_python_example_runs_and_prints_what_the_doc_says(tmp_path, block):
     expected = [line.split("# -> ", 1)[1] for line in block.splitlines() if "# -> " in line]
+    env = {k: v for k, v in os.environ.items() if k != "AIOSH_TOOL_REGISTRY_MODE"}
     out = subprocess.run([sys.executable, "-c", block], cwd=PKG_ROOT, capture_output=True, text=True, timeout=120,
-                         env=dict(os.environ, AIOSH_HOME=str(tmp_path)))
+                         env=dict(env, AIOSH_HOME=str(tmp_path)))
     assert out.returncode == 0, out.stderr[-1500:]
     assert out.stdout.split("\n")[:len(expected)] == expected
 

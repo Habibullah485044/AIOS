@@ -12,6 +12,8 @@ dependencies = [
 [project.scripts]
 # T-03288: operator CLI for hardened agent loops (also `python -m aiosh_mcp.agent_loop_cli`).
 aiosh-agent-loop = "aiosh_mcp.agent_loop_cli:main"
+# T-03386: read-only tool registry CLI (also `python -m aiosh_mcp.tool_registry_cli`).
+aiosh-tool-registry = "aiosh_mcp.tool_registry_cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

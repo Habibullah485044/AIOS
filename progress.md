@@ -2098,3 +2098,8 @@ All edits are docs / control-plane only.
 
 - Crash recovery for agent loops: `validate-ring` / `aios_agent_loop_validate` finds orphaned runs and ring problems; `recover` / `aios_agent_loop_recover` closes orphans with an honest `recovered` row under an exactly scoped grant.
 - Security review fixed 2 High issues (closing live cross-process runs; an `executescript()` commit dropping the caller's write lock in `write_audit_row`). PRs #469..#478.
+
+## 2026-11-06 — Tool Registry & Taxonomy data model epic closed (T-03363..T-03372)
+
+- One trusted, read-only catalog of tool identity and taxonomy (canonical/MCP names, category, effect, irreversible, scope kind) with a fail-closed unknown profile, derived MCP annotations, read-only MCP tools and drift tests against every existing name rule.
+- The research also fixed two cross-substrate PEP gaps: the Rust glob dot boundary (#480) and TS network scope (#481). An incident fix stopped the backup zip from archiving itself (#487). PRs #479..#491.

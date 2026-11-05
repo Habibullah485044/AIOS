@@ -1495,3 +1495,21 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - unbounded validate cost;
   - secret-shaped loop ids aliasing in the masked ring.
 - Verification: recovery suites 41/41, battery 527 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03372 - AI Control Plane Tool Registry & Taxonomy / data model: Verification & Evidence (2026-11-06)
+- Milestone closeout for the tool registry data model (T-03363..T-03372). The catalog is read-only and changes no enforcement path.
+  Its validator guarantees it is never weaker than today's irreversible name rules, so it can become the I-2 grant source later.
+- PEP fixes found by the epic's research (cross-substrate):
+  - **Rust `tool_glob_match` had no dot boundary** (`aios.fs.*` covered `aios.fs_layout.*`). Python and TS had been fixed in #421;
+    Rust is fixed in #480.
+  - **The TS `PepStore.check` ignored `scope.networks`.** A pentest grant for 10.0.0.0/8 authorised any host. Fixed in #481, with
+    `networkAllowed` matching Python on 13 cases.
+- The independent review (T-03369) found and we fixed:
+  - fs.read seeded without its grant requirement;
+  - offline pentest tools network-scoped (the path checker would have been skipped);
+  - entries that could be weaker than the name rules;
+  - case-sensitive scope inference;
+  - one shared synthetic name for all malformed names;
+  - separator aliasing;
+  - str-subclass lookup steering.
+- Verification: tool_registry 123 passed, battery 538 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

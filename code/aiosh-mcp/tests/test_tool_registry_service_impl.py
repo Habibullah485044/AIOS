@@ -87,8 +87,7 @@ def test_mode_from_env(monkeypatch):
     monkeypatch.setenv(svc.ENV_MODE, "strict")
     assert ToolRegistryService().decide("pentest.nmap").mode == "strict"
     monkeypatch.setenv(svc.ENV_MODE, "bogus")
-    with pytest.raises(ToolServiceError):
-        ToolRegistryService()
+    assert ToolRegistryService().mode == "strict"                  # unrecognised env value fails closed (T-03379)
     monkeypatch.delenv(svc.ENV_MODE)
     assert ToolRegistryService().decide("pentest.nmap").mode == "shadow"
 
@@ -105,7 +104,13 @@ def test_stats_are_bounded(monkeypatch):
     assert all(len(h) == 12 and "unknown" not in h for h in st["unregistered_samples"])   # hashed, not raw
 
 
-def test_report_writes_one_masked_stderr_line(capsys):
+@pytest.fixture
+def fresh_reports(monkeypatch):
+    monkeypatch.setattr(svc, "_REPORTED", set())
+    monkeypatch.setattr(svc, "_REPORT_STATE", {"lines": 0, "suppressed": 0})
+
+
+def test_report_writes_one_masked_stderr_line(capsys, fresh_reports):
     d = S.decide("pentest.tshark", "/tmp/c")
     svc.report(d, "aios.x.sk-" + "a" * 30, surface="dispatch")
     err = capsys.readouterr().err.strip().splitlines()

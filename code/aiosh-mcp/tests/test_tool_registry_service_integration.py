@@ -18,6 +18,9 @@ from aiosh_mcp.agent_loop_policy import evaluate_step
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("AIOSH_HOME", str(tmp_path))
     monkeypatch.setattr(trs, "_SERVICE", None)              # fresh singleton per test (mode is read at build)
+    monkeypatch.setattr(trs, "_SERVICE_ERROR", None)
+    monkeypatch.setattr(trs, "_REPORTED", set())
+    monkeypatch.setattr(trs, "_REPORT_STATE", {"lines": 0, "suppressed": 0})
     return tmp_path
 
 

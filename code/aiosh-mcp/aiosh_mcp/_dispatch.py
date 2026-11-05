@@ -116,13 +116,16 @@ def _registry_require_grant(tool: str, target: Any, require_grant: bool) -> bool
         decision = svc.decide(tool, target, require_grant=require_grant)
         trs.report(decision, tool, surface="dispatch")
         return bool(require_grant or svc.enforcement(decision).get("requires_grant"))
-    except Exception as exc:  # a broken catalog or bad mode must not break dispatch: legacy rules still apply
+    except Exception as exc:
+        # A broken registry must not break dispatch. In shadow the legacy rules still apply; if strict was
+        # asked for, fail closed (require a grant) instead of silently dropping it (T-03379 #2).
+        from . import tool_registry_service as trs
+        strict = trs.intended_mode() == "strict"
         if not _REGISTRY_FAILURE_LOGGED:
             _REGISTRY_FAILURE_LOGGED = True
-            import sys
-            print(f"aiosh-mcp: tool registry unavailable in dispatch ({type(exc).__name__}); legacy rules only",
-                  file=sys.stderr)
-        return require_grant
+            trs._stderr_line(f"aiosh-mcp: tool registry unavailable in dispatch ({type(exc).__name__}); "
+                             f"{'strict: grants required' if strict else 'legacy rules only'}")
+        return True if strict else require_grant
 
 
 def dispatch(

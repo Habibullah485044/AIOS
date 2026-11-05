@@ -27,7 +27,6 @@ def test_result_envelope():
     assert r.to_dict() == {"ok": True, "subcommand": "list", "data": {"count": 0}, "error_code": None, "error": None}
 
 
-def test_stubs_fail_loudly():
-    for call in (lambda: cli.dispatch_cli(["list"]), lambda: cli.main(["list"])):
-        with pytest.raises(NotImplementedError, match="T-03386"):
-            call()
+def test_scaffold_stubs_are_implemented():
+    """The T-03385 stubs raised NotImplementedError; T-03386 implemented them."""
+    assert cli.dispatch_cli(["list"]).exit_code == 0

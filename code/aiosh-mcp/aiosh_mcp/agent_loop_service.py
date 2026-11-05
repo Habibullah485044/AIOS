@@ -23,6 +23,7 @@ import secrets
 import re
 import threading
 import time
+import logging
 from typing import Any, Dict, List, Optional, Protocol
 
 from aiosh_mcp.agent_loop_data_model import (
@@ -36,6 +37,7 @@ from aiosh_mcp.agent_loop_data_model import (
     MAX_ARGS_SUMMARY_BYTES,
     MAX_REGISTRY_CAPACITY,
 )
+from aiosh_mcp.agent_loop_observability import log_event
 from aiosh_mcp.agent_loop_gate import BudgetExhausted, CapabilityRefused, LoopIdTaken, PepCapabilityGate
 from aiosh_mcp.agent_loop_policy import (
     LOOPPOL_ERR_IRREVERSIBLE_BUDGET,
@@ -110,6 +112,9 @@ class AgentLoopService:
         self._grants: Dict[str, str] = {}
         #: Random per-run id stamped on every audit row of a loop (audit finding #2).
         self._runs: Dict[str, str] = {}
+        #: Monotonic in-process counters since construction (T-03336, spec T-03334 §3).
+        self._counters: Dict[str, int] = {k: 0 for k in (
+            "steps_ok", "steps_refused", "audit_failures", "gate_unavailable", "budget_refusals")}
 
     @staticmethod
     def _require_token(capability_token: str, loop_id: Optional[str], action: str) -> str:
@@ -156,6 +161,9 @@ class AgentLoopService:
         except BudgetExhausted:
             raise
         except Exception as exc:
+            self._counters["audit_failures"] += 1
+            log_event("audit_failure", snap.loop_id, self._runs.get(snap.loop_id), "error",
+                      reason=f"{event}: {type(exc).__name__}", level=logging.WARNING)
             if not snap.is_terminated:
                 snap.transition_to(LoopState.ABORTED,
                                    terminal_reason=f"{LOOPSERV_ERR_AUDIT}: audit write failed for '{event}'")
@@ -275,6 +283,7 @@ class AgentLoopService:
             self._start_times[config.loop_id] = time.time()
             self._grants[config.loop_id] = token
             self._runs[config.loop_id] = run_id
+            log_event("start", config.loop_id, run_id, "ok")
             return snap
 
     def run_id(self, loop_id: str) -> str:
@@ -294,15 +303,16 @@ class AgentLoopService:
         capability_token: str = "",
     ) -> LoopStepRecord:
         """Advances agent loop through FSM: EVALUATE_POLICY -> EXECUTE_TOOL -> RECORD_STEP."""
+        t0 = time.perf_counter()
         token = self._require_token(capability_token, loop_id, "advance")
         self._validate_turn_input(loop_id, action_intent, tool_name, tokens_consumed)
         self._validate_tool_args(loop_id, tool_name, tool_args)
         with self._lock:
-            return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed)
+            return self._advance_locked(loop_id, token, tool_name, tool_args, tokens_consumed, policy_allowed, t0)
 
     def _advance_locked(self, loop_id: str, token: str, tool_name: Optional[str],
                         tool_args: Optional[Dict[str, Any]], tokens_consumed: int,
-                        policy_allowed: bool) -> LoopStepRecord:
+                        policy_allowed: bool, t0: Optional[float] = None) -> LoopStepRecord:
         snap = self._require_loop(loop_id)
         grant_id = self._require_binding(loop_id, token)
 
@@ -322,6 +332,7 @@ class AgentLoopService:
                     terminal_reason=f"{LOOPSERV_ERR_TIMEOUT}: total timeout ({config.total_timeout_ms}ms) exceeded",
                 )
                 self._audit_or_terminate(snap, "timeout", grant_id, "error", detail=snap.terminal_reason)
+                log_event("timeout", loop_id, self._runs.get(loop_id), "error", level=logging.WARNING)
                 raise AgentLoopServiceError(
                     LOOPSERV_ERR_TIMEOUT,
                     f"Total timeout exceeded for loop '{loop_id}'",
@@ -374,6 +385,10 @@ class AgentLoopService:
         args_str = str(tool_args or {})
         start_state = LoopState.EVALUATE_POLICY
 
+        def measured() -> float:
+            """Wall time from turn entry to recording (T-03336; replaces fabricated 5/15 ms constants)."""
+            return round((time.perf_counter() - (t0 if t0 is not None else time.perf_counter())) * 1000.0, 3)
+
         if refusal is None:
             # Policy allowed: proceed to tool execution
             snap.transition_to(LoopState.EXECUTE_TOOL)
@@ -386,11 +401,11 @@ class AgentLoopService:
                 tool_args_summary=args_str,
                 outcome="ok",
                 tokens_consumed=tokens_consumed,
-                duration_ms=15.0,
+                duration_ms=measured(),
                 policy=step_policy,
             )
             row_args = {"step_index": step.step_index, "tool_name": tool_name,
-                        "tool_args": step.tool_args_summary, **policy_args}
+                        "tool_args": step.tool_args_summary, "duration_ms": step.duration_ms, **policy_args}
             guarded = policy.irreversible and budget is not None
             try:
                 if guarded:
@@ -401,10 +416,14 @@ class AgentLoopService:
                 if not guarded:
                     self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
                                              classification=policy.classification)
+                self._counters["steps_ok"] += 1
+                log_event("step", loop_id, self._runs.get(loop_id), "ok")
                 if not snap.is_terminated:
                     snap.transition_to(LoopState.OBSERVE)
                 return step
             except BudgetExhausted as exc:
+                log_event("budget_race", loop_id, self._runs.get(loop_id), "refused",
+                          reason=f"used {exc.used} of {exc.budget}", level=logging.WARNING)
                 # Another loop or process spent the last unit between our check and the write.
                 refusal = f"{LOOPPOL_ERR_IRREVERSIBLE_BUDGET}: used {exc.used} of {exc.budget}"
                 policy_args["irreversible_used"] = exc.used
@@ -419,15 +438,23 @@ class AgentLoopService:
             tool_args_summary=args_str,
             outcome="refused",
             tokens_consumed=tokens_consumed,
-            duration_ms=5.0,
+            duration_ms=measured(),
             error_message=f"{LOOPSERV_ERR_POLICY_REFUSED}: Policy evaluation refused tool invocation: {refusal}",
             policy=step_policy,
         )
         snap.record_step(step, config)
         self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
                                  args={"step_index": step.step_index, "tool_name": tool_name,
-                                       "tool_args": step.tool_args_summary, **policy_args},
+                                       "tool_args": step.tool_args_summary, "duration_ms": step.duration_ms,
+                                       **policy_args},
                                  classification=policy.classification)
+        self._counters["steps_refused"] += 1
+        if "GATE_UNAVAILABLE" in refusal:
+            self._counters["gate_unavailable"] += 1
+            log_event("gate_unavailable", loop_id, self._runs.get(loop_id), "refused", level=logging.WARNING)
+        if refusal.startswith(LOOPPOL_ERR_IRREVERSIBLE_BUDGET):
+            self._counters["budget_refusals"] += 1
+        log_event("step", loop_id, self._runs.get(loop_id), "refused", reason=refusal.split(":", 1)[0])
         if not snap.is_terminated:
             snap.transition_to(LoopState.OBSERVE)
         return step
@@ -447,6 +474,7 @@ class AgentLoopService:
 
             snap.transition_to(LoopState.ABORTED, terminal_reason=reason)
             self._audit_or_terminate(snap, "abort", grant_id, "ok", detail=snap.terminal_reason)
+            log_event("abort", loop_id, self._runs.get(loop_id), "ok")
             return snap
 
     def complete_loop(self, loop_id: str, capability_token: str = "") -> LoopSnapshot:
@@ -469,6 +497,7 @@ class AgentLoopService:
                 snap.transition_to(LoopState.ABORTED, terminal_reason=(
                     f"{LOOPSERV_ERR_TIMEOUT}: total timeout ({config.total_timeout_ms}ms) exceeded"))
                 self._audit_or_terminate(snap, "timeout", grant_id, "error", detail=snap.terminal_reason)
+                log_event("timeout", loop_id, self._runs.get(loop_id), "error", level=logging.WARNING)
                 raise AgentLoopServiceError(LOOPSERV_ERR_TIMEOUT, f"Total timeout exceeded for loop '{loop_id}'",
                                             loop_id)
             try:
@@ -479,6 +508,7 @@ class AgentLoopService:
                 raise AgentLoopServiceError(LOOPSERV_ERR_UNAUTHORIZED, f"cannot complete: {refusal}", loop_id)
             snap.transition_to(LoopState.COMPLETED, terminal_reason="completed")
             self._audit_or_terminate(snap, "complete", grant_id, "ok")
+            log_event("complete", loop_id, self._runs.get(loop_id), "ok")
             return snap
 
     def get_snapshot(self, loop_id: str) -> LoopSnapshot:
@@ -487,8 +517,11 @@ class AgentLoopService:
             return self._require_loop(loop_id)
 
     def stats(self) -> Dict[str, Any]:
-        """Live gauges and counters since construction (T-03335 scaffold, spec T-03334 §3)."""
-        raise NotImplementedError("T-03336: AgentLoopService.stats")
+        """Live gauges and counters since construction (spec T-03334 §3)."""
+        with self._lock:
+            active = sum(1 for s in self._loops.values() if not s.is_terminated)
+            return {"active_loops": active, "terminated_loops": len(self._loops) - active,
+                    "capacity": self._capacity, "counters": dict(self._counters)}
 
     def list_active_loops(self) -> List[LoopSnapshot]:
         """Lists active non-terminated loops in memory."""

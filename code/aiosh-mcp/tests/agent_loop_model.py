@@ -118,7 +118,10 @@ class LoopModel:
             if self.grants[loop.grant]["revoked"]:
                 return Expectation("LOOPSERV_ERR_UNAUTHORIZED")
             return Expectation(None, ("aios.agent_loop.complete",))
-        return Expectation(None, ("aios.agent_loop.step",))  # advance: ok or refused, one row either way
+        rows = ("aios.agent_loop.step",)                       # advance: ok or refused, one row either way
+        if loop.iteration + 1 >= loop.max_iter:                 # ...plus the breaker's terminal row (T-03356)
+            rows += ("aios.agent_loop.failed",)
+        return Expectation(None, rows)
 
     def expected_step_outcome(self, op: Op) -> str:
         a = op.args

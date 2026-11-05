@@ -335,9 +335,12 @@ Example:
 python -m aiosh_mcp.agent_loop_cli doc --section config
 ```
 ```
-== config ==
-default_max_iterations               25         [1..100]  AIOSH_AGENT_LOOP_MAX_ITERATIONS
-default_max_total_tokens             32768      [100..1000000]  AIOSH_AGENT_LOOP_MAX_TOTAL_TOKENS
+== config ==
+
+default_max_iterations               25         [1..100]  AIOSH_AGENT_LOOP_MAX_ITERATIONS
+
+default_max_total_tokens             32768      [100..1000000]  AIOSH_AGENT_LOOP_MAX_TOTAL_TOKENS
+
 default_timeout_ms_per_step          30000.0    [1000.0..120000.0]  AIOSH_AGENT_LOOP_TIMEOUT_MS_PER_STEP
 ...
 ```
@@ -364,6 +367,7 @@ Every `*_ERR_*` constant must also have a meaning in `agent_loop_doc.ERROR_MEANI
 | `LOOPSERV_ERR_GATE_UNAVAILABLE` | Grant DB unreachable; fails closed |
 | `LOOPDATA_ERR_BOUNDS_EXCEEDED` | `LoopConfig` out of range or bad `loop_id` (`^[a-zA-Z0-9_-]{8,64}$`) |
 | `LOOPPOL_ERR_CONSTITUTION` / `LOOPPOL_ERR_IRREVERSIBLE_BUDGET` / `LOOPPOL_ERR_TARGET` | Step refused by P2 / P4 / a non-string target value (appears in `step.error_message`; the call itself succeeds) |
+| `LOOPREC_ERR_READ` | Recovery / ring validation: the audit DB is unreadable |
 | `LOOPOBS_ERR_READ` | Metrics: the audit DB is unreadable, or the metrics query exceeded its 10 s budget |
 | `LOOPMCP_ERR_TIMEOUT` | MCP call exceeded 15 s. For mutating tools the outcome is **unknown**, so check `snapshot`/`history` before retrying |
 | `LOOPMCP_ERR_AUDIT_READ` | `history`: the audit DB exists but is corrupt or unreadable |

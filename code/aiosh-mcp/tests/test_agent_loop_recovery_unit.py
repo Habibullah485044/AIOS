@@ -38,6 +38,17 @@ def db(tmp_path):
     return str(tmp_path / "audit.db")
 
 
+@pytest.fixture
+def aged(monkeypatch):
+    """Moves recovery's clock past the maximum run timeout (T-03359: a run is only orphaned once it
+    can no longer legitimately step), while staying inside a 3600 s grace."""
+    import datetime as _dt
+    from aiosh_mcp import agent_loop_recovery as _rec
+    later = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=_rec.MAX_TOTAL_TIMEOUT_S + 100)
+    monkeypatch.setattr(_rec, "_now", lambda: later)
+    return later
+
+
 def kinds(r):
     return sorted({p["kind"] for p in r["problems"]})
 
@@ -70,7 +81,7 @@ def test_budget_exceeded(db):
     assert kinds(r) == ["budget_exceeded"] and "gr_budget" not in json.dumps(r)    # grant hashed
 
 
-def test_grace_boundary_and_untrusted_rows(db):
+def test_grace_boundary_and_untrusted_rows(db, aged):
     run(db, "r1", terminal=None)
     run(db, "r9", terminal=None, loop_id="loop-u-09", actor="agent:forger")     # untrusted: ignored entirely
     assert rec.validate_ring(db, grace_s=10_000)["orphaned"] == []
@@ -84,15 +95,14 @@ def test_legacy_rows_without_run_id_are_skipped(db):
     assert rec.validate_ring(db, grace_s=0)["runs"] == 0
 
 
-def test_listing_is_capped(db, monkeypatch):
-    monkeypatch.setattr(rec, "MAX_LISTED_RUNS", 3)
+def test_listing_is_capped(db, aged):
     for i in range(5):
         run(db, f"r{i}", steps=0, terminal=None, loop_id=f"loop-u-{i:02d}")
-    r = rec.validate_ring(db, grace_s=0)
+    r = rec.validate_ring(db, grace_s=0, max_listed=3)
     assert len(r["orphaned"]) == 3 and r["truncated"] is True
 
 
-def test_concurrent_recoveries_close_each_run_once(db):
+def test_concurrent_recoveries_close_each_run_once(db, aged):
     for i in range(4):
         run(db, f"r{i}", steps=1, terminal=None, loop_id=f"loop-u-{i:02d}")
     mint_grant(db, "gr_rec_1", tools=["aios.agent_loop.recover"])
@@ -117,7 +127,7 @@ def test_concurrent_recoveries_close_each_run_once(db):
     assert n == 4 and rec.validate_ring(db, grace_s=0)["ok"] is True
 
 
-def test_replayed_recovery_grant_refused(db):
+def test_replayed_recovery_grant_refused(db, aged):
     run(db, "r1", terminal=None)
     mint_grant(db, "gr_once", tools=["aios.agent_loop.recover"])
     rec.recover_orphans(db, "gr_once", grace_s=0)

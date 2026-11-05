@@ -38,6 +38,10 @@ class LoopIdTaken(Exception):
     """A start/init row for this loop_id already exists in the audit ring."""
 
 
+class RunRecovered(Exception):
+    """The run was closed by recovery; its process must stop writing (T-03359 #1, defence in depth)."""
+
+
 class BudgetExhausted(Exception):
     """The grant's max_irreversible budget was spent when the ok row was about to be written (T-03330)."""
 
@@ -182,10 +186,17 @@ class PepCapabilityGate:
                 if self._claimed(conn, loop_id):
                     conn.rollback()
                     raise LoopIdTaken(f"loop_id '{loop_id}' was already started")
-            elif budget_guard is not None:
+            else:
+                conn.execute("BEGIN IMMEDIATE")
+                run_id = (args or {}).get("run_id")
+                if run_id and conn.execute(
+                        "SELECT 1 FROM audit_ring WHERE tool = 'aios.agent_loop.recovered' "
+                        "AND json_extract(args_json, '$.run_id') = ? LIMIT 1", (str(run_id),)).fetchone():
+                    conn.rollback()
+                    raise RunRecovered(f"run {run_id} was closed by recovery")
+            if budget_guard is not None:
                 # Re-check the per-grant budget and write the ok row under one write lock (T-03330),
                 # so concurrent processes sharing a multi-use grant cannot overspend it.
-                conn.execute("BEGIN IMMEDIATE")
                 used = int(conn.execute(_IRREVERSIBLE_USED_SQL, (grant_id,)).fetchone()[0])
                 if used >= budget_guard:
                     conn.rollback()

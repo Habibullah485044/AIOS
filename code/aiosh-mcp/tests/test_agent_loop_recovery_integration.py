@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -24,10 +25,11 @@ async def test_crash_detect_recover_end_to_end(tmp_path, monkeypatch):
     mint_grant(db, "gr_xrun", tools=["aios.agent_loop.start", "aios.fs.*"])
     mint_grant(db, "gr_xrecover", tools=["aios.agent_loop.recover"])
     crashed = AgentLoopService(gate=PepCapabilityGate(db))          # "another process" that dies mid-loop
-    crashed.start_loop(LoopConfig(loop_id="loop-xrec-01"), capability_token="gr_xrun")
+    crashed.start_loop(LoopConfig(loop_id="loop-xrec-01", total_timeout_ms=5000), capability_token="gr_xrun")
     crashed.advance_turn("loop-xrec-01", "x", tool_name="aios.fs.read", tool_args={"path": "a"},
                          capability_token="gr_xrun")
     del crashed
+    time.sleep(6.2)     # T-03359: a run is orphaned only once its own total timeout (5 s) has passed
 
     params = StdioServerParameters(command=sys.executable, args=["-m", "aiosh_mcp.server"], cwd=str(PKG_ROOT),
                                    env=dict(os.environ, AIOSH_HOME=str(tmp_path)))
@@ -54,6 +56,10 @@ async def test_crash_detect_recover_end_to_end(tmp_path, monkeypatch):
     assert after["ok"] is True and health_after == "ok"
 
     assert dispatch_cli(["validate-ring", "--grace", "0"], db_path=db).exit_code == EXIT_SUCCESS
+    from aiosh_mcp import agent_loop_recovery as rec
+    import datetime as dt
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=rec.MAX_TOTAL_TIMEOUT_S + 100)
+    monkeypatch.setattr(rec, "_now", lambda: later)
     # A second crash, recovered through the CLI with the token from the environment.
     s = AgentLoopService(gate=PepCapabilityGate(db))
     mint_grant(db, "gr_xrun2", tools=["aios.agent_loop.start"])
@@ -75,6 +81,9 @@ def test_metrics_health_degrades_on_orphans_past_grace(tmp_path, monkeypatch):
     s = AgentLoopService(gate=PepCapabilityGate(db))
     s.start_loop(LoopConfig(loop_id="loop-xrec-h1"), capability_token="gr_hrun")
     del s
+    import datetime as dt
+    later = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=rec.MAX_TOTAL_TIMEOUT_S + 100)
+    monkeypatch.setattr(rec, "_now", lambda: later)
     ring = ring_metrics(db)
     ring["orphaned_runs"] = len(rec.validate_ring(db, 0)["orphaned"])
     assert ring["orphaned_runs"] == 1 and health(ring) == "degraded"

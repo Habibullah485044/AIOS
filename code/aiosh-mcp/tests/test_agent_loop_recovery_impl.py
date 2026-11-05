@@ -20,6 +20,17 @@ def db(tmp_path):
     return path
 
 
+@pytest.fixture
+def aged(monkeypatch):
+    """Moves recovery's clock past the maximum run timeout (T-03359: a run is only orphaned once it
+    can no longer legitimately step), while staying inside a 3600 s grace."""
+    import datetime as _dt
+    from aiosh_mcp import agent_loop_recovery as _rec
+    later = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=_rec.MAX_TOTAL_TIMEOUT_S + 100)
+    monkeypatch.setattr(_rec, "_now", lambda: later)
+    return later
+
+
 def crash_run(db, gid, lid, steps=2):
     s = AgentLoopService(gate=PepCapabilityGate(db))
     s.start_loop(LoopConfig(loop_id=lid), capability_token=gid)
@@ -33,11 +44,11 @@ def test_clean_ring_validates(db):
     s.start_loop(LoopConfig(loop_id="loop-rec-clean"), capability_token="gr_rec_a")
     s.advance_turn("loop-rec-clean", "x", capability_token="gr_rec_a")
     s.complete_loop("loop-rec-clean", capability_token="gr_rec_a")
-    r = rec.validate_ring(db)
+    r = rec.validate_ring(db, verify_chain=True)
     assert (r["runs"], r["open"], r["orphaned"], r["problems"], r["chain_ok"], r["ok"]) == (1, 0, [], [], True, True)
 
 
-def test_orphan_detected_after_grace_and_recovered_once(db):
+def test_orphan_detected_after_grace_and_recovered_once(db, aged):
     run_id = crash_run(db, "gr_rec_a", "loop-rec-crash")
     assert rec.validate_ring(db, grace_s=3600)["orphaned"] == []          # within grace: just open
     r = rec.validate_ring(db, grace_s=0)
@@ -50,7 +61,7 @@ def test_orphan_detected_after_grace_and_recovered_once(db):
     assert after["orphaned"] == [] and after["ok"] is True                 # LOOPREC-INV1
 
 
-def test_recovery_requires_a_scoped_grant(db):
+def test_recovery_requires_a_scoped_grant(db, aged):
     crash_run(db, "gr_rec_a", "loop-rec-auth")
     for token in ("", "forged", "gr_rec_b"):                               # gr_rec_b lacks aios.agent_loop.recover
         with pytest.raises(rec.RecoveryError) as exc:
@@ -74,12 +85,12 @@ def test_breaker_writes_failed_terminal_row(db):
     assert rec.validate_ring(db, grace_s=0)["ok"] is True                  # not mistaken for an orphan
 
 
-def test_tampered_ring_reports_problems(db):
+def test_tampered_ring_reports_problems(db, aged):
     run_id = crash_run(db, "gr_rec_a", "loop-rec-tamper", steps=3)
     conn = sqlite3.connect(db)
     conn.execute("DELETE FROM audit_ring WHERE tool='aios.agent_loop.step' AND json_extract(args_json,'$.step_index')='1'")
     conn.commit()
-    r = rec.validate_ring(db, grace_s=0)
+    r = rec.validate_ring(db, grace_s=0, verify_chain=True)
     kinds = {p["kind"] for p in r["problems"]}
     assert "step_index_gap" in kinds and r["chain_ok"] is False and r["ok"] is False
 

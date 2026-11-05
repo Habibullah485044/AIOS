@@ -288,14 +288,15 @@ def register_agent_loop_mcp_tools(
         return await _run(work, False, timeout_s, metrics_limiter)
 
     @mcp_app.tool(name="aios_agent_loop_validate", annotations=TOOL_ANNOTATIONS["aios_agent_loop_validate"])
-    async def aios_agent_loop_validate(grace_s: Annotated[float, Field(ge=0, le=86400 * 30)] = 900) -> dict:
+    async def aios_agent_loop_validate(grace_s: Annotated[float, Field(ge=0, le=86400 * 30)] = 900,
+                                       verify_chain: bool = False) -> dict:
         """Validates every loop run in the audit ring (T-03358): orphaned runs (no terminal row, older than
         grace_s, not live here), structural problems, and chain verification. Read-only, no token."""
         from aiosh_mcp.agent_loop_recovery import RecoveryError, validate_ring
 
         def work() -> Dict[str, Any]:
             try:
-                return _ok(validate_ring(db_path, grace_s, svc().live_run_ids()))
+                return _ok(validate_ring(db_path, grace_s, svc().live_run_ids(), verify_chain=verify_chain))
             except RecoveryError as exc:
                 return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code).to_dict()
         return await _run(work, False, timeout_s, metrics_limiter)

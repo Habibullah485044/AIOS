@@ -16,6 +16,7 @@
 
 import Database from "better-sqlite3";
 import { createHash, randomBytes } from "node:crypto";
+import { BlockList, isIP } from "node:net";
 import { canonicalJson, AuditRing } from "./audit.js";
 import type { PepGrant, GrantScope, RedeemResult } from "./types.js";
 
@@ -41,6 +42,37 @@ export function toolGlobMatch(tool: string, globs: string[]): boolean {
     }
   }
   return false;
+}
+
+/** Network-scope check, mirroring Python `audit_client.network_allowed` and Rust `pep::network_allowed`.
+ *  CIDR entries match IP targets; hostname entries match exactly. An empty scope allows (legacy paths apply). */
+export function networkAllowed(target: string | undefined, networks: string[] | undefined): boolean {
+  const allowed = networks ?? [];
+  if (allowed.length === 0) return true;
+  if (target === undefined) return false;
+  const family = isIP(target);
+  if (family === 0) return allowed.includes(target);          // hostname: exact match only
+  const type = family === 4 ? "ipv4" : "ipv6";
+  for (const item of allowed) {
+    if (item === target) return true;
+    const slash = item.indexOf("/");
+    const addr = slash < 0 ? item : item.slice(0, slash);
+    const fam = isIP(addr);
+    if (fam !== family) continue;                               // a v4 network never contains a v6 target
+    const max = fam === 4 ? 32 : 128;
+    const prefix = slash < 0 ? String(max) : item.slice(slash + 1);
+    if (!/^\d{1,3}$/.test(prefix) || Number(prefix) > max) continue;   // malformed entry: matches nothing
+    const bits = Number(prefix);
+    const list = new BlockList();
+    list.addSubnet(addr, bits, type);
+    if (list.check(target, type)) return true;
+  }
+  return false;
+}
+
+/** True for tools whose target is a network address (scope.networks applies when set). */
+export function isNetworkTool(tool: string): boolean {
+  return tool.startsWith("pentest.") || tool.startsWith("network.");
 }
 
 /** Path-based allow/deny check. Deny always wins over allow. */
@@ -250,7 +282,15 @@ export class PepStore {
         reason: `tool '${tool}' not in grant scope.tools=${JSON.stringify(g.scope.tools)}`,
       };
     }
-    if (target && !pathAllowed(target, g.scope.paths)) {
+    // Network targets use scope.networks when set; paths otherwise (as Python grant_check / Rust pep).
+    // Before this fix the TS PEP ignored scope.networks, so a pentest grant for 10.0.0.0/8 also
+    // authorised any other host (T-03363 research follow-up).
+    const networks = g.scope.networks ?? [];
+    if (target && isNetworkTool(tool) && networks.length > 0) {
+      if (!networkAllowed(target, networks)) {
+        return { ok: false, reason: `target '${target}' blocked by grant scope.networks` };
+      }
+    } else if (target && !pathAllowed(target, g.scope.paths)) {
       return { ok: false, reason: `target '${target}' blocked by grant scope.paths` };
     }
     return { ok: true };

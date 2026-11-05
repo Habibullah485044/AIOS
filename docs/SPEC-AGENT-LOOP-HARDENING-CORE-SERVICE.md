@@ -355,12 +355,76 @@ Every `*_ERR_*` constant must also have a meaning in `agent_loop_doc.ERROR_MEANI
 ## 5d. Recovery & validation (T-03353..T-03362)
 
 Loop state is in-memory. A process that dies mid-loop leaves an **orphaned run**: a `start` row and steps, but no terminal row.
-- `aios_agent_loop_validate(grace_s=900)` / `python -m aiosh_mcp.agent_loop_cli validate-ring [--grace S] [--json]` (read-only).
-  It reports orphaned runs and structural problems, and checks the chain. The CLI exits 1 when anything is wrong.
-- `aios_agent_loop_recover(capability_token, grace_s=900)` / `python -m aiosh_mcp.agent_loop_cli recover --token-env VAR [--grace S]`.
-  It redeems a grant scoped to `aios.agent_loop.recover`, then closes each orphan with exactly one `aios.agent_loop.recovered` row.
-  It is idempotent and never touches runs the server still holds.
-- Breaker terminations write an `aios.agent_loop.failed` row, so they are not mistaken for orphans. `metrics` reports `orphaned_runs`, and health is `degraded` while any exist.
+Validation rebuilds every run from the audit ring (rows written by the agent-loop actor, grouped by `run_id`) and reports problems.
+Recovery closes orphans honestly with one `aios.agent_loop.recovered` row each.
+
+**When is a run orphaned?** All three must hold (T-03359):
+1. it is not held live by the server answering the call;
+2. it has been idle (no row) for longer than `grace_s` (default 900 s);
+3. it started longer ago than **its own `total_timeout_ms`** (from its start row, clamped to the LoopConfig range 5 s..1800 s) plus 1 s.
+   After that no process can still legitimately step it, so a slow loop in *another* process is never closed.
+
+**Validate (read-only, no token):**
+- MCP: `aios_agent_loop_validate(grace_s=900, verify_chain=false)`.
+- CLI: `python -m aiosh_mcp.agent_loop_cli validate-ring [--grace S] [--chain] [--json]`. It exits 1 when anything is wrong.
+- It scans the newest 50 000 agent-loop rows within a 10 s budget. The full hash-chain check is opt-in (`verify_chain` / `--chain`),
+  because it is the expensive part. `chain_ok` is `null` when it was not checked.
+- Problem kinds: `rows_after_terminal`, `duplicate_start`, `step_index_gap`, `run_id_mixed`, `budget_exceeded`, `budget_invalid`, `missing_start`.
+  Grant ids in problems are shown as a 12-character hash.
+
+**Recover (mutating, needs a grant):**
+- MCP: `aios_agent_loop_recover(capability_token, grace_s=900)`.
+- CLI: `python -m aiosh_mcp.agent_loop_cli recover --token-env VAR [--grace S] [--json]`.
+- The grant must list `aios.agent_loop.recover` **exactly** in `scope.tools`. Globs such as `aios.agent_loop.*` or `aios.*` are refused (T-03359).
+- Recovery is idempotent and safe to run concurrently. Under the write lock it re-checks each run: if a terminal row appeared,
+  or *any* row was written for the run since validation, the run is alive and is skipped.
+- A process whose run was closed by recovery is stopped. Its next audited call fails with `LOOPSERV_ERR_TERMINATED`, and it writes nothing more.
+- Failures are explicit (T-03360). A failed write returns `LOOPREC_ERR_WRITE` with the runs already closed in `data.recovered`;
+  the rest are untouched, so re-run recovery. A locked DB waits at most `db_busy_timeout_ms`, and the grant is not consumed.
+
+Breaker terminations write an `aios.agent_loop.failed` row, so they are not mistaken for orphans. `metrics` reports `orphaned_runs`, and health is `degraded` while any exist.
+
+Runnable example (it takes about 6 s, because the run must outlive its 5 s total timeout):
+```python
+import datetime as dt, json, os, tempfile, time
+from contextlib import closing
+os.environ["AIOSH_HOME"] = tempfile.mkdtemp()          # isolated audit DB for the demo
+from aiosh_mcp import audit_client
+from aiosh_mcp.agent_loop_data_model import LoopConfig
+from aiosh_mcp.agent_loop_recovery import recover_orphans, validate_ring
+from aiosh_mcp.agent_loop_service import AgentLoopService
+
+now = dt.datetime.now(dt.timezone.utc)
+with closing(audit_client.open_db()) as conn:           # stand-ins for `aiosh grant create`
+    audit_client.ensure_pep_schema(conn)
+    for gid, tools in (("gr_rec_demo_run", ["aios.agent_loop.start"]), ("gr_rec_demo_fix", ["aios.agent_loop.recover"])):
+        conn.execute("INSERT INTO pep_grants (grant_id, issued_at, expires_at, issued_to, constitution_rev,"
+                     " scope_json, scope_hash, single_use) VALUES (?,?,?,?,?,?,?,1)",
+                     (gid, now.isoformat(), (now + dt.timedelta(minutes=15)).isoformat(), "agent:planner",
+                      "rev-demo", json.dumps({"tools": tools}), "h"))
+    conn.commit()
+
+crashed = AgentLoopService()                             # a process that dies mid-loop
+crashed.start_loop(LoopConfig(loop_id="loop-rec-demo-01", total_timeout_ms=5000), capability_token="gr_rec_demo_run")
+del crashed
+print(len(validate_ring(grace_s=0)["orphaned"]))         # -> 0: it could still be running elsewhere
+time.sleep(6)                                            # now past its own total timeout
+print(len(validate_ring(grace_s=0)["orphaned"]))         # -> 1
+print(len(recover_orphans(None, "gr_rec_demo_fix", grace_s=0)["recovered"]))   # -> 1
+print(validate_ring(grace_s=0, verify_chain=True)["ok"])                       # -> True
+```
+
+The same recovery as an MCP tool call:
+```json
+{"name": "aios_agent_loop_recover", "arguments": {"capability_token": "gr_rec_demo_fix", "grace_s": 0}}
+```
+
+Recovery limitations:
+- **Bounded by the total timeout.** A crashed run is only recoverable once its `total_timeout_ms` (up to 30 min) has passed. There is no heartbeat yet that would allow a shorter bound.
+- **Window.** Validation looks at the newest 50 000 agent-loop rows. An older open run outside the window is not reported.
+- **Chain check cost.** `verify_chain` still walks the whole ring. It is opt-in for that reason, and the 10 s budget applies.
+- **Server-local liveness.** "Live" means held by the server answering the call. Other processes are protected by the timeout rule and the newest-row re-check, not by a registry.
+- **Grant consumption.** A single-use recovery grant is consumed even when there was nothing to recover.
 
 ## 6. Error codes
 
@@ -457,6 +521,7 @@ Testing limitations:
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03353..T-03360 recovery & validation: [research](tasks/evidence/T-03353-research.md), [spec](tasks/evidence/T-03354-spec.md), [implementation](tasks/evidence/T-03356-recovery-validation-implementation.md), [unit](tasks/evidence/T-03357-recovery-validation-unit-test.md), [integration](tasks/evidence/T-03358-recovery-validation-integration.md), [security](tasks/evidence/T-03359-security.md), [hardening](tasks/evidence/T-03360-recovery-validation-hardening.md)
 - T-03343..T-03350 documentation: [research](tasks/evidence/T-03343-research.md), [spec](tasks/evidence/T-03344-spec.md), [implementation](tasks/evidence/T-03346-documentation-implementation.md), [drift test](tasks/evidence/T-03347-documentation-unit-test.md), [integration](tasks/evidence/T-03348-documentation-integration.md), [security](tasks/evidence/T-03349-security.md), [hardening](tasks/evidence/T-03350-documentation-hardening.md)
 - T-03333..T-03340 observability: [research](tasks/evidence/T-03333-research.md), [spec](tasks/evidence/T-03334-spec.md), [implementation](tasks/evidence/T-03336-observability-implementation.md), [unit](tasks/evidence/T-03337-observability-unit-test.md), [integration](tasks/evidence/T-03338-observability-integration.md), [security](tasks/evidence/T-03339-security.md), [hardening](tasks/evidence/T-03340-observability-hardening.md)
 - T-03323..T-03330 security policy: [research](tasks/evidence/T-03323-research.md), [spec](tasks/evidence/T-03324-spec.md), [implementation](tasks/evidence/T-03326-security-policy-implementation.md), [unit](tasks/evidence/T-03327-security-policy-unit-test.md), [integration](tasks/evidence/T-03328-security-policy-integration.md), [security](tasks/evidence/T-03329-security.md), [hardening](tasks/evidence/T-03330-security-policy-hardening.md)

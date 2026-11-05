@@ -15,7 +15,9 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Annotated, Any, Dict, Iterable, Literal, Mapping, Optional, Tuple
+
+from pydantic import Field
 
 TOOLREG_ERR_INVALID_NAME = "TOOLREG_ERR_INVALID_NAME"
 TOOLREG_ERR_INCONSISTENT = "TOOLREG_ERR_INCONSISTENT"
@@ -275,6 +277,9 @@ _SEED: Tuple[ToolEntry, ...] = (
     # archival rotation: never destroys rows, needs a grant (server.aios_audit_rotate)
     _e("audit.rotate", ("aios_audit_rotate",), "Rotate the audit ring", Category.AUDIT, _A, grant=True),
     # the irreversible names audit_client.grant_check knows
+    # the registry's own read-only MCP tools (T-03368)
+    _e("aios.tool_registry.list", ("aios_tool_registry_list",), "List the tool catalog", Category.MCP_CORE, _R),
+    _e("aios.tool_registry.get", ("aios_tool_registry_get",), "Look up a tool's taxonomy", Category.MCP_CORE, _R),
     _e("fs.write", (), "Write a file", Category.FS_WRITE, _D, irreversible=True, scope=ScopeKind.PATH),
     _e("system.reboot", (), "Reboot the system", Category.SYSTEM, _D, irreversible=True),
     _e("system.shutdown", (), "Shut the system down", Category.SYSTEM, _D, irreversible=True),
@@ -285,3 +290,33 @@ _SEED: Tuple[ToolEntry, ...] = (
 def default_catalog() -> ToolCatalog:
     """The built-in catalog (spec §3). Built once; immutable."""
     return ToolCatalog(_SEED)
+
+
+# ---- MCP surface (T-03368) ------------------------------------------------------------------------------------
+#: The registry's own read-only tools are catalog entries too, so their annotations are derived like any other.
+LIST_TOOL = "aios_tool_registry_list"
+GET_TOOL = "aios_tool_registry_get"
+MAX_QUERY_LEN = 256
+# Module-level argument types: tool signatures are evaluated in module globals (PEP 563 strings).
+CategoryArg = Optional[Literal[tuple(c.value for c in Category)]]  # type: ignore[valid-type]
+NameArg = Annotated[str, Field(min_length=1, max_length=MAX_QUERY_LEN)]
+
+
+def register_tool_registry_tools(mcp_app: Any) -> None:
+    """Registers the read-only catalog tools on ``mcp_app`` (TOOLREG-INV5: no tool can change the catalog)."""
+    catalog = default_catalog()
+
+    @mcp_app.tool(name=LIST_TOOL, annotations=catalog.annotations(LIST_TOOL))
+    def aios_tool_registry_list(category: CategoryArg = None) -> dict:
+        """Lists the trusted tool catalog (canonical name, MCP aliases, category, effect, irreversible,
+        scope kind). Read-only, no token. Optionally filtered by category."""
+        entries = [e.to_dict() for e in catalog.entries() if category is None or e.category.value == category]
+        return {"ok": True, "data": {"schema_version": SCHEMA_VERSION, "count": len(entries), "entries": entries}}
+
+    @mcp_app.tool(name=GET_TOOL, annotations=catalog.annotations(GET_TOOL))
+    def aios_tool_registry_get(name: NameArg) -> dict:
+        """Resolves a canonical or MCP tool name to its taxonomy. An unregistered name returns the
+        fail-closed profile (irreversible, grant required) with registered=false. Read-only, no token."""
+        entry = catalog.resolve(name)
+        profile = entry or unknown_profile(name)
+        return {"ok": True, "data": {"registered": entry is not None, "entry": profile.to_dict()}}

@@ -933,6 +933,10 @@ agent_loop_data_model_mod.register_agent_loop_data_model_tools(mcp)
 from . import agent_loop_service as agent_loop_service_mod
 agent_loop_service_mod.register_agent_loop_service_tools(mcp)
 
+# T-03368: read-only tool catalog (canonical names, aliases, taxonomy).
+from . import tool_registry_data_model as tool_registry_data_model_mod
+tool_registry_data_model_mod.register_tool_registry_tools(mcp)
+
 
 
 

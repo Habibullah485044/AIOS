@@ -203,6 +203,11 @@ SUITES: list[SuiteDef] = [
                  "-k", "agent_loop or audit_chain_concurrency or grant_scope or secret_masking",
                  "code/aiosh-mcp/tests"],
      "timeout_s": RUST_SMOKE_TIMEOUT_S},
+    # T-03368: tool registry & taxonomy (data model, drift checks vs name rules, stdio MCP, TS parity).
+    {"name": "tool_registry",
+     "command": ["python3", "-m", "pytest", "-q", "--no-header", "-p", "no:cacheprovider",
+                 "-k", "tool_registry", "code/aiosh-mcp/tests"],
+     "timeout_s": RUST_SMOKE_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

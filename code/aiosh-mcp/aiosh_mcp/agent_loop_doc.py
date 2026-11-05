@@ -58,9 +58,11 @@ _MODULES = ("agent_loop_data_model", "agent_loop_service", "agent_loop_gate", "a
 
 def _tools() -> List[Dict[str, Any]]:
     from mcp.server.fastmcp import FastMCP
+    from aiosh_mcp.agent_loop_data_model import register_agent_loop_data_model_tools
     from aiosh_mcp.agent_loop_mcp import register_agent_loop_mcp_tools
     app = FastMCP("agent-loop-reference")
     register_agent_loop_mcp_tools(app, settings={})   # settings={}: no config resolution or audit side effects
+    register_agent_loop_data_model_tools(app)         # the legacy init/status tools are served too (T-03348)
     out = []
     for t in sorted(app._tool_manager.list_tools(), key=lambda t: t.name):
         ann = t.annotations.model_dump(exclude_none=True) if t.annotations else {}

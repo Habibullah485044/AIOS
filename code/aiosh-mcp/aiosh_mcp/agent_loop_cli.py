@@ -188,6 +188,10 @@ def _build_parser() -> _Parser:
     r.add_argument("--config", dest="config_file", default=None)
     r.add_argument("--json", action="store_true")
 
+    dc = sub.add_parser("doc", add_help=False)
+    dc.add_argument("--section", choices=("tools", "errors", "config", "cli", "policy"), default=None)
+    dc.add_argument("--json", action="store_true")
+
     mt = sub.add_parser("metrics", add_help=False)
     mt.add_argument("--window", type=int, default=10_000)
     mt.add_argument("--json", action="store_true")
@@ -281,13 +285,16 @@ def dispatch_cli(
     db_path: Optional[str] = None,
 ) -> CliResult:
     """Parses argv and runs one subcommand; never raises."""
-    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config", "metrics"} else "unknown"
+    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config", "metrics", "doc"} else "unknown"
     try:
         if any("\0" in a for a in argv):
             raise _UsageError("argument contains prohibited NUL byte")
         ns = _build_parser().parse_args(argv)
         if ns.subcommand is None:
-            raise _UsageError("expected a subcommand: validate | run | history | config | metrics")
+            raise _UsageError("expected a subcommand: validate | run | history | config | metrics | doc")
+        if ns.subcommand == "doc":
+            from aiosh_mcp.agent_loop_doc import reference
+            return CliResult(EXIT_SUCCESS, "doc", data=reference(ns.section))
         if ns.subcommand == "metrics":
             from aiosh_mcp.agent_loop_observability import ObservabilityReadError, health, ring_metrics
             try:
@@ -335,6 +342,23 @@ def render(result: CliResult, json_mode: bool) -> str:
     if json_mode:
         return mask_secrets(json.dumps(result.to_dict(), sort_keys=True))
     d = result.data or {}
+    if result.subcommand == "doc" and result.exit_code == EXIT_SUCCESS:
+        lines: List[str] = []
+        for name, body in d.items():
+            lines.append(f"== {name} ==")
+            if name == "tools":
+                lines += [f"{t['name']:<28} {'read-only' if t['annotations'].get('readOnlyHint') else 'mutating':<9} "
+                          f"{t['description']}" for t in body]
+            elif name == "errors":
+                lines += [f"{e['code']:<34} {e['meaning']}" for e in body]
+            elif name == "config":
+                lines += [f"{f['key']:<36} {f['default']!s:<10} [{f['min']}..{f['max']}]  {f['env']}" for f in body["fields"]]
+                lines.append("locked: " + ", ".join(body["locked_keys"]))
+            elif name == "cli":
+                lines += [f"{c['subcommand']:<9} {' '.join(c['flags'])}" for c in body]
+            else:
+                lines += [f"{k}: {v}" for k, v in body.items()]
+        return mask_secrets("\n".join(lines))
     if result.subcommand == "metrics" and result.exit_code == EXIT_SUCCESS:
         r, st = d["ring"], d["ring"]["steps"]
         dur = st["duration_ms"]

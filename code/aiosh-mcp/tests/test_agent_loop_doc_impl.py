@@ -16,16 +16,16 @@ from aiosh_mcp.server import mcp
 def test_all_sections_present_and_derived_from_code():
     r = doc.reference()
     assert set(r) == set(doc.SECTIONS)
-    assert {t["name"] for t in r["tools"]} == set(TOOL_ANNOTATIONS)
+    assert {t["name"] for t in r["tools"]} == set(TOOL_ANNOTATIONS) | {"aios_agent_loop_init", "aios_agent_loop_status"}
     assert {e["code"] for e in r["errors"]} == set(doc.ERROR_MEANINGS)
     assert all(e["meaning"] for e in r["errors"])
     assert [f["key"] for f in r["config"]["fields"]] == list(cfg.FIELDS)
-    assert {c["subcommand"] for c in r["cli"]} == {"validate", "run", "history", "config", "metrics"}
+    assert {c["subcommand"] for c in r["cli"]} == {"validate", "run", "history", "config", "metrics", "doc"}
     assert r["policy"]["order"][1] == "P2 constitution classifier"
 
 
 def test_tool_schemas_match_the_live_server():
-    live = {t.name: t.parameters for t in mcp._tool_manager.list_tools() if t.name in TOOL_ANNOTATIONS}
+    live = {t.name: t.parameters for t in mcp._tool_manager.list_tools() if t.name.startswith("aios_agent_loop_")}
     ref = {t["name"]: t["input_schema"] for t in doc.reference("tools")["tools"]}
     assert ref == live
     adv = next(t for t in doc.reference("tools")["tools"] if t["name"] == "aios_agent_loop_advance")

@@ -109,9 +109,64 @@ Errors are `ToolRegistryError(code, message)`. Messages echo names only with con
   path-scoped here, while `grant_check`'s name rule would apply `scope.networks` to them; `aios.scan` is network-scoped
   here, while the name rule treats it as path-scoped.
 
+## 6b. Core service: shadow and strict decisions (T-03373..T-03382)
+Module `code/aiosh-mcp/aiosh_mcp/tool_registry_service.py`. `ToolRegistryService.decide(tool, target, classification,
+require_grant)` returns a `ToolDecision`:
+- `canonical`, `registered`;
+- `requires_grant`: catalog **or** legacy rule **or** caller flag;
+- `irreversible`: catalog **or** name rules **or** classifier C-3;
+- `scope_kinds`: the legacy scope, plus the catalog scope when they differ;
+- `disagreements`: a sorted subset of `unregistered`, `grant`, `irreversible`, `scope`.
+
+It is pure: no I/O, no audit rows, never raises.
+
+It runs inside both production gates:
+- `_dispatch.dispatch`, before the PEP grant gate;
+- `agent_loop_policy.evaluate_step`, for the irreversible budget.
+
+| `AIOSH_TOOL_REGISTRY_MODE` | Behaviour |
+|---|---|
+| unset or empty (default) | **shadow**: enforcement unchanged. Each distinct disagreement is logged once to stderr as a masked JSON line `{"event": "tool_registry.disagreement", ...}`, at most 32 lines per process |
+| `strict` (any case or width) | dispatch also requires a grant when the catalog says so; the agent loop also counts a step irreversible when the catalog says so. **Only ever tightens.** |
+| anything else (e.g. `strct`) | treated as **strict** (fail closed), with one warning naming the value |
+
+If the registry cannot be built, shadow falls back to the legacy rules. If strict was asked for, the gates fail closed instead:
+grant required, step irreversible.
+
+```python
+from aiosh_mcp.tool_registry_service import ToolRegistryService
+
+svc = ToolRegistryService(mode="shadow")
+d = svc.decide("pentest.tshark", "/tmp/capture.pcap")
+print(d.canonical, d.requires_grant, d.irreversible, [s.value for s in d.scope_kinds], list(d.disagreements))
+# -> pentest.tshark True True ['network', 'path'] ['scope']
+print(svc.enforcement(d))
+# -> {}
+print(ToolRegistryService(mode="strict").decide("aios.unknown.tool").requires_grant)
+# -> True
+```
+
+Turn strict on for a server (opt-in):
+```bash
+AIOSH_TOOL_REGISTRY_MODE=strict python -m aiosh_mcp.server
+```
+
+| Code | When |
+|---|---|
+| `TOOLSVC_ERR_MODE` | an explicit invalid `mode=` argument (a programming error; the env path fails closed instead) |
+
+Service limitations:
+- **Strict tightens two things only:** the grant requirement in `dispatch()` and irreversibility in the agent loop. `scope_kinds` is
+  reported, not enforced.
+- **Not every surface goes through the service.** About 45 MCP tools never pass through `dispatch()` (agent-loop, model-backend and MCP-core
+  tools), so strict cannot tighten them. They rely on their own token gates.
+- **The mode is fixed at first use** in a process, like the rest of the process configuration.
+- Expect strict to refuse calls that pass today. Examples: unregistered tool names, and grant-free calls to tools the catalog marks
+  grant-required.
+
 ## 7. Known limitations
-- **Not enforcing yet.** The PEP, the agent-loop policy and dispatch still use their own name rules. This catalog only describes, and the
-  drift tests keep the two in step.
+- **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
+  compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
 - **Per-name, not per-call.** `irreversible` is a floor. A call can still be irreversible by the classifier's C-3 flag (for example one
   `aios.agent_loop.step`); per-call classification can only add to it.
 - **Per-name, not per-action** for multi-action tools (see §6).
@@ -128,3 +183,10 @@ Errors are `ToolRegistryError(code, message)`. Messages echo names only with con
 [unit](tasks/evidence/T-03367-tool-registry-data-model-unit-test.md),
 [integration](tasks/evidence/T-03368-tool-registry-data-model-integration.md),
 [security](tasks/evidence/T-03369-security.md), [hardening](tasks/evidence/T-03370-tool-registry-data-model-hardening.md)
+
+Core service: [research](tasks/evidence/T-03373-research.md), [spec](tasks/evidence/T-03374-spec.md),
+[scaffold](tasks/evidence/T-03375-tool-registry-core-service-scaffold.md),
+[implementation](tasks/evidence/T-03376-tool-registry-core-service-implementation.md),
+[unit](tasks/evidence/T-03377-tool-registry-core-service-unit-test.md),
+[integration](tasks/evidence/T-03378-tool-registry-core-service-integration.md),
+[security](tasks/evidence/T-03379-security.md), [hardening](tasks/evidence/T-03380-tool-registry-core-service-hardening.md)

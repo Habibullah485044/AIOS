@@ -1513,3 +1513,13 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - separator aliasing;
   - str-subclass lookup steering.
 - Verification: tool_registry 123 passed, battery 538 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03382 - AI Control Plane Tool Registry & Taxonomy / core service: Verification & Evidence (2026-11-06)
+- Milestone closeout for the tool registry core service (T-03373..T-03382). The service sits in the **PEP dispatch path**
+  (`_dispatch.dispatch`, before the grant gate) and in the **agent-loop irreversible budget** (`agent_loop_policy.evaluate_step`).
+- **Shadow (default) changes no enforcement and adds no audit rows** (I-3). Opt-in strict (`AIOSH_TOOL_REGISTRY_MODE=strict`) can only
+  add a grant requirement (I-2) or mark a step irreversible. Unrecognised values and registry failures fail closed when strict was asked for.
+- The independent review (T-03379) found no loosening. It fixed a shadow-mode stall: an undrained stderr pipe blocked calls, in the agent loop
+  while its lock was held. It also fixed strict mode being silently disabled by a typo.
+- Verification: tool_registry 287 passed, battery 557 passed, full suite no new failures (shadow invariant), conformance C1..C6 PASS,
+  demo_por.py PASSED.

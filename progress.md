@@ -2103,3 +2103,8 @@ All edits are docs / control-plane only.
 
 - One trusted, read-only catalog of tool identity and taxonomy (canonical/MCP names, category, effect, irreversible, scope kind) with a fail-closed unknown profile, derived MCP annotations, read-only MCP tools and drift tests against every existing name rule.
 - The research also fixed two cross-substrate PEP gaps: the Rust glob dot boundary (#480) and TS network scope (#481). An incident fix stopped the backup zip from archiving itself (#487). PRs #479..#491.
+
+## 2026-11-06 — Tool Registry & Taxonomy core service epic closed (T-03373..T-03382)
+
+- `tool_registry_service` compares the catalog with the legacy name rules on every dispatch and agent-loop step. Shadow by default; opt-in strict only tightens.
+- Catalog coverage is complete (69/69 served tools). The independent review fixed a shadow-mode stderr stall and a silent strict-mode disable. PRs #492..#501.

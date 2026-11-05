@@ -45,7 +45,7 @@ def test_valid_entry_and_dict_round_trip():
     ({"effect": Effect.DESTRUCTIVE, "irreversible": True}, "TOOLREG_ERR_INCONSISTENT"),   # irreversible needs a grant
     ({"scope_kind": ScopeKind.NETWORK}, "TOOLREG_ERR_INCONSISTENT"),    # network ⇒ open world
     ({"category": Category.PENTEST, "effect": Effect.ADDITIVE, "requires_grant": True, "irreversible": True,
-      "scope_kind": ScopeKind.PATH}, "TOOLREG_ERR_INCONSISTENT"),        # pentest ⇒ network scope
+      "scope_kind": ScopeKind.NONE}, "TOOLREG_ERR_INCONSISTENT"),        # pentest ⇒ path or network scope (T-03369)
     ({"category": Category.FS_WRITE, "effect": Effect.DESTRUCTIVE}, "TOOLREG_ERR_INCONSISTENT"),   # fs.write ⇒ irreversible
     ({"irreversible": 1}, "TOOLREG_ERR_INCONSISTENT"),                  # bools are bools
 ])
@@ -86,7 +86,7 @@ def test_unknown_tools_fail_closed(name, scope):
         (True, True, Effect.DESTRUCTIVE, True, scope)
     assert C.get(p.canonical) is None                                  # never registered
     if not reg.CANONICAL_RE.fullmatch(name):
-        assert p.canonical == "unregistered"                           # malformed names are not echoed
+        assert p.canonical.startswith(reg.UNREGISTERED_PREFIX)         # malformed names are not echoed (T-03369 #5)
 
 
 def test_annotations_are_derived():

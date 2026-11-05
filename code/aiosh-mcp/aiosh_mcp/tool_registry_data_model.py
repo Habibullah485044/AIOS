@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import enum
 import functools
+import hashlib
 import json
 import re
 import unicodedata
@@ -40,6 +41,26 @@ NETWORK_PREFIXES = ("pentest.", "network.")
 _FORBIDDEN_TEXT = re.compile("[\x00-\x1f\x7f‪-‮⁦-⁩]")
 #: Categories whose tools are always irreversible (spec §2.3 rule 5).
 _IRREVERSIBLE_CATEGORIES = ("fs.write", "system")
+#: Names the *existing* enforcement rules treat as irreversible: the union of audit_client.grant_check and
+#: agent_loop_policy.is_irreversible (T-03369 #3). A catalog entry may be stricter, never weaker.
+IRREVERSIBLE_NAME_PREFIXES = ("pentest.", "fs.write", "process.", "shell.")
+IRREVERSIBLE_NAMES = ("system.reboot", "system.shutdown", "pentest")
+#: Bare family names the agent-loop gate also treats as network tools (agent_loop_gate.tool_refusal).
+NETWORK_NAMES = ("pentest", "network")
+#: Prefix of the synthetic canonical name given to malformed unknown names (one per name, never registrable).
+UNREGISTERED_PREFIX = "unregistered."
+
+
+def irreversible_by_name(name: str) -> bool:
+    """True if any existing name rule treats ``name`` as irreversible (case-insensitive)."""
+    n = name.casefold()
+    return n.startswith(IRREVERSIBLE_NAME_PREFIXES) or n in IRREVERSIBLE_NAMES
+
+
+def network_by_name(name: str) -> bool:
+    """The network-target rule of grant_check / agent_loop_gate, case-insensitive, bare names included."""
+    n = name.casefold()
+    return n.startswith(NETWORK_PREFIXES) or n in NETWORK_NAMES
 
 
 class Category(str, enum.Enum):
@@ -137,8 +158,16 @@ class ToolEntry:
             _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: an irreversible tool must require a grant")
         if self.scope_kind is ScopeKind.NETWORK and not self.open_world:
             _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: a network-scoped tool is open-world")
-        if self.category is Category.PENTEST and not (self.scope_kind is ScopeKind.NETWORK and self.irreversible):
-            _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: pentest tools are network-scoped and irreversible")
+        # T-03369 #2: pentest tools are irreversible, but offline ones (tshark -r, aircrack-ng) target a *path*.
+        if self.category is Category.PENTEST and not (self.irreversible and self.scope_kind is not ScopeKind.NONE):
+            _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: pentest tools are irreversible and path- or "
+                                            f"network-scoped")
+        if self.category is Category.NETWORK and self.scope_kind is not ScopeKind.NETWORK:
+            _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: network tools are network-scoped")
+        # T-03369 #3: never weaker than the name rules enforcement uses today.
+        if irreversible_by_name(self.canonical) and not (self.irreversible and self.requires_grant):
+            _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: existing name rules treat it as irreversible; "
+                                            f"the entry must be irreversible and require a grant")
         if self.category.value in _IRREVERSIBLE_CATEGORIES and not self.irreversible:
             _fail(TOOLREG_ERR_INCONSISTENT, f"{self.canonical}: {self.category.value} tools are irreversible")
 
@@ -149,8 +178,12 @@ class ToolEntry:
                 "requires_grant": self.requires_grant, "idempotent": self.idempotent}
 
 
+_SEPARATORS = re.compile(r"[._\-]+")
+
+
 def _fold(name: str) -> str:
-    return unicodedata.normalize("NFKC", name).casefold()
+    """Collision key: NFKC + casefold, and ``.``/``_``/``-`` treated as one separator (T-03369 #6)."""
+    return _SEPARATORS.sub(".", unicodedata.normalize("NFKC", name).casefold())
 
 
 class ToolCatalog:
@@ -166,16 +199,22 @@ class ToolCatalog:
         if len(items) > MAX_CATALOG_ENTRIES:
             _fail(TOOLREG_ERR_BOUNDS, f"catalog has {len(items)} entries; at most {MAX_CATALOG_ENTRIES}")
         by_name: Dict[str, ToolEntry] = {}
-        folded: Dict[str, str] = {}
+        folded: Dict[str, Tuple[str, ToolEntry, bool]] = {}
         for e in items:
-            if not isinstance(e, ToolEntry):
+            if type(e) is not ToolEntry:
                 _fail(TOOLREG_ERR_INCONSISTENT, "catalog entries must be ToolEntry")
-            for name in (e.canonical, *e.mcp_names):
+            if e.canonical.startswith(UNREGISTERED_PREFIX):        # synthetic names of unknown tools (T-03369 #5)
+                _fail(TOOLREG_ERR_INVALID_NAME, f"{e.canonical}: reserved for unregistered tools")
+            for i, name in enumerate((e.canonical, *e.mcp_names)):
                 key = _fold(name)
-                if key in folded:
+                prev = folded.get(key)
+                # An alias may fold onto its *own* canonical name (aios_fs_read ~ aios.fs.read); any other
+                # collision, across entries or between two aliases of one entry, is ambiguous.
+                if prev is not None and not (prev[1] is e and (prev[2] or i == 0)):
                     _fail(TOOLREG_ERR_DUPLICATE, f"name {_shown(name)!r} of {e.canonical} collides with "
-                                                 f"{_shown(folded[key])!r}")
-                folded[key] = name
+                                                 f"{_shown(prev[0])!r}")
+                if prev is None or i == 0:
+                    folded[key] = (name, e, i == 0)
                 by_name[name] = e
         object.__setattr__(self, "_entries", tuple(sorted(items, key=lambda e: e.canonical)))
         object.__setattr__(self, "_by_name", MappingProxyType(by_name))
@@ -187,11 +226,11 @@ class ToolCatalog:
         return len(self._entries)
 
     def get(self, canonical: str) -> Optional[ToolEntry]:
-        e = self._by_name.get(canonical) if isinstance(canonical, str) else None
+        e = self._by_name.get(canonical) if type(canonical) is str else None
         return e if e is not None and e.canonical == canonical else None
 
     def resolve(self, name: str) -> Optional[ToolEntry]:
-        return self._by_name.get(name) if isinstance(name, str) else None
+        return self._by_name.get(name) if type(name) is str else None   # exact str: no __eq__/__hash__ games
 
     def profile(self, name: str) -> ToolEntry:
         return self.resolve(name) or unknown_profile(name)
@@ -228,9 +267,14 @@ class ToolCatalog:
 
 def unknown_profile(name: str) -> ToolEntry:
     """Fail-closed profile for an unregistered name (spec §2.5, TOOLREG-INV3). Never registered."""
-    text = name if isinstance(name, str) else ""
-    canonical = text if 1 <= len(text) <= MAX_NAME_LEN and CANONICAL_RE.fullmatch(text) else "unregistered"
-    network = text.startswith(NETWORK_PREFIXES)
+    text = str.__str__(name) if isinstance(name, str) else ""
+    if 1 <= len(text) <= MAX_NAME_LEN and CANONICAL_RE.fullmatch(text) and not text.startswith(UNREGISTERED_PREFIX):
+        canonical = text
+    else:
+        # One distinct synthetic name per malformed input (T-03369 #5): a grant for one cannot cover another,
+        # and the raw name is never echoed.
+        canonical = UNREGISTERED_PREFIX + hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+    network = network_by_name(text)      # case-insensitive, bare names included (T-03369 #4)
     return ToolEntry(canonical=canonical, mcp_names=(), title="unregistered tool", category=Category.ADMIN,
                      effect=Effect.DESTRUCTIVE, irreversible=True,
                      scope_kind=ScopeKind.NETWORK if network else ScopeKind.PATH, open_world=True,
@@ -245,24 +289,28 @@ def _e(canonical: str, mcp: Tuple[str, ...], title: str, category: Category, eff
                      requires_grant=irreversible if grant is None else grant, idempotent=idempotent)
 
 
-def _pentest(name: str, title: str, effect: Effect) -> ToolEntry:
+def _pentest(name: str, title: str, effect: Effect, offline: bool = False) -> ToolEntry:
+    """Live pentest tools target hosts (network scope); offline ones read a capture file (path scope)."""
     mcp = "aios_pentest_" + name.split(".", 1)[1].replace("-", "_")
-    return _e(name, (mcp,), title, Category.PENTEST, effect, irreversible=True, scope=ScopeKind.NETWORK,
-              open_world=True)
+    return _e(name, (mcp,), title, Category.PENTEST, effect, irreversible=True,
+              scope=ScopeKind.PATH if offline else ScopeKind.NETWORK, open_world=not offline)
 
 
 _R, _A, _D = Effect.READ_ONLY, Effect.ADDITIVE, Effect.DESTRUCTIVE
 _SEED: Tuple[ToolEntry, ...] = (
     # agent_bridge.CANONICAL_TO_MCP (spec §3)
-    _e("aios.fs.read", ("aios_fs_read",), "Read a text file", Category.FS_READ, _R, scope=ScopeKind.PATH),
+    # requires_grant: server.aios_fs_read calls _recorded_call(require_grant=True) (T-03369 #1)
+    _e("aios.fs.read", ("aios_fs_read",), "Read a text file", Category.FS_READ, _R, scope=ScopeKind.PATH,
+       grant=True),
     _e("aios.process.list", ("aios_process_list",), "List processes", Category.PROCESS, _R),
     _e("aios.audit.tail", ("aios_audit_tail",), "Tail the audit ring", Category.AUDIT, _R),
     _e("aios.audit.verify", ("aios_audit_verify",), "Verify the audit chain", Category.AUDIT, _R),
     _pentest("pentest.nmap", "Network scan (nmap)", _A),
     _pentest("pentest.nikto", "Web server scan (nikto)", _A),
     _pentest("pentest.sqlmap", "SQL injection test (sqlmap)", _D),
-    _pentest("pentest.tshark", "Packet capture (tshark)", _A),
-    _pentest("pentest.aircrack-ng", "Wi-Fi key test (aircrack-ng)", _D),
+    # offline: `tshark -r <pcap>` and `aircrack-ng <capture>` read a file (target=path in pentest.py) (T-03369 #2)
+    _pentest("pentest.tshark", "Read a packet capture (tshark)", _A, offline=True),
+    _pentest("pentest.aircrack-ng", "Wi-Fi key test on a capture", _A, offline=True),
     # agent-loop audit names, aligned with agent_loop_mcp.TOOL_ANNOTATIONS
     _e("aios.agent_loop.start", ("aios_agent_loop_start",), "Start an agent loop", Category.AGENT_LOOP, _A,
        grant=True),

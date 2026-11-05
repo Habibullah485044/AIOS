@@ -88,7 +88,7 @@ def test_lookups_never_fail_open_on_odd_input():
 
 def test_unknown_profile_does_not_echo_hostile_names():
     hostile = "pentest.x\x1b[31m‮evil" + "A" * 10_000
-    assert C.profile(hostile).canonical == "unregistered"
+    assert C.profile(hostile).canonical.startswith(reg.UNREGISTERED_PREFIX)
     with pytest.raises(ToolRegistryError) as exc:
         C.require(hostile)
     msg = str(exc.value)
@@ -148,9 +148,15 @@ def test_catalog_agrees_with_existing_irreversible_rules(e):
     assert e.irreversible == is_irreversible(e.canonical, {}), "agent_loop_policy disagrees"
 
 
+#: Offline pentest tools read a capture file: the catalog says path scope, while grant_check's name rule
+#: would still apply scope.networks to them when set (T-03369 #2). Listed, not hidden.
+KNOWN_SCOPE_DISAGREEMENTS = {"pentest.tshark", "pentest.aircrack-ng"}
+
+
 @pytest.mark.parametrize("e", C.entries(), ids=lambda e: e.canonical)
 def test_catalog_agrees_with_network_rule(e):
-    assert (e.scope_kind is ScopeKind.NETWORK) == e.canonical.startswith(reg.NETWORK_PREFIXES)
+    agrees = (e.scope_kind is ScopeKind.NETWORK) == e.canonical.startswith(reg.NETWORK_PREFIXES)
+    assert agrees != (e.canonical in KNOWN_SCOPE_DISAGREEMENTS)
 
 
 def test_every_entry_is_consistent_and_annotatable():

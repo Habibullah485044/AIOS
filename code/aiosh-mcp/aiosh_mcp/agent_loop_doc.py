@@ -1,4 +1,4 @@
-"""Agent Loop Hardening generated reference documentation (T-03345 scaffold).
+"""Agent Loop Hardening generated reference documentation (T-03345 scaffold / T-03346 impl).
 
 Spec: docs/tasks/evidence/T-03344-spec.md. The reference is derived from code at call
 time (LOOPDOC-INV2); the only hand-written table is ``ERROR_MEANINGS``, whose
@@ -7,7 +7,8 @@ completeness is enforced by tests in both directions.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import importlib
+from typing import Any, Dict, List, Optional
 
 SECTIONS = ("tools", "errors", "config", "cli", "policy")
 
@@ -50,6 +51,70 @@ ERROR_MEANINGS: Dict[str, str] = {
 }
 
 
+#: Modules whose ``*_ERR_*`` constants make up the error catalog.
+_MODULES = ("agent_loop_data_model", "agent_loop_service", "agent_loop_gate", "agent_loop_policy",
+            "agent_loop_mcp", "agent_loop_cli", "agent_loop_config", "agent_loop_observability")
+
+
+def _tools() -> List[Dict[str, Any]]:
+    from mcp.server.fastmcp import FastMCP
+    from aiosh_mcp.agent_loop_mcp import register_agent_loop_mcp_tools
+    app = FastMCP("agent-loop-reference")
+    register_agent_loop_mcp_tools(app, settings={})   # settings={}: no config resolution or audit side effects
+    out = []
+    for t in sorted(app._tool_manager.list_tools(), key=lambda t: t.name):
+        ann = t.annotations.model_dump(exclude_none=True) if t.annotations else {}
+        out.append({"name": t.name, "description": (t.description or "").strip().splitlines()[0],
+                    "annotations": ann, "input_schema": t.parameters})
+    return out
+
+
+def _errors() -> List[Dict[str, str]]:
+    found: Dict[str, str] = {}
+    for name in _MODULES:
+        mod = importlib.import_module(f"aiosh_mcp.{name}")
+        for attr, value in vars(mod).items():
+            if "_ERR_" in attr and attr.isupper() and isinstance(value, str) and value == attr:
+                found.setdefault(attr, name)   # first definer wins (re-exports are skipped)
+    return [{"code": c, "module": m, "meaning": ERROR_MEANINGS.get(c, "")} for c, m in sorted(found.items())]
+
+
+def _config() -> Dict[str, Any]:
+    from aiosh_mcp import agent_loop_config as cfg
+    fields = [{"key": k, "default": f.kind(f.default), "min": f.kind(f.lo), "max": f.kind(f.hi),
+               "type": f.kind.__name__, "env": f.env} for k, f in cfg.FIELDS.items()]
+    return {"fields": fields, "locked_keys": list(cfg.LOCKED_KEYS), "file_env": cfg.ENV_AGENT_LOOP_CONFIG,
+            "default_file": cfg.DEFAULT_CONFIG_PATH, "max_file_bytes": cfg.MAX_CONFIG_FILE_BYTES}
+
+
+def _cli() -> List[Dict[str, Any]]:
+    import argparse
+    from aiosh_mcp.agent_loop_cli import _build_parser
+    parser = _build_parser()
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    out = []
+    for name, sp in sub.choices.items():
+        flags = [o for a in sp._actions for o in a.option_strings]
+        out.append({"subcommand": name, "flags": sorted(flags)})
+    return out
+
+
+def _policy() -> Dict[str, Any]:
+    from aiosh_mcp import agent_loop_policy as pol
+    from aiosh_mcp.classifier import CLASSIFIER_REVISION
+    return {"order": ["P1 caller verdict", "P2 constitution classifier", "P3 grant scope", "P4 irreversible budget"],
+            "classifier_revision": CLASSIFIER_REVISION,
+            "irreversible_prefixes": list(pol.IRREVERSIBLE_PREFIXES), "irreversible_tools": list(pol.IRREVERSIBLE_TOOLS),
+            "target_arg_keys": list(pol.TARGET_ARG_KEYS)}
+
+
+_BUILDERS = {"tools": _tools, "errors": _errors, "config": _config, "cli": _cli, "policy": _policy}
+
+
 def reference(section: Optional[str] = None) -> Dict[str, Any]:
-    """Code-generated reference: one section, or all of ``SECTIONS``."""
-    raise NotImplementedError("T-03346: reference")
+    """Code-generated reference: one section, or all of ``SECTIONS`` (LOOPDOC-INV2)."""
+    if section is None:
+        return {name: _BUILDERS[name]() for name in SECTIONS}
+    if section not in _BUILDERS:
+        raise ValueError(f"unknown section {section!r}; expected one of {', '.join(SECTIONS)}")
+    return {section: _BUILDERS[section]()}

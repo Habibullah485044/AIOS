@@ -171,6 +171,14 @@ class AgentLoopService:
                 LOOPSERV_ERR_AUDIT, f"audit write failed for '{event}': {exc}", snap.loop_id
             ) from exc
 
+    @staticmethod
+    def _tag_breaker(snap: LoopSnapshot) -> None:
+        """A breaker (consecutive failures, token budget, iteration ceiling) ended the loop: give callers
+        a code to match instead of free text (T-03346; T-03343 F3)."""
+        if snap.is_terminated and snap.current_state == LoopState.FAILED and snap.terminal_reason \
+                and not snap.terminal_reason.startswith(LOOPSERV_ERR_CIRCUIT_BREAKER):
+            snap.terminal_reason = f"{LOOPSERV_ERR_CIRCUIT_BREAKER}: {snap.terminal_reason}"
+
     def _forget(self, loop_id: str) -> None:
         for table in (self._loops, self._configs, self._start_times, self._grants, self._runs):
             table.pop(loop_id, None)
@@ -419,6 +427,7 @@ class AgentLoopService:
                     self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
                                              classification=policy.classification, budget_guard=budget)
                 snap.record_step(step, config)
+                self._tag_breaker(snap)
                 if not guarded:
                     self._audit_or_terminate(snap, "step", grant_id, "ok", args=row_args,
                                              classification=policy.classification)
@@ -451,6 +460,7 @@ class AgentLoopService:
             policy=step_policy,
         )
         snap.record_step(step, config)
+        self._tag_breaker(snap)
         self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
                                  args={"step_index": step.step_index, "tool_name": tool_name,
                                        "tool_args": step.tool_args_summary, "duration_ms": step.duration_ms,

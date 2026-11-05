@@ -9,10 +9,13 @@ only tighten it (TOOLSVC-INV1..TOOLSVC-INV5).
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import sys
 import threading
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -33,6 +36,12 @@ MAX_UNREGISTERED_SAMPLES = 50
 #: Structured stderr event name for a disagreement (no audit row: TOOLSVC-INV3).
 LOG_EVENT = "tool_registry.disagreement"
 MAX_LOGGED_TOOL_LEN = 64
+#: report() writes each distinct (surface, tool, disagreements) at most once, and at most this many lines per
+#: process: a blocked stderr pipe can never stall tool calls (T-03379 #1).
+MAX_REPORT_LINES = 32
+#: Per-process key for the unregistered-name samples: not reversible by dictionary, not linkable across
+#: processes (T-03379 #6).
+_SAMPLE_KEY = secrets.token_bytes(16)
 
 
 class ToolServiceError(ValueError):
@@ -74,12 +83,52 @@ def legacy_scope(tool: str) -> ScopeKind:
     return ScopeKind.NETWORK if tool.startswith(NETWORK_PREFIXES) else ScopeKind.PATH
 
 
-def _mode(mode: Optional[str]) -> str:
-    value = os.environ.get(ENV_MODE, DEFAULT_MODE) if mode is None else mode
-    value = value.strip().lower() if isinstance(value, str) else value
+def _normal(value: str) -> str:
+    return unicodedata.normalize("NFKC", value).strip().lower()
+
+
+def intended_mode() -> str:
+    """The mode the operator asked for in the environment; never raises.
+
+    T-03379 #2: an unrecognised non-empty value (a typo such as ``strct``) is read as **strict** (fail closed)
+    and reported once, instead of silently falling back to legacy-only rules. Unset or empty means shadow.
+    """
+    raw = os.environ.get(ENV_MODE, "")
+    value = _normal(raw) if isinstance(raw, str) else ""
+    if value in ("", DEFAULT_MODE):
+        return DEFAULT_MODE
     if value not in MODES:
+        _warn_once("mode", f"{ENV_MODE}={raw[:32]!r} is not one of {', '.join(MODES)}; using strict (fail closed)")
+    return "strict"
+
+
+def _mode(mode: Optional[str]) -> str:
+    if mode is None:
+        return intended_mode()
+    value = _normal(mode) if isinstance(mode, str) else mode
+    if value not in MODES:          # an explicit bad argument is a programming error
         raise ToolServiceError(TOOLSVC_ERR_MODE, f"mode must be one of {', '.join(MODES)}")
     return value
+
+
+_WARNED: set = set()
+
+
+def _stderr_line(text: str) -> None:
+    """Writes one line to stderr; never to stdout (the MCP JSON-RPC channel), never raises (T-03379 #7)."""
+    stream = sys.stderr
+    if stream is None or stream is sys.stdout:
+        return
+    try:
+        print(text, file=stream, flush=True)
+    except (OSError, ValueError):
+        pass
+
+
+def _warn_once(key: str, message: str) -> None:
+    if key not in _WARNED:
+        _WARNED.add(key)
+        _stderr_line(f"aiosh-mcp: tool registry: {message}")
 
 
 def _c3(classification: Any) -> bool:
@@ -89,7 +138,7 @@ def _c3(classification: Any) -> bool:
 
 
 def _hash(name: str) -> str:
-    return hashlib.sha256(name.encode("utf-8", "surrogatepass")).hexdigest()[:12]
+    return hmac.new(_SAMPLE_KEY, name.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()[:12]
 
 
 class ToolRegistryService:
@@ -135,7 +184,7 @@ class ToolRegistryService:
             requires_grant=profile.requires_grant or leg_grant,                                # TOOLSVC-INV1
             irreversible=profile.irreversible or leg_irrev or irreversible_by_name(name) or c3,
             scope_kinds=tuple(sorted(scopes, key=lambda s: s.value)),
-            disagreements=tuple(disagreements), mode=self._mode)
+            disagreements=tuple(sorted(disagreements)), mode=self._mode)
         self._count(decision, name)
         return decision
 
@@ -164,29 +213,61 @@ class ToolRegistryService:
                     "catalog_entries": len(self._catalog)}
 
 
+_REPORTED: set = set()
+_REPORT_LOCK = threading.Lock()
+_REPORT_STATE = {"lines": 0, "suppressed": 0}
+
+
 def report(decision: ToolDecision, tool: Any, surface: str) -> None:
-    """One masked JSON line on stderr per disagreeing decision (TOOLSVC-INV3: never an audit row)."""
+    """At most one masked JSON line on stderr per distinct disagreement, and at most ``MAX_REPORT_LINES`` per
+    process (TOOLSVC-INV3: never an audit row; T-03379 #1: never enough output to block on a full pipe)."""
     if not decision.disagreements:
         return
     from aiosh_mcp.agent_loop_data_model import mask_secrets
     shown = mask_secrets(tool if type(tool) is str else repr(type(tool)))[:MAX_LOGGED_TOOL_LEN]
-    line = {"event": LOG_EVENT, "surface": surface, "tool": shown, "canonical": decision.canonical,
+    key = (surface, shown, decision.disagreements)
+    with _REPORT_LOCK:
+        if key in _REPORTED:
+            return
+        if _REPORT_STATE["lines"] >= MAX_REPORT_LINES:
+            _REPORT_STATE["suppressed"] += 1
+            return
+        _REPORTED.add(key)
+        _REPORT_STATE["lines"] += 1
+        last = _REPORT_STATE["lines"] == MAX_REPORT_LINES
+    line = {"event": LOG_EVENT, "surface": surface, "tool": shown,
+            # T-03379 #5: canonical can be the raw (unregistered) name, so it is masked too
+            "canonical": mask_secrets(decision.canonical)[:MAX_LOGGED_TOOL_LEN],
             "disagreements": list(decision.disagreements), "mode": decision.mode}
-    try:
-        print(json.dumps(line, ensure_ascii=True), file=sys.stderr, flush=True)
-    except (OSError, ValueError):
-        pass                                 # a closed stderr must never break a tool call
+    if last:
+        line["note"] = f"report limit ({MAX_REPORT_LINES}) reached; further disagreements are counted in stats only"
+    _stderr_line(json.dumps(line, ensure_ascii=True))
+
+
+def report_stats() -> Dict[str, int]:
+    with _REPORT_LOCK:
+        return dict(_REPORT_STATE)
 
 
 _SERVICE: Optional[ToolRegistryService] = None
 _SERVICE_LOCK = threading.Lock()
 
 
+_SERVICE_ERROR: Optional[BaseException] = None
+
+
 def service() -> ToolRegistryService:
-    """Process-wide instance built once from the default catalog and the env mode."""
-    global _SERVICE
+    """Process-wide instance built once from the default catalog and the env mode (fixed at first use, like
+    the rest of the process config). A failed build is remembered and re-raised, not retried per call."""
+    global _SERVICE, _SERVICE_ERROR
     if _SERVICE is None:
         with _SERVICE_LOCK:
             if _SERVICE is None:
-                _SERVICE = ToolRegistryService()
+                if _SERVICE_ERROR is not None:
+                    raise _SERVICE_ERROR
+                try:
+                    _SERVICE = ToolRegistryService()
+                except Exception as exc:
+                    _SERVICE_ERROR = exc
+                    raise
     return _SERVICE

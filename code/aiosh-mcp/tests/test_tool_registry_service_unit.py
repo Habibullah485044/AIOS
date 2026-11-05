@@ -84,14 +84,20 @@ def test_stats_returns_copies():
     assert s.stats()["disagreements"]["unregistered"] == 1 and "forged" not in s.stats()["unregistered_samples"]
 
 
-def test_report_survives_a_closed_stderr(monkeypatch):
+def test_report_survives_a_closed_stderr(monkeypatch, fresh_reports):
     closed = io.StringIO()
     closed.close()
     monkeypatch.setattr(sys, "stderr", closed)
     svc.report(ToolRegistryService(mode="shadow").decide("aios.u.x"), "aios.u.x", surface="dispatch")   # no raise
 
 
-def test_report_masks_and_bounds_hostile_tool_names(capsys):
+@pytest.fixture
+def fresh_reports(monkeypatch):
+    monkeypatch.setattr(svc, "_REPORTED", set())
+    monkeypatch.setattr(svc, "_REPORT_STATE", {"lines": 0, "suppressed": 0})
+
+
+def test_report_masks_and_bounds_hostile_tool_names(capsys, fresh_reports):
     s = ToolRegistryService(mode="shadow")
     hostile = "ghp_" + "A" * 40 + "\n{\"event\":\"forged\"}" + "x" * 500
     svc.report(s.decide(hostile), hostile, surface="dispatch")

@@ -167,5 +167,9 @@ def _registry_irreversible(tool: str, targets: Sequence[Optional[str]], fields: 
         decision = svc.decide(tool, targets[0] if targets else None, classification=fields)
         trs.report(decision, tool, surface="agent_loop")
         return bool(legacy or svc.enforcement(decision).get("irreversible"))
-    except Exception:  # never let the registry break a loop step; the legacy rule still applies
-        return legacy
+    except Exception as exc:  # never break a loop step; fail closed if strict was asked for (T-03379 #2)
+        from aiosh_mcp import tool_registry_service as trs
+        strict = trs.intended_mode() == "strict"
+        trs._warn_once("agent_loop", f"unavailable in the agent loop ({type(exc).__name__}); "
+                                     f"{'strict: steps counted irreversible' if strict else 'legacy rules only'}")
+        return True if strict else legacy

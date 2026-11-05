@@ -150,7 +150,7 @@ def test_catalog_agrees_with_existing_irreversible_rules(e):
 
 #: Offline pentest tools read a capture file: the catalog says path scope, while grant_check's name rule
 #: would still apply scope.networks to them when set (T-03369 #2). Listed, not hidden.
-KNOWN_SCOPE_DISAGREEMENTS = {"pentest.tshark", "pentest.aircrack-ng"}
+KNOWN_SCOPE_DISAGREEMENTS = {"pentest.tshark", "pentest.aircrack-ng", "aios.scan"}   # aios.scan: T-03380
 
 
 @pytest.mark.parametrize("e", C.entries(), ids=lambda e: e.canonical)

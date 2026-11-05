@@ -50,8 +50,8 @@ async def test_catalog_tools_over_stdio(tmp_path):
     assert bad_category[0] is True and too_long[0] is True                   # schema-validated, not served
 
 
-def test_served_tools_without_catalog_entries_are_tracked():
-    """Spec §3: served MCP tools with no entry are listed (tracked, not failed) until coverage is complete."""
+def test_every_served_tool_has_a_catalog_entry():
+    """Spec §3/§5: tracked until T-03380; now every served MCP tool must have an entry."""
     served = {t.name for t in server_app._tool_manager.list_tools()}
     missing = sorted(n for n in served if C.resolve(n) is None)
     covered = len(served) - len(missing)
@@ -61,8 +61,8 @@ def test_served_tools_without_catalog_entries_are_tracked():
             if alias.startswith(("aios_agent_loop_", "aios_tool_registry_", "aios_fs_", "aios_process_",
                                  "aios_audit_", "aios_pentest_")):
                 assert alias in served, alias
-    assert covered >= 17 and len(missing) < len(served)
-    print(f"catalog covers {covered}/{len(served)} served tools; untracked: {len(missing)}")
+    # T-03380: coverage is complete, so the tracked list must stay empty (spec §5)
+    assert missing == [], f"served MCP tools with no catalog entry: {missing}"
 
 
 def _ts_tool_classes():

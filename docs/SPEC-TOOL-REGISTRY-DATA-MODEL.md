@@ -100,19 +100,21 @@ MCP (read-only, no token):
 Errors are `ToolRegistryError(code, message)`. Messages echo names only with control and bidi characters stripped, truncated to 80 chars.
 
 ## 6. Coverage and drift checks
-- The default catalog has **20 entries**: the 9 `agent_bridge` tools, 5 agent-loop names, `audit.rotate`, `fs.write`,
-  `system.reboot`, `system.shutdown`, and the registry's own two tools. It covers **17 of the 69** served MCP tools. The
-  integration test tracks, but does not fail on, the uncovered ones.
+- The default catalog has **71 entries** and covers **every one of the 69 served MCP tools** plus every literal audit name
+  (T-03380). The integration test **fails** if a served tool has no entry. Multi-action tools (`aios.task`,
+  `aios.compliance`, `aios.runbook`, `aios.scan`) are classified by their most consequential action for `effect`. Their
+  `requires_grant` is the action-independent minimum, because their own gates require grants per action.
 - Permanent tests (CI suite #35 `tool_registry`) assert, for every entry, agreement with `audit_client.grant_check`, `agent_loop_policy`,
   the network-name rule and TS `isIrreversible`. The one listed exception: `pentest.tshark` / `pentest.aircrack-ng` are
-  path-scoped here, while `grant_check`'s name rule would apply `scope.networks` to them.
+  path-scoped here, while `grant_check`'s name rule would apply `scope.networks` to them; `aios.scan` is network-scoped
+  here, while the name rule treats it as path-scoped.
 
 ## 7. Known limitations
 - **Not enforcing yet.** The PEP, the agent-loop policy and dispatch still use their own name rules. This catalog only describes, and the
   drift tests keep the two in step.
 - **Per-name, not per-call.** `irreversible` is a floor. A call can still be irreversible by the classifier's C-3 flag (for example one
   `aios.agent_loop.step`); per-call classification can only add to it.
-- **Partial coverage:** 17 of 69 served tools.
+- **Per-name, not per-action** for multi-action tools (see §6).
 - **Annotations are not yet applied** to the served pentest and core tools. Only the registry's own tools use catalog-derived annotations.
 - **In-process immutability is by convention.** Python code in the same process can still mutate objects with `object.__setattr__` or `gc` tricks.
   There is no external route.

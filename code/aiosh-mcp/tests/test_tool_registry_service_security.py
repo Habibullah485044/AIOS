@@ -36,7 +36,7 @@ import time
 from aiosh_mcp import _dispatch
 start = time.monotonic(); n = 0
 while time.monotonic() - start < 3:
-    _dispatch._registry_require_grant("aios.task", None, False)
+    _dispatch._registry_require_grant("aios.mystery.task", None, False)
     n += 1
 print(n, flush=True)
 """
@@ -59,7 +59,7 @@ def test_undrained_stderr_does_not_block_calls(tmp_path):
 def test_identical_disagreements_are_logged_once_and_capped(capsys):
     s = trs.ToolRegistryService(mode="shadow")
     for _ in range(1000):
-        trs.report(s.decide("aios.task"), "aios.task", "dispatch")
+        trs.report(s.decide("aios.mystery.task"), "aios.mystery.task", "dispatch")
     assert capsys.readouterr().err.count("\n") == 1
     for i in range(200):
         trs.report(s.decide(f"aios.u{i}"), f"aios.u{i}", "dispatch")
@@ -71,7 +71,7 @@ def test_identical_disagreements_are_logged_once_and_capped(capsys):
 @pytest.mark.parametrize("value", ["strct", "enforce", "1", "ｓｔｒｉｃｔ", "STRICT "])
 def test_unrecognised_or_variant_mode_is_strict(value, monkeypatch, capsys):
     monkeypatch.setenv(trs.ENV_MODE, value)
-    assert _dispatch._registry_require_grant("aios.task", None, False) is True
+    assert _dispatch._registry_require_grant("aios.mystery.task", None, False) is True
     assert evaluate_step("aios.mystery.read", ["/tmp/x"], {"path": "/tmp/x"}).irreversible is True
 
 
@@ -81,14 +81,14 @@ def test_broken_registry_fails_closed_when_strict_was_asked(monkeypatch, capsys)
     def boom():
         raise RuntimeError("catalog exploded")
     monkeypatch.setattr(trs, "service", boom)
-    assert _dispatch._registry_require_grant("aios.task", None, False) is True
+    assert _dispatch._registry_require_grant("aios.mystery.task", None, False) is True
     assert evaluate_step("aios.mystery.read", ["/tmp/x"], {"path": "/tmp/x"}).irreversible is True
     assert "strict" in capsys.readouterr().err
 
 
 def test_empty_mode_is_shadow(monkeypatch):
     monkeypatch.setenv(trs.ENV_MODE, "")
-    assert _dispatch._registry_require_grant("aios.task", None, False) is False
+    assert _dispatch._registry_require_grant("aios.mystery.task", None, False) is False
 
 
 # #4: a failed build is remembered, not retried on every call.
@@ -128,6 +128,6 @@ def test_samples_are_not_plain_hashes_and_disagreements_sorted():
 def test_no_stdout_when_stderr_is_missing(monkeypatch, capsys):
     monkeypatch.setattr(sys, "stderr", None)
     s = trs.ToolRegistryService(mode="shadow")
-    trs.report(s.decide("aios.task"), "aios.task", "dispatch")
+    trs.report(s.decide("aios.mystery.task"), "aios.mystery.task", "dispatch")
     monkeypatch.setattr(sys, "stderr", sys.__stderr__)
     assert capsys.readouterr().out == ""

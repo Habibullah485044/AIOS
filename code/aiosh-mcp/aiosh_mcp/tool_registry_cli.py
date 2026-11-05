@@ -33,6 +33,20 @@ SUBCOMMANDS = ("list", "get", "decide", "export", "check")
 MAX_NAMES = 256
 MAX_NAME_CHARS = 256
 MAX_SHOWN_CHARS = 80
+MAX_SHOWN_PATH_CHARS = 260
+
+
+def _safe(text: Any) -> str:
+    """Terminal-safe text for human output: printable ASCII kept, everything else escaped (T-03389 #2, #3, #5).
+
+    Escaping (rather than dropping) keeps names distinguishable, and an ASCII result can be written to any
+    stream encoding (a redirected Windows stdout is cp1252).
+    """
+    out = []
+    for ch in str(text):
+        code = ord(ch)
+        out.append(ch if 0x20 <= code < 0x7F else ch.encode("unicode_escape").decode("ascii"))
+    return "".join(out)
 
 
 @dataclass
@@ -44,6 +58,8 @@ class CliResult:
     data: Optional[Dict[str, Any]] = None
     error_code: Optional[str] = None
     error: Optional[str] = None
+    #: --json as argparse understood it (abbreviations included), not a raw argv match (T-03389 #7).
+    as_json: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {"ok": self.exit_code == EXIT_SUCCESS, "subcommand": self.subcommand, "data": self.data,
@@ -85,8 +101,10 @@ def _build_parser() -> _Parser:
     return parser
 
 
-def _usage(sub: str, message: str) -> CliResult:
-    return CliResult(EXIT_USAGE, sub, error_code=TOOLCLI_ERR_USAGE, error=f"{TOOLCLI_ERR_USAGE}: {message}")
+def _usage(sub: str, message: str, as_json: bool = False) -> CliResult:
+    # argparse echoes raw argv ("unrecognized arguments: ..."): escape it before it can reach a terminal (#3)
+    return CliResult(EXIT_USAGE, sub, error_code=TOOLCLI_ERR_USAGE,
+                     error=f"{TOOLCLI_ERR_USAGE}: {_safe(message)[:400]}", as_json=as_json)
 
 
 def _decision_dict(d: Any) -> Dict[str, Any]:
@@ -98,24 +116,36 @@ def _decision_dict(d: Any) -> Dict[str, Any]:
 def _export_to(path: str, text: str) -> Dict[str, Any]:
     """Atomic write (TOOLCLI-INV4): temp file in the target directory, then rename into place."""
     target = os.path.abspath(path)
+    mode = None
     if os.path.lexists(target):
         st = os.lstat(target)
         if not stat.S_ISREG(st.st_mode):           # directory, symlink, device, FIFO ...
-            raise OSError(f"refusing to overwrite a non-regular file: {_shown(path)}")
+            raise OSError(f"refusing to overwrite a non-regular file: {_safe(path)[:MAX_SHOWN_PATH_CHARS]}")
+        mode = stat.S_IMODE(st.st_mode)
     parent = os.path.dirname(target) or "."
     data = text.encode("utf-8")
-    fd, tmp = tempfile.mkstemp(prefix=".tool-registry-", suffix=".tmp", dir=parent)
+    tmp = None
     try:
-        with os.fdopen(fd, "wb") as fh:
+        # mkstemp inside the try: an interrupt right after it still removes the temp file (#10)
+        fd, tmp = tempfile.mkstemp(prefix=".tool-registry-", suffix=".tmp", dir=parent)
+        try:
+            fh = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)                           # Windows cannot delete a file that is still open
+            raise
+        with fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)                    # keep the replaced file's POSIX mode (#9; Windows ACLs: documented)
         os.replace(tmp, target)
     except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
         raise
     return {"path": target, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
@@ -136,34 +166,39 @@ def dispatch_cli(argv: List[str]) -> CliResult:
         if any(len(n) > MAX_NAME_CHARS for n in names):
             raise _UsageError(f"names are at most {MAX_NAME_CHARS} characters")
     except _UsageError as exc:
-        return _usage(sub, str(exc))
+        return _usage(sub, str(exc), as_json="--json" in argv[: argv.index("--")] if "--" in argv else "--json" in argv)
+    as_json = bool(getattr(ns, "json", False))
+    if ns.subcommand == "export" and ns.out is not None and not ns.out.strip():
+        return _usage("export", "--out needs a file path (empty value)", as_json)        # #6
     try:
         catalog = default_catalog()
     except ToolRegistryError as exc:
         return CliResult(EXIT_FAILURE, sub, error_code=TOOLCLI_ERR_UNAVAILABLE,
-                         error=f"{TOOLCLI_ERR_UNAVAILABLE}: tool catalog unavailable ({exc.code})")
+                         error=f"{TOOLCLI_ERR_UNAVAILABLE}: tool catalog unavailable ({exc.code})", as_json=as_json)
     if ns.subcommand == "list":
         entries = [e.to_dict() for e in catalog.entries() if ns.category is None or e.category.value == ns.category]
-        return CliResult(EXIT_SUCCESS, "list", data={"count": len(entries), "entries": entries})
+        return CliResult(EXIT_SUCCESS, "list", data={"count": len(entries), "entries": entries}, as_json=as_json)
     if ns.subcommand == "get":
         entry = catalog.resolve(ns.name)
         data = {"registered": entry is not None, "entry": (entry or catalog.profile(ns.name)).to_dict()}
         if entry is None:
-            return CliResult(EXIT_FAILURE, "get", data=data, error=f"not registered: {_shown(ns.name)}")
-        return CliResult(EXIT_SUCCESS, "get", data=data)
+            return CliResult(EXIT_FAILURE, "get", data=data, error=f"not registered: {_safe(_shown(ns.name))}", as_json=as_json)
+        return CliResult(EXIT_SUCCESS, "get", data=data, as_json=as_json)
     if ns.subcommand == "decide":
         from aiosh_mcp.tool_registry_service import ToolRegistryService
         decision = ToolRegistryService(catalog, mode=ns.mode).decide(ns.name, ns.target, require_grant=ns.require_grant)
-        return CliResult(EXIT_SUCCESS, "decide", data=_decision_dict(decision))
+        data = _decision_dict(decision)
+        data["target_checked"] = False      # the decision is per tool name; targets are checked by the PEP (#11)
+        return CliResult(EXIT_SUCCESS, "decide", data=data, as_json=as_json)
     if ns.subcommand == "export":
         text = catalog.export_json()
         if not ns.out:
-            return CliResult(EXIT_SUCCESS, "export", data={"export": text})
+            return CliResult(EXIT_SUCCESS, "export", data={"export": text}, as_json=as_json)
         try:
-            return CliResult(EXIT_SUCCESS, "export", data=_export_to(ns.out, text))
+            return CliResult(EXIT_SUCCESS, "export", data=_export_to(ns.out, text), as_json=as_json)
         except OSError as exc:
-            return CliResult(EXIT_FAILURE, "export", error_code=TOOLCLI_ERR_IO,
-                             error=f"{TOOLCLI_ERR_IO}: {_shown(exc.strerror or exc)}")
+            return CliResult(EXIT_FAILURE, "export", error_code=TOOLCLI_ERR_IO, as_json=as_json,
+                             error=f"{TOOLCLI_ERR_IO}: {_safe(exc.strerror or exc)[:MAX_SHOWN_PATH_CHARS]}")
     # check
     rows = []
     for name in ns.names:
@@ -174,7 +209,7 @@ def dispatch_cli(argv: List[str]) -> CliResult:
     missing = sum(1 for r in rows if not r["registered"])
     return CliResult(EXIT_FAILURE if missing else EXIT_SUCCESS, "check",
                      data={"names": rows, "unregistered": missing},
-                     error=f"{missing} name(s) not registered" if missing else None)
+                     error=f"{missing} name(s) not registered" if missing else None, as_json=as_json)
 
 
 def _human(result: CliResult) -> List[str]:
@@ -199,27 +234,47 @@ def _human(result: CliResult) -> List[str]:
     return []
 
 
+def _silence_stdout() -> None:
+    """After a closed pipe, point fd 1 at devnull so the interpreter's final flush cannot raise again."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def _emit(text: str, stream: Any) -> bool:
+    """Writes one line; False if the stream is gone or closed (pipe closed, fd 1 closed, pythonw).
+
+    Windows reports a closed pipe as OSError(EINVAL), not BrokenPipeError (T-03389 #1, #4).
+    """
+    if stream is None:
+        return False
+    try:
+        stream.write(text + "\n")
+        stream.flush()
+        return True
+    except (BrokenPipeError, OSError, ValueError):
+        return False
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Console entry point; returns the process exit code."""
     args = list(sys.argv[1:] if argv is None else argv)
     result = dispatch_cli(args)
-    try:
-        if result.subcommand == "export" and result.data and "export" in result.data and "--json" not in args:
-            print(result.data["export"])                    # exactly the export, for piping
-        elif "--json" in args:
-            print(json.dumps(result.to_dict(), ensure_ascii=True, sort_keys=True))
-        else:
-            stream = sys.stdout if result.exit_code != EXIT_USAGE else sys.stderr
-            for line in _human(result):
-                print(line, file=stream)
-        sys.stdout.flush()
-    except BrokenPipeError:                                 # `| head`: exit quietly (TOOLCLI-INV3)
-        try:
-            devnull = os.open(os.devnull, os.O_WRONLY)
-            os.dup2(devnull, sys.stdout.fileno())
-        except (OSError, ValueError):
-            pass
-        return EXIT_SUCCESS
+    if result.as_json:
+        lines, stream = [json.dumps(result.to_dict(), ensure_ascii=True, sort_keys=True)], sys.stdout
+    elif result.subcommand == "export" and result.data and "export" in result.data:
+        lines, stream = [result.data["export"]], sys.stdout              # exactly the export (ASCII), for piping
+    else:
+        # every error goes to stderr, so `export > file` can never write an error into the data file (#8)
+        stream = sys.stderr if result.error_code else sys.stdout
+        lines = [_safe(line) for line in _human(result)]
+    for line in lines:
+        if not _emit(line, stream):
+            if stream is sys.stdout:
+                _silence_stdout()
+            break                       # reader went away: stop quietly, keep the real exit code (#12)
     return result.exit_code
 
 

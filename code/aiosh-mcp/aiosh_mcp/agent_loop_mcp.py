@@ -89,7 +89,7 @@ def _ok(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _run(work: Callable[[], Dict[str, Any]], mutating: bool,
-               timeout_s: float = TOOL_CALL_TIMEOUT_S) -> Dict[str, Any]:
+               timeout_s: float = TOOL_CALL_TIMEOUT_S, limiter: Any = None) -> Dict[str, Any]:
     """Runs blocking service/SQLite work off the event loop with a bounded wall-clock (T-03300).
 
     FastMCP calls sync tools on the event-loop thread, so a locked audit DB (busy_timeout 5 s)
@@ -97,7 +97,7 @@ async def _run(work: Callable[[], Dict[str, Any]], mutating: bool,
     """
     try:
         with anyio.fail_after(timeout_s):
-            return await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
+            return await anyio.to_thread.run_sync(work, abandon_on_cancel=True, limiter=limiter)
     except TimeoutError:
         hint = (" outcome unknown: check aios_agent_loop_snapshot / aios_agent_loop_history before retrying"
                 if mutating else "")
@@ -158,6 +158,8 @@ def register_agent_loop_mcp_tools(
     timeout_s = float(cfg["mcp_call_timeout_s"])
     page_bytes = int(cfg["history_page_bytes"])
     default_tail = int(cfg["snapshot_steps_tail"])
+
+    metrics_limiter = anyio.CapacityLimiter(1)
 
     async def run(work: Callable[[], Dict[str, Any]], mutating: bool) -> Dict[str, Any]:
         return await _run(work, mutating, timeout_s)
@@ -267,8 +269,11 @@ def register_agent_loop_mcp_tools(
             live = svc().stats()
             try:
                 ring = ring_metrics(db_path, window)
+                # Health always looks at the default window, so a caller cannot hide signals with a tiny one.
+                basis = ring if window >= DEFAULT_WINDOW else ring_metrics(db_path, DEFAULT_WINDOW)
             except ObservabilityReadError as exc:
-                ring = {"error": str(exc)}
+                ring = basis = {"error": str(exc)}
             return _ok({"ring": ring, "live": live,
-                        "health": health(ring, live, config_degraded=bool(resolved["errors"]))})
-        return await run(work, mutating=False)
+                        "health": health(basis, live, config_degraded=bool(resolved["errors"]))})
+        # One metrics scan at a time, on its own limiter: tokenless calls cannot exhaust the shared pool.
+        return await _run(work, False, timeout_s, metrics_limiter)

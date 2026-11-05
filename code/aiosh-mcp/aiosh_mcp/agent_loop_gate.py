@@ -227,7 +227,7 @@ def read_loop_history(db_path: Optional[str], loop_id: str, limit: int,
         rows = conn.execute(
             """SELECT id, ts, tool, outcome, outcome_detail, args_json,
                       classify_overall_verdict, classify_rule_ids_json FROM audit_ring
-               WHERE tool LIKE 'aios.agent_loop.%' AND json_extract(args_json, '$.loop_id') = ?
+               WHERE substr(tool, 1, 16) = 'aios.agent_loop.' AND json_extract(args_json, '$.loop_id') = ?
                  AND id > ?
                ORDER BY id LIMIT ?""",
             (loop_id, after_id, limit),

@@ -2088,3 +2088,8 @@ All edits are docs / control-plane only.
 - Measured step durations (they were hard-coded), ring-derived metrics (trusted writer only, hashed grants), live counters, health, and a masked library logger.
 - Exposed as MCP `aios_agent_loop_metrics` and `agent_loop_cli metrics`. PRs #449..#458.
 - The independent review found 3 confirmed issues (log leaks of grant ids, spoofable health, forged-row and cost DoS); all fixed with regression tests.
+
+## 2026-11-05 — Agent Loop Hardening documentation epic closed (T-03343..T-03352)
+
+- A reference generated from code (MCP `aios_agent_loop_doc`, CLI `doc`) and a CI drift test that fails when the spec and code diverge or a doc example breaks.
+- 17 undocumented error codes found and documented. The never-raised `LOOPSERV_ERR_CIRCUIT_BREAKER` is now emitted. PRs #459..#468.

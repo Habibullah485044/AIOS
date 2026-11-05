@@ -20,7 +20,8 @@ def test_all_sections_present_and_derived_from_code():
     assert {e["code"] for e in r["errors"]} == set(doc.ERROR_MEANINGS)
     assert all(e["meaning"] for e in r["errors"])
     assert [f["key"] for f in r["config"]["fields"]] == list(cfg.FIELDS)
-    assert {c["subcommand"] for c in r["cli"]} == {"validate", "run", "history", "config", "metrics", "doc"}
+    assert {c["subcommand"] for c in r["cli"]} == {"validate", "run", "history", "config", "metrics", "doc",
+                                                   "validate-ring", "recover"}
     assert r["policy"]["order"][1] == "P2 constitution classifier"
 
 

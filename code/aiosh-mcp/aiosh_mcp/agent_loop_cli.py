@@ -188,6 +188,17 @@ def _build_parser() -> _Parser:
     r.add_argument("--config", dest="config_file", default=None)
     r.add_argument("--json", action="store_true")
 
+    vr = sub.add_parser("validate-ring", add_help=False)
+    vr.add_argument("--grace", type=float, default=900.0)
+    vr.add_argument("--json", action="store_true")
+
+    rc = sub.add_parser("recover", add_help=False)
+    rtok = rc.add_mutually_exclusive_group(required=True)
+    rtok.add_argument("--token-env", metavar="VAR")
+    rtok.add_argument("--token-stdin", action="store_true")
+    rc.add_argument("--grace", type=float, default=900.0)
+    rc.add_argument("--json", action="store_true")
+
     dc = sub.add_parser("doc", add_help=False)
     dc.add_argument("--section", choices=("tools", "errors", "config", "cli", "policy"), default=None)
     dc.add_argument("--json", action="store_true")
@@ -211,11 +222,11 @@ def _build_parser() -> _Parser:
 
 def _resolve_token(ns: argparse.Namespace) -> str:
     """Returns the grant id from --token, --token-env VAR or one line of stdin (T-03289)."""
-    if ns.token_env:
+    if getattr(ns, "token_env", None):
         return os.environ.get(ns.token_env, "").strip()
-    if ns.token_stdin:
+    if getattr(ns, "token_stdin", False):
         return sys.stdin.readline(MAX_TOKEN_CHARS + 1).strip()[:MAX_TOKEN_CHARS + 1]
-    return (ns.token or "").strip()
+    return (getattr(ns, "token", None) or "").strip()
 
 
 def _cmd_run(ns: argparse.Namespace, service: AgentLoopService) -> CliResult:
@@ -285,13 +296,30 @@ def dispatch_cli(
     db_path: Optional[str] = None,
 ) -> CliResult:
     """Parses argv and runs one subcommand; never raises."""
-    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config", "metrics", "doc"} else "unknown"
+    sub = argv[0] if argv and argv[0] in {"validate", "run", "history", "config", "metrics", "doc", "validate-ring", "recover"} else "unknown"
     try:
         if any("\0" in a for a in argv):
             raise _UsageError("argument contains prohibited NUL byte")
         ns = _build_parser().parse_args(argv)
         if ns.subcommand is None:
-            raise _UsageError("expected a subcommand: validate | run | history | config | metrics | doc")
+            raise _UsageError("expected a subcommand: validate | run | history | config | metrics | doc | validate-ring | recover")
+        if ns.subcommand in ("validate-ring", "recover"):
+            from aiosh_mcp.agent_loop_recovery import RecoveryError, recover_orphans, validate_ring
+            if not (0 <= ns.grace <= 86400 * 30):
+                raise _UsageError("--grace must be in [0, 2592000] seconds")
+            try:
+                if ns.subcommand == "validate-ring":
+                    rep = validate_ring(db_path, ns.grace)
+                    return CliResult(EXIT_SUCCESS if rep["ok"] else EXIT_FAILURE, "validate-ring", data=rep,
+                                     error_code=None if rep["ok"] else "LOOPREC_PROBLEMS",
+                                     error=None if rep["ok"] else
+                                     f"{len(rep['orphaned'])} orphaned run(s), {len(rep['problems'])} problem(s), "
+                                     f"chain_ok={rep['chain_ok']}")
+                ns.token = None
+                return CliResult(EXIT_SUCCESS, "recover", data=recover_orphans(db_path, _resolve_token(ns), ns.grace))
+            except RecoveryError as exc:
+                return CliResult(_EXIT_BY_CODE.get(exc.code, EXIT_FAILURE), ns.subcommand,
+                                 error_code=exc.code, error=str(exc))
         if ns.subcommand == "doc":
             from aiosh_mcp.agent_loop_doc import reference
             return CliResult(EXIT_SUCCESS, "doc", data=reference(ns.section))
@@ -303,6 +331,11 @@ def dispatch_cli(
                 raise _UsageError(str(exc)) from exc
             except ObservabilityReadError as exc:
                 raise _AuditReadError(str(exc)) from exc
+            from aiosh_mcp.agent_loop_recovery import RecoveryError, validate_ring
+            try:   # same orphan signal as the MCP tool (T-03358)
+                ring["orphaned_runs"] = len(validate_ring(db_path, 900)["orphaned"])
+            except RecoveryError:
+                ring["orphaned_runs"] = None
             return CliResult(EXIT_SUCCESS, "metrics", data={
                 "ring": ring, "health": health(ring, config_degraded=bool(resolve_config()["errors"]))})
         if ns.subcommand == "config":
@@ -342,6 +375,17 @@ def render(result: CliResult, json_mode: bool) -> str:
     if json_mode:
         return mask_secrets(json.dumps(result.to_dict(), sort_keys=True))
     d = result.data or {}
+    if result.subcommand == "validate-ring" and d:
+        lines = [f"runs={d['runs']} open={d['open']} orphaned={len(d['orphaned'])} problems={len(d['problems'])} "
+                 f"chain_ok={d['chain_ok']} -> {'OK' if d['ok'] else 'NOT OK'}"]
+        lines += [f"orphan  {o['loop_id']} run={o['run_id']} last_step={o['last_step_index']} last={o['last_ts']}"
+                  for o in d["orphaned"]]
+        lines += [f"problem {p['kind']:<20} {p['loop_id']} {p['detail']}" for p in d["problems"]]
+        return mask_secrets("\n".join(lines))
+    if result.subcommand == "recover" and result.exit_code == EXIT_SUCCESS:
+        lines = [f"recovered {len(d['recovered'])} orphaned run(s)"]
+        lines += [f"  {o['loop_id']} run={o['run_id']}" for o in d["recovered"]]
+        return mask_secrets("\n".join(lines))
     if result.subcommand == "doc" and result.exit_code == EXIT_SUCCESS:
         lines: List[str] = []
         for name, body in d.items():

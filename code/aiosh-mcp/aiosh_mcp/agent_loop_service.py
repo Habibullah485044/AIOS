@@ -302,6 +302,11 @@ class AgentLoopService:
             log_event("start", config.loop_id, run_id, "ok")
             return snap
 
+    def live_run_ids(self) -> List[str]:
+        """run_ids of loops this process still holds open; recovery must never close them (T-03358)."""
+        with self._lock:
+            return [self._runs[lid] for lid, s in self._loops.items() if not s.is_terminated and lid in self._runs]
+
     def run_id(self, loop_id: str) -> str:
         """The random run id stamped on this loop's audit rows."""
         with self._lock:

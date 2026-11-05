@@ -10,11 +10,12 @@ from aiosh_mcp.agent_loop_mcp import (
 )
 
 
-def test_annotation_table_covers_ten_tools():
-    assert len(TOOL_ANNOTATIONS) == 10  # +config (T-03308), +metrics (T-03338), +doc (T-03348)
+def test_annotation_table_covers_twelve_tools():
+    assert len(TOOL_ANNOTATIONS) == 12  # +config, +metrics, +doc, +validate/+recover (T-03358)
     read_only = {n for n, a in TOOL_ANNOTATIONS.items() if a.readOnlyHint}
     assert read_only == {"aios_agent_loop_snapshot", "aios_agent_loop_list", "aios_agent_loop_history",
-                         "aios_agent_loop_config", "aios_agent_loop_metrics", "aios_agent_loop_doc"}
+                         "aios_agent_loop_config", "aios_agent_loop_metrics", "aios_agent_loop_doc",
+                         "aios_agent_loop_validate"}
     destructive = {n for n, a in TOOL_ANNOTATIONS.items() if a.destructiveHint}
     assert destructive == {"aios_agent_loop_abort", "aios_agent_loop_complete"}
 

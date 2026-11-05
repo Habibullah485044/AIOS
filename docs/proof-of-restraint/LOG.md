@@ -1472,3 +1472,10 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   - forged-row dilution of health
   - unbounded metrics cost
 - Verification: observability suites 48/48, battery 461 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03352 - AI Control Plane Agent Loop Hardening / documentation: Verification & Evidence (2026-11-05)
+- Milestone closeout for the documentation epic (T-03343..T-03352). It is read-only; no grant, audit, PEP or dispatch change except one:
+  `LOOPSERV_ERR_CIRCUIT_BREAKER` is now emitted as the `terminal_reason` prefix when a breaker ends a loop. It was previously defined but never used.
+- Added: a code-generated reference (MCP `aios_agent_loop_doc`, CLI `doc`) and a CI drift test (identifiers in both directions, doc python
+  examples executed, json examples schema-validated). 17 previously undocumented error codes are now documented.
+- Verification: doc suites 24/24, battery 485 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

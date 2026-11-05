@@ -7,6 +7,8 @@ completeness is enforced by tests in both directions.
 
 from __future__ import annotations
 
+import copy
+import functools
 import importlib
 from typing import Any, Dict, List, Optional
 
@@ -113,10 +115,20 @@ def _policy() -> Dict[str, Any]:
 _BUILDERS = {"tools": _tools, "errors": _errors, "config": _config, "cli": _cli, "policy": _policy}
 
 
+@functools.lru_cache(maxsize=None)
+def _built(section: str) -> Dict[str, Any]:
+    """Built once per process (T-03349): code cannot change at runtime, and building the tools section
+    costs ~0.4 s / ~35 MB, which a tokenless caller could otherwise trigger repeatedly."""
+    return _BUILDERS[section]()
+
+
 def reference(section: Optional[str] = None) -> Dict[str, Any]:
-    """Code-generated reference: one section, or all of ``SECTIONS`` (LOOPDOC-INV2)."""
+    """Code-generated reference: one section, or all of ``SECTIONS`` (LOOPDOC-INV2).
+
+    Returns a deep copy, so callers cannot mutate the per-process cache.
+    """
     if section is None:
-        return {name: _BUILDERS[name]() for name in SECTIONS}
+        return {name: copy.deepcopy(_built(name)) for name in SECTIONS}
     if section not in _BUILDERS:
         raise ValueError(f"unknown section {section!r}; expected one of {', '.join(SECTIONS)}")
-    return {section: _BUILDERS[section]()}
+    return {section: copy.deepcopy(_built(section))}

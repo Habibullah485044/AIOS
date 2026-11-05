@@ -39,8 +39,10 @@ def test_generate_release_returns_tuple():
     assert isinstance(h, str) and len(h) == 64
 
 
-def test_create_backup_returns_path():
-    """Happy path: create_backup returns a zip filename."""
+def test_create_backup_returns_path(tmp_path, monkeypatch):
+    """Happy path: create_backup returns a zip filename (run in a temp dir: the zip is written to the CWD)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path / "home"))
     s = BackupSnapshot(target_path=".", include_audit=True, include_memory=False)
     p = create_backup(s, "test-actor", "v0.0")
     assert p.startswith("aios_backup_")

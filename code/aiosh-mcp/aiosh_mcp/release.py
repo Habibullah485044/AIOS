@@ -140,6 +140,10 @@ def physical_create_zip(snapshot: BackupSnapshot, backup_path: str) -> None:
     cfg = _load_release_config()
     MAX_FILE_SIZE = cfg.get("max_file_size_bytes", 2 * 1024 * 1024 * 1024)
     
+    # The archive is written by default into the current directory, which is often inside target_path
+    # (target "."). Without this exclusion the zip archived itself while growing and filled the disk
+    # (11 GB, 2026-11-06). Earlier backups are skipped too, so repeated backups do not nest.
+    out_real = os.path.realpath(backup_path)
     try:
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(snapshot.target_path):
@@ -154,6 +158,9 @@ def physical_create_zip(snapshot: BackupSnapshot, backup_path: str) -> None:
                     
                     # Hardening: Skip symlinks or excessively large files
                     if os.path.islink(file_path):
+                        continue
+                    if os.path.realpath(file_path) == out_real or (
+                            file.startswith("aios_backup_") and file.endswith(".zip")):
                         continue
                         
                     try:

@@ -78,7 +78,7 @@ class PepCapabilityGate:
             raise CapabilityRefused(mask_secrets(str(res.get("reason", "grant redemption refused"))))
 
     def tool_refusal(self, grant_id: str, tool_name: Optional[str],
-                     target: Optional[str] = None) -> Optional[str]:
+                     target: Any = None) -> Optional[str]:
         """Returns a refusal reason if the bound grant no longer covers ``tool_name`` on ``target``.
 
         ``target`` is checked like ``audit_client.grant_check``: ``scope.networks`` for
@@ -97,15 +97,33 @@ class PepCapabilityGate:
         scope = grant["scope"]
         if tool_name and not audit_client.tool_glob_match(tool_name, scope.get("tools") or []):
             return f"tool '{tool_name}' not in grant scope.tools"
-        if target is not None:
-            networks = scope.get("networks") or []
-            is_network = bool(tool_name) and tool_name.startswith(("pentest.", "network."))
+        # T-03329: every target is checked, and a scoped grant with no checkable target fails closed.
+        targets = [target] if isinstance(target, str) else list(target or [])
+        networks = scope.get("networks") or []
+        paths = scope.get("paths") or {}
+        name = (tool_name or "").casefold()
+        is_network = name in ("pentest", "network") or name.startswith(("pentest.", "network."))
+        scoped = bool(networks) if is_network else bool(paths.get("allow") or paths.get("deny"))
+        if tool_name and scoped and not targets:
+            return f"no target in tool_args to check against grant scope.{'networks' if is_network else 'paths'}"
+        for t in targets:
             if is_network and networks:
-                if not audit_client.network_allowed(target, networks):
-                    return f"target '{target}' blocked by grant scope.networks"
-            elif not audit_client.path_allowed(target, scope.get("paths")):
-                return f"target '{target}' blocked by grant scope.paths"
+                if not audit_client.network_allowed(t, networks):
+                    return f"target '{t}' blocked by grant scope.networks"
+            elif not audit_client.path_allowed(t, paths or None):
+                return f"target '{t}' blocked by grant scope.paths"
         return None
+
+    def irreversible_used(self, grant_id: str) -> int:
+        """ok irreversible loop steps already recorded for ``grant_id`` in the ring (T-03329).
+
+        Counted from the durable ring, so the budget is per grant across loops, processes and restarts.
+        """
+        with closing(self._open()) as conn:
+            row = conn.execute(
+                "SELECT count(*) FROM audit_ring WHERE tool = 'aios.agent_loop.step' AND outcome = 'ok' "
+                "AND grant_token = ? AND json_extract(args_json, '$.irreversible') = 'True'", (grant_id,)).fetchone()
+        return int(row[0] if row else 0)
 
     def irreversible_budget(self, grant_id: str) -> Optional[int]:
         """``scope.max_irreversible`` of the grant (None = no limit / unknown grant)."""

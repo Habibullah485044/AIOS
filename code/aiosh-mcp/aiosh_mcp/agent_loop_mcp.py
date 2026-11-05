@@ -47,7 +47,7 @@ TokenArg = Annotated[str, Field(default="", max_length=MAX_TOKEN_CHARS,
                                 description="PEP grant id (redeemed on start, loop-bound afterwards)")]
 IntentArg = Annotated[str, Field(min_length=1, max_length=MAX_ACTION_INTENT_CHARS)]
 ReasonArg = Annotated[str, Field(min_length=1, max_length=MAX_REASON_CHARS)]
-ToolNameArg = Annotated[Optional[str], Field(default=None, pattern=r"^[A-Za-z0-9_.\-]{1,128}$")]
+ToolNameArg = Annotated[Optional[str], Field(default=None, pattern=r"^[a-z0-9_.\-]{1,128}$")]
 TokensArg = Annotated[int, Field(default=0, ge=0, le=MAX_TOKENS_PER_TURN)]
 HistoryLimitArg = Annotated[int, Field(default=100, ge=1, le=MAX_HISTORY_LIMIT)]
 AfterIdArg = Annotated[int, Field(default=0, ge=0, description="Return events with id > after_id (pagination cursor)")]

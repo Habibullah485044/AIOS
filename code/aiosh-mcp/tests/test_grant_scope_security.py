@@ -57,7 +57,7 @@ def svc(tmp_path):
     ("fs.write", {"path": "/tmp/out.txt"}, "refused"),
     ("network.scan", {"target": "10.0.0.7"}, "ok"),
     ("network.scan", {"target": "8.8.8.8"}, "refused"),
-    ("fs.read", {"note": "no target key"}, "ok"),
+    ("fs.read", {"note": "no target key"}, "refused"),   # scoped grant + no checkable target fails closed (T-03329)
 ])
 def test_loop_step_enforces_paths_and_networks(svc, tool, args, outcome):
     step = svc.advance_turn("loop-scope-sec-01", "x", tool_name=tool, tool_args=args, capability_token="gr_scope")

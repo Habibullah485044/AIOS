@@ -37,7 +37,12 @@ from aiosh_mcp.agent_loop_data_model import (
     MAX_REGISTRY_CAPACITY,
 )
 from aiosh_mcp.agent_loop_gate import CapabilityRefused, LoopIdTaken, PepCapabilityGate
-from aiosh_mcp.agent_loop_policy import LOOPPOL_ERR_IRREVERSIBLE_BUDGET, evaluate_step
+from aiosh_mcp.agent_loop_policy import (
+    LOOPPOL_ERR_IRREVERSIBLE_BUDGET,
+    args_digest,
+    evaluate_step,
+    extract_targets,
+)
 
 LOOPSERV_ERR_NOT_FOUND = "LOOPSERV_ERR_NOT_FOUND"
 LOOPSERV_ERR_ALREADY_EXISTS = "LOOPSERV_ERR_ALREADY_EXISTS"
@@ -55,9 +60,8 @@ MAX_ACTION_INTENT_CHARS = 4096
 MAX_REASON_CHARS = 1024
 MAX_TOKENS_PER_TURN = 1_000_000
 MAX_TOOL_ARGS_DEPTH = 32
-#: tool_args keys whose string value is the call's target for scope.paths / scope.networks.
-TARGET_ARG_KEYS = ("target", "path", "host")
-TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+# Lowercase only (T-03329): "fs.Write" must not slip past rules written for "fs.write".
+TOOL_NAME_PATTERN = re.compile(r"^[a-z0-9_.\-]{1,128}$")
 
 
 class AgentLoopServiceError(Exception):
@@ -83,6 +87,8 @@ class CapabilityGate(Protocol):
 
     def irreversible_budget(self, grant_id: str) -> Optional[int]: ...
 
+    def irreversible_used(self, grant_id: str) -> int: ...
+
     def audit(self, event: str, loop_id: str, grant_id: Optional[str], outcome: str,
               detail: Optional[str] = None, args: Optional[Dict[str, Any]] = None) -> None: ...
 
@@ -103,8 +109,6 @@ class AgentLoopService:
         self._grants: Dict[str, str] = {}
         #: Random per-run id stamped on every audit row of a loop (audit finding #2).
         self._runs: Dict[str, str] = {}
-        #: ok irreversible steps per loop, for scope.max_irreversible (T-03326, LOOPPOL-INV3).
-        self._irreversible_used: Dict[str, int] = {}
 
     @staticmethod
     def _require_token(capability_token: str, loop_id: Optional[str], action: str) -> str:
@@ -150,8 +154,7 @@ class AgentLoopService:
             ) from exc
 
     def _forget(self, loop_id: str) -> None:
-        for table in (self._loops, self._configs, self._start_times, self._grants, self._runs,
-                      self._irreversible_used):
+        for table in (self._loops, self._configs, self._start_times, self._grants, self._runs):
             table.pop(loop_id, None)
 
     def _ensure_capacity(self, loop_id: str) -> None:
@@ -324,27 +327,34 @@ class AgentLoopService:
         # what the bound grant allows; it is never sufficient on its own.
         snap.transition_to(LoopState.EVALUATE_POLICY)
         # P1 caller verdict -> P2 constitution classifier -> P3 grant scope -> P4 irreversible budget (T-03324).
-        target = next((v for k, v in (tool_args or {}).items()
-                       if k in TARGET_ARG_KEYS and isinstance(v, str)), None)
-        policy = evaluate_step(tool_name, target, tool_args or {})
+        try:
+            targets = extract_targets(tool_args or {})
+            target_error = None
+        except ValueError as exc:
+            targets, target_error = [], str(exc)
+        policy = evaluate_step(tool_name, targets, tool_args or {})
         refusal = None if policy_allowed else "caller policy verdict"
+        if refusal is None:
+            refusal = target_error
         if refusal is None:
             refusal = policy.refused_reason
         if refusal is None:
             try:
-                refusal = self._gate.tool_refusal(grant_id, tool_name, target)
+                refusal = self._gate.tool_refusal(grant_id, tool_name, targets)
             except Exception as exc:  # fail closed: an unreachable gate refuses the call
                 refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
-        used = self._irreversible_used.get(loop_id, 0)
+        used = 0
         budget: Optional[int] = None
         if refusal is None and policy.irreversible:
             try:
                 budget = self._gate.irreversible_budget(grant_id)
+                # Per grant, from the ring (T-03329): a multi-use grant cannot multiply its budget across loops.
+                used = self._gate.irreversible_used(grant_id) if budget is not None else 0
             except Exception as exc:
                 refusal = f"{LOOPSERV_ERR_GATE_UNAVAILABLE}: {exc}"
             if refusal is None and budget is not None and used >= budget:
                 refusal = f"{LOOPPOL_ERR_IRREVERSIBLE_BUDGET}: used {used} of {budget}"
-        policy_args = {"irreversible": policy.irreversible}
+        policy_args = {"irreversible": policy.irreversible, "tool_args_sha256": args_digest(tool_args)}
         if budget is not None:
             policy_args["irreversible_used"] = used + (1 if refusal is None else 0)
         # Surfaced on the step (MCP advance / CLI run / snapshot), T-03328.
@@ -370,7 +380,8 @@ class AgentLoopService:
             )
             snap.record_step(step, config)
             self._audit_or_terminate(snap, "step", grant_id, "refused", detail=step.error_message,
-                                     args={"step_index": step.step_index, "tool_name": tool_name, **policy_args},
+                                     args={"step_index": step.step_index, "tool_name": tool_name,
+                                           "tool_args": step.tool_args_summary, **policy_args},
                                      classification=policy.classification)
             if not snap.is_terminated:
                 snap.transition_to(LoopState.OBSERVE)
@@ -391,8 +402,6 @@ class AgentLoopService:
             policy=step_policy,
         )
         snap.record_step(step, config)
-        if policy.irreversible:
-            self._irreversible_used[loop_id] = used + 1
         self._audit_or_terminate(snap, "step", grant_id, "ok",
                                  args={"step_index": step.step_index, "tool_name": tool_name,
                                        "tool_args": step.tool_args_summary, **policy_args},

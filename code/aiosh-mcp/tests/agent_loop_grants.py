@@ -58,6 +58,7 @@ class AllowAllGate:
 
     def __init__(self):
         self.events = []
+        self.irreversible = {}
 
     def redeem(self, grant_id, loop_id):
         self.events.append(("redeem", loop_id, grant_id))
@@ -70,6 +71,12 @@ class AllowAllGate:
 
     def audit(self, event, loop_id, grant_id, outcome, detail=None, args=None, classification=None):
         self.events.append((event, loop_id, outcome))
+        if event == "step" and outcome == "ok" and (args or {}).get("irreversible"):
+            self.irreversible.setdefault(grant_id, 0)
+            self.irreversible[grant_id] += 1
 
     def irreversible_budget(self, grant_id):
         return None
+
+    def irreversible_used(self, grant_id):
+        return self.irreversible.get(grant_id, 0)

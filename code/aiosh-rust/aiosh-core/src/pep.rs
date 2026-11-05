@@ -22,8 +22,11 @@ pub fn tool_glob_match(tool: &str, globs: &[String]) -> bool {
         if glob == tool {
             return true;
         }
+        // "git.*" covers "git" and "git.x", never "github.delete_repo" or "git_x": the match must end
+        // on a dot boundary, as in Python `audit_client.tool_glob_match` and TS `toolGlobMatch`
+        // (security audit 2026-11-05 #3a; Rust found unfixed in T-03363 research).
         if let Some(prefix) = glob.strip_suffix(".*") {
-            if tool.starts_with(prefix) {
+            if tool == prefix || tool.starts_with(&glob[..glob.len() - 1]) {
                 return true;
             }
         }
@@ -1447,6 +1450,13 @@ mod tests {
         assert!(!tool_glob_match("pentest.nmap", &["pentest.metasploit".to_string()]));
         assert!(tool_glob_match("pentest.nmap", &["pentest.nmap".to_string()]));
         assert!(!tool_glob_match("pentest.nmap", &[]));
+        // Dot boundary (T-03363 follow-up): a family glob never covers a sibling with a longer name.
+        assert!(!tool_glob_match("github.delete_repo", &["git.*".to_string()]));
+        assert!(!tool_glob_match("aios.fs_layout.delete", &["aios.fs.*".to_string()]));
+        assert!(!tool_glob_match("pentesting.x", &["pentest.*".to_string()]));
+        assert!(tool_glob_match("git", &["git.*".to_string()]));
+        assert!(tool_glob_match("git.push", &["git.*".to_string()]));
+        assert!(tool_glob_match("aios.fs.read", &["aios.fs.*".to_string()]));
     }
 
     #[test]

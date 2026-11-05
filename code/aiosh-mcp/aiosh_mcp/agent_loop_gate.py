@@ -38,6 +38,19 @@ class LoopIdTaken(Exception):
     """A start/init row for this loop_id already exists in the audit ring."""
 
 
+class BudgetExhausted(Exception):
+    """The grant's max_irreversible budget was spent when the ok row was about to be written (T-03330)."""
+
+    def __init__(self, used: int, budget: int) -> None:
+        super().__init__(f"irreversible budget exhausted: used {used} of {budget}")
+        self.used = used
+        self.budget = budget
+
+
+_IRREVERSIBLE_USED_SQL = ("SELECT count(*) FROM audit_ring WHERE tool = 'aios.agent_loop.step' AND outcome = 'ok' "
+                          "AND grant_token = ? AND json_extract(args_json, '$.irreversible') = 'True'")
+
+
 #: Events that claim a loop_id for good; at most one may ever exist per id.
 CLAIM_EVENTS = ("start", "init")
 _CLAIM_TOOLS = tuple(f"aios.agent_loop.{e}" for e in CLAIM_EVENTS)
@@ -120,9 +133,7 @@ class PepCapabilityGate:
         Counted from the durable ring, so the budget is per grant across loops, processes and restarts.
         """
         with closing(self._open()) as conn:
-            row = conn.execute(
-                "SELECT count(*) FROM audit_ring WHERE tool = 'aios.agent_loop.step' AND outcome = 'ok' "
-                "AND grant_token = ? AND json_extract(args_json, '$.irreversible') = 'True'", (grant_id,)).fetchone()
+            row = conn.execute(_IRREVERSIBLE_USED_SQL, (grant_id,)).fetchone()
         return int(row[0] if row else 0)
 
     def irreversible_budget(self, grant_id: str) -> Optional[int]:
@@ -156,6 +167,7 @@ class PepCapabilityGate:
         detail: Optional[str] = None,
         args: Optional[Dict[str, Any]] = None,
         classification: Optional[Dict[str, Any]] = None,
+        budget_guard: Optional[int] = None,
     ) -> None:
         """Appends one hash-chained audit row for a loop event.
 
@@ -170,6 +182,14 @@ class PepCapabilityGate:
                 if self._claimed(conn, loop_id):
                     conn.rollback()
                     raise LoopIdTaken(f"loop_id '{loop_id}' was already started")
+            elif budget_guard is not None:
+                # Re-check the per-grant budget and write the ok row under one write lock (T-03330),
+                # so concurrent processes sharing a multi-use grant cannot overspend it.
+                conn.execute("BEGIN IMMEDIATE")
+                used = int(conn.execute(_IRREVERSIBLE_USED_SQL, (grant_id,)).fetchone()[0])
+                if used >= budget_guard:
+                    conn.rollback()
+                    raise BudgetExhausted(used, budget_guard)
             audit_client.write_audit_row(conn, {
                 "ts": audit_client.utcnow_iso(),
                 "actor": "agent",

@@ -7,7 +7,8 @@ from aiosh_mcp import audit_client
 TMP_HOME = "/tmp/aios_test_release_smoke"
 
 @pytest.fixture(autouse=True)
-def memory_db(monkeypatch):
+def memory_db(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)          # create_backup writes its zip to the CWD; keep it out of the repo
     monkeypatch.setenv("AIOSH_HOME", TMP_HOME)
     if os.path.exists(TMP_HOME):
         shutil.rmtree(TMP_HOME, ignore_errors=True)

@@ -486,6 +486,10 @@ class AgentLoopService:
         with self._lock:
             return self._require_loop(loop_id)
 
+    def stats(self) -> Dict[str, Any]:
+        """Live gauges and counters since construction (T-03335 scaffold, spec T-03334 §3)."""
+        raise NotImplementedError("T-03336: AgentLoopService.stats")
+
     def list_active_loops(self) -> List[LoopSnapshot]:
         """Lists active non-terminated loops in memory."""
         with self._lock:

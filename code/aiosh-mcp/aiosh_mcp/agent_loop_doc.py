@@ -50,7 +50,8 @@ ERROR_MEANINGS: Dict[str, str] = {
     "AGENTLOOPCONF_ERR_LOCKED": "config tried to set a locked security control; whole file ignored",
     "AGENTLOOPCONF_ERR_BOUNDS": "config value clamped to its bounds (reported, applied clamped)",
     "AGENTLOOPCONF_ERR_ENV": "env value or env config path rejected; lower level kept",
-    "LOOPREC_ERR_READ": "recovery/validation: audit DB unreadable",
+    "LOOPREC_ERR_READ": "recovery/validation: audit DB unreadable, or the scan exceeded its time budget",
+    "LOOPREC_ERR_WRITE": "recovery write failed (locked/full DB); runs already closed are listed, the rest untouched",
 }
 
 

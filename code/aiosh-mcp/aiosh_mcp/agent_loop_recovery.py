@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import sqlite3
+import time
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -18,6 +19,10 @@ from aiosh_mcp.agent_loop_gate import AGENT_LOOP_ACTOR_ID
 
 RECOVER_TOOL = "aios.agent_loop.recover"
 LOOPREC_ERR_READ = "LOOPREC_ERR_READ"
+#: A recovery write (grant redemption or a recovered row) failed; the error lists what was already closed.
+LOOPREC_ERR_WRITE = "LOOPREC_ERR_WRITE"
+#: Wall-clock budget for one validation scan (T-03360); exceeding it is a LOOPREC_ERR_READ.
+DEFAULT_DEADLINE_S = 10.0
 #: Same value as agent_loop_service.LOOPSERV_ERR_UNAUTHORIZED (kept local to avoid an import cycle).
 LOOPSERV_ERR_UNAUTHORIZED = "LOOPSERV_ERR_UNAUTHORIZED"
 TERMINAL_EVENTS = ("abort", "complete", "timeout", "failed", "recovered")
@@ -33,19 +38,28 @@ TIMEOUT_MARGIN_S = 1.0
 
 def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
+
+
 PROBLEM_KINDS = ("rows_after_terminal", "duplicate_start", "step_index_gap", "run_id_mixed",
-                 "budget_exceeded", "missing_start")
+                 "budget_exceeded", "budget_invalid", "missing_start")
+#: Bounds applied to a start row's total_timeout_ms (the LoopConfig range), so a malformed value
+#: cannot make a run recoverable early (T-03360).
+MIN_TOTAL_TIMEOUT_S = 5.0
 
 
 class RecoveryError(Exception):
     """Recovery refused or failed; ``code`` is a documented error code."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, recovered: Optional[List[Dict[str, Any]]] = None) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+        #: Runs already closed before a LOOPREC_ERR_WRITE (their rows are committed).
+        self.recovered = recovered or []
 
 
 _PREFIX = "aios.agent_loop."
+#: Prefix of ``audit_client.grant_redeem``'s reason when its audit row could not be written.
+_REDEEM_WRITE_FAILED = "audit ring write failed during redemption"
 
 
 def _parse_ts(ts: Optional[str]) -> Optional[dt.datetime]:
@@ -94,8 +108,10 @@ def _runs(conn: sqlite3.Connection, window: int = DEFAULT_WINDOW_ROWS) -> Dict[s
             run["grant"] = r["grant_token"]
             run["start_ts"] = r["ts"]
             try:
-                run["timeout_s"] = min(MAX_TOTAL_TIMEOUT_S, float(r["total_timeout_ms"]) / 1000.0)
-            except (TypeError, ValueError):
+                value = float(r["total_timeout_ms"]) / 1000.0
+                if value == value:          # NaN keeps the maximum
+                    run["timeout_s"] = min(MAX_TOTAL_TIMEOUT_S, max(MIN_TOTAL_TIMEOUT_S, value))
+            except (TypeError, ValueError, OverflowError):
                 pass
         elif event == "step":
             try:
@@ -111,7 +127,8 @@ def _runs(conn: sqlite3.Connection, window: int = DEFAULT_WINDOW_ROWS) -> Dict[s
 
 def validate_ring(db_path: Optional[str] = None, grace_s: float = DEFAULT_GRACE_S,
                   live_runs: Iterable[str] = (), verify_chain: bool = False, window: int = DEFAULT_WINDOW_ROWS,
-                  max_listed: Optional[int] = MAX_LISTED_RUNS) -> Dict[str, Any]:
+                  max_listed: Optional[int] = MAX_LISTED_RUNS,
+                  deadline_s: float = DEFAULT_DEADLINE_S) -> Dict[str, Any]:
     """Read-only per-run report (spec §2); never creates the DB (LOOPREC-INV3).
 
     T-03359: scans the newest ``window`` rows; the hash-chain check is opt-in (``verify_chain``);
@@ -128,9 +145,13 @@ def validate_ring(db_path: Optional[str] = None, grace_s: float = DEFAULT_GRACE_
     try:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_ring'").fetchone():
             return report
+        stop_at = time.monotonic() + deadline_s      # T-03360: a huge ring cannot pin a worker thread
+        conn.set_progress_handler(lambda: 1 if time.monotonic() > stop_at else 0, 200)
         runs = _runs(conn, window)
+        _check_deadline(stop_at, deadline_s)
         if verify_chain:
             report["chain_ok"] = bool(audit_client.verify_live(conn)["ok"])
+            _check_deadline(stop_at, deadline_s)
         budgets: Dict[str, Optional[int]] = {}
         has_grants = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pep_grants'").fetchone() is not None
@@ -142,12 +163,22 @@ def validate_ring(db_path: Optional[str] = None, grace_s: float = DEFAULT_GRACE_
             if has_grants and grant not in budgets:
                 g = audit_client.load_grant(conn, grant)
                 value = (g or {}).get("scope", {}).get("max_irreversible")
-                budgets[grant] = None if value is None or isinstance(value, bool) else int(value)
+                try:
+                    budgets[grant] = None if value is None or isinstance(value, bool) else int(value)
+                except (TypeError, ValueError, OverflowError):
+                    budgets[grant] = None       # T-03360: reported, not a crash of the whole report
+                    report["problems"].append({"loop_id": None, "run_id": None, "kind": "budget_invalid",
+                                               "detail": f"grant {_grant_hash(grant)} has a malformed max_irreversible"})
             if budgets.get(grant) is not None and used > budgets[grant]:
                 report["problems"].append({"loop_id": None, "run_id": None, "kind": "budget_exceeded",
                                            "detail": f"grant {_grant_hash(grant)} used {used} of {budgets[grant]}"})
     except sqlite3.Error as exc:
+        if "interrupted" in str(exc):
+            raise RecoveryError(LOOPREC_ERR_READ, f"validation exceeded its {deadline_s}s budget; "
+                                                  "use a smaller window") from exc
         raise RecoveryError(LOOPREC_ERR_READ, f"cannot read audit DB: {exc}") from exc
+    except (ValueError, TypeError) as exc:      # e.g. a grant row whose scope_json is not JSON
+        raise RecoveryError(LOOPREC_ERR_READ, f"cannot read audit DB: {type(exc).__name__}") from exc
     finally:
         conn.close()
 
@@ -195,6 +226,12 @@ def validate_ring(db_path: Optional[str] = None, grace_s: float = DEFAULT_GRACE_
     return report
 
 
+def _check_deadline(stop_at: float, deadline_s: float) -> None:
+    """The progress handler only interrupts SQL; Python-side work is checked between phases."""
+    if time.monotonic() > stop_at:
+        raise RecoveryError(LOOPREC_ERR_READ, f"validation exceeded its {deadline_s}s budget; use a smaller window")
+
+
 def _grant_hash(grant: str) -> str:
     import hashlib
     return hashlib.sha256(grant.encode()).hexdigest()[:12]   # grant ids are bearer tokens
@@ -209,7 +246,21 @@ def recover_orphans(db_path: Optional[str], capability_token: str, grace_s: floa
     live = list(live_runs)
     found = validate_ring(db_path, grace_s, live, max_listed=None)    # recovery is not capped at the listing limit
     orphans = found["orphaned"]
-    with closing(audit_client.open_db(db_path)) as conn:
+    recovered: List[Dict[str, Any]] = []
+    try:
+        _recover(db_path, token, orphans, recovered)
+    except sqlite3.Error as exc:
+        # T-03360: explicit and honest; rows for ``recovered`` are committed, the rest were not touched.
+        raise RecoveryError(LOOPREC_ERR_WRITE, f"recovery write failed after {len(recovered)} of {len(orphans)} "
+                                               f"run(s) closed: {mask_secrets(str(exc))}", recovered) from exc
+    return {"recovered": recovered, "skipped_live": found["skipped_live"]}
+
+
+def _recover(db_path: Optional[str], token: str, orphans: List[Dict[str, Any]],
+             recovered: List[Dict[str, Any]]) -> None:
+    from aiosh_mcp.agent_loop_config import process_config
+    busy_ms = int(process_config()["config"]["db_busy_timeout_ms"])
+    with closing(audit_client.open_db(db_path, timeout=busy_ms / 1000.0)) as conn:
         audit_client.ensure_pep_schema(conn)
         # T-03359 #3: a broad glob (aios.agent_loop.*, *) must not authorise closing other loops' runs.
         grant = audit_client.load_grant(conn, token)
@@ -219,31 +270,42 @@ def recover_orphans(db_path: Optional[str], capability_token: str, grace_s: floa
         res = audit_client.grant_redeem(conn, token, actor_id=AGENT_LOOP_ACTOR_ID, tool=RECOVER_TOOL,
                                         command="agent_loop.recover", args={"orphans": len(orphans)})
         if not res.get("ok"):
-            raise RecoveryError(LOOPSERV_ERR_UNAUTHORIZED, mask_secrets(str(res.get("reason", "refused"))))
-        recovered: List[Dict[str, Any]] = []
+            reason = mask_secrets(str(res.get("reason", "refused")))
+            # grant_redeem reports a failed audit write as a refusal; it is a write failure (grant not consumed).
+            code = LOOPREC_ERR_WRITE if reason.startswith(_REDEEM_WRITE_FAILED) else LOOPSERV_ERR_UNAUTHORIZED
+            raise RecoveryError(code, reason)
         for o in orphans:
             conn.execute("BEGIN IMMEDIATE")
-            # Re-check under the write lock: another recovery or a late terminal row may have closed it.
-            closed = conn.execute(
-                "SELECT 1 FROM audit_ring WHERE actor_id = ? AND json_extract(args_json, '$.run_id') = ? AND tool IN "
-                f"({','.join('?' * len(TERMINAL_EVENTS))}) LIMIT 1",
-                (AGENT_LOOP_ACTOR_ID, o["run_id"], *[_PREFIX + e for e in TERMINAL_EVENTS])).fetchone()
-            newest = conn.execute(
-                "SELECT max(id) FROM audit_ring WHERE actor_id = ? AND json_extract(args_json, '$.run_id') = ?",
-                (AGENT_LOOP_ACTOR_ID, o["run_id"])).fetchone()[0]
-            # T-03359 #1: anything written for the run since validation means it is alive: leave it.
-            if closed or newest != o["last_id"]:
-                conn.rollback()
-                continue
-            audit_client.write_audit_row(conn, {
-                "ts": audit_client.utcnow_iso(), "actor": "agent", "actor_id": AGENT_LOOP_ACTOR_ID,
-                "tool": _PREFIX + "recovered", "command": f"agent_loop.recovered {o['loop_id']}",
-                "args": {"loop_id": o["loop_id"], "run_id": o["run_id"],
-                         "last_step_index": str(o["last_step_index"]), "last_ts": o["last_ts"]},
-                "target": None, "outcome": "abandoned",
-                "outcome_detail": "run had no terminal row (process ended); closed by recovery",
-                "constitution_rev": None, "grant_token": token,
-                "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True},
-            })
-            recovered.append(o)
-    return {"recovered": recovered, "skipped_live": found["skipped_live"]}
+            try:
+                if _still_orphaned(conn, o):
+                    _write_recovered(conn, o, token)      # commits
+                    recovered.append(o)
+            finally:
+                if conn.in_transaction:                    # skipped, or failed mid-way: release the lock
+                    conn.rollback()
+
+
+def _still_orphaned(conn: sqlite3.Connection, o: Dict[str, Any]) -> bool:
+    """Re-check under the write lock: another recovery or a late terminal row may have closed it, and
+    anything written for the run since validation means it is alive (T-03359 #1)."""
+    closed = conn.execute(
+        "SELECT 1 FROM audit_ring WHERE actor_id = ? AND json_extract(args_json, '$.run_id') = ? AND tool IN "
+        f"({','.join('?' * len(TERMINAL_EVENTS))}) LIMIT 1",
+        (AGENT_LOOP_ACTOR_ID, o["run_id"], *[_PREFIX + e for e in TERMINAL_EVENTS])).fetchone()
+    newest = conn.execute(
+        "SELECT max(id) FROM audit_ring WHERE actor_id = ? AND json_extract(args_json, '$.run_id') = ?",
+        (AGENT_LOOP_ACTOR_ID, o["run_id"])).fetchone()[0]
+    return not closed and newest == o["last_id"]
+
+
+def _write_recovered(conn: sqlite3.Connection, o: Dict[str, Any], token: str) -> None:
+    audit_client.write_audit_row(conn, {
+        "ts": audit_client.utcnow_iso(), "actor": "agent", "actor_id": AGENT_LOOP_ACTOR_ID,
+        "tool": _PREFIX + "recovered", "command": f"agent_loop.recovered {o['loop_id']}",
+        "args": {"loop_id": o["loop_id"], "run_id": o["run_id"],
+                 "last_step_index": str(o["last_step_index"]), "last_ts": o["last_ts"]},
+        "target": None, "outcome": "abandoned",
+        "outcome_detail": "run had no terminal row (process ended); closed by recovery",
+        "constitution_rev": None, "grant_token": token,
+        "c_flags": {"c1": False, "c2": False, "c3": False, "c4": True},
+    })

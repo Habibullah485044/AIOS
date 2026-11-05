@@ -316,6 +316,39 @@ Observability limitations:
 - A local writer that forges the gate's own `actor_id` is still counted. Detecting that needs chain-verified aggregation.
 - Grant hashes are unsalted. Production ids (64 random bits) are not practically reversible, but low-entropy test ids are.
 
+## 5c. Generated reference and doc drift checks (T-03343..T-03352)
+
+This document is checked against the code. In addition, the code serves a reference **generated from itself**, so agents never depend on prose that may be stale.
+
+- MCP `aios_agent_loop_doc(section?)` (read-only, no token) and CLI `python -m aiosh_mcp.agent_loop_cli doc [--section tools|errors|config|cli|policy] [--json]`.
+- It contains:
+  - all `aios_agent_loop_*` tools, with their published input schemas and annotations (identical to `tools/list`)
+  - every `*_ERR_*` code, with its module and meaning
+  - config fields with defaults, bounds and env **names**, plus the locked keys
+  - CLI subcommands and flags
+  - the P1..P4 step-policy order
+- It is built once per process (about 0.6 ms per warm call). It never includes env values, paths or grant ids. A section that fails to build
+  is reported under `_unavailable` instead of failing the whole reference.
+
+Example:
+```bash
+python -m aiosh_mcp.agent_loop_cli doc --section config
+```
+```
+== config ==
+default_max_iterations               25         [1..100]  AIOSH_AGENT_LOOP_MAX_ITERATIONS
+default_max_total_tokens             32768      [100..1000000]  AIOSH_AGENT_LOOP_MAX_TOTAL_TOKENS
+default_timeout_ms_per_step          30000.0    [1000.0..120000.0]  AIOSH_AGENT_LOOP_TIMEOUT_MS_PER_STEP
+...
+```
+
+**Drift check (CI).** `tests/test_agent_loop_doc_drift.py` fails the build when:
+- a code, tool, config key or env name, locked key, or CLI subcommand is missing from this document
+- this document names an error code that no longer exists
+- a `python` example here stops running, or a `json` example no longer validates (tool calls against the live schemas, plans, configs)
+
+Every `*_ERR_*` constant must also have a meaning in `agent_loop_doc.ERROR_MEANINGS`; that is checked in both directions.
+
 ## 6. Error codes
 
 | Code | Meaning |
@@ -409,6 +442,7 @@ Testing limitations:
 - T-03279 security review: [T-03279-security.md](tasks/evidence/T-03279-security.md)
 - T-03280 hardening: [T-03280-core-service-hardening.md](tasks/evidence/T-03280-core-service-hardening.md)
 - T-03293..T-03300 MCP/API: [research](tasks/evidence/T-03293-research.md), [spec](tasks/evidence/T-03294-spec.md), [scaffold](tasks/evidence/T-03295-mcp-api-surface-scaffold.md), [implementation](tasks/evidence/T-03296-mcp-api-surface-implementation.md), [unit](tasks/evidence/T-03297-mcp-api-surface-unit-test.md), [integration](tasks/evidence/T-03298-mcp-api-surface-integration.md), [security](tasks/evidence/T-03299-security.md), [hardening](tasks/evidence/T-03300-mcp-api-surface-hardening.md)
+- T-03343..T-03350 documentation: [research](tasks/evidence/T-03343-research.md), [spec](tasks/evidence/T-03344-spec.md), [implementation](tasks/evidence/T-03346-documentation-implementation.md), [drift test](tasks/evidence/T-03347-documentation-unit-test.md), [integration](tasks/evidence/T-03348-documentation-integration.md), [security](tasks/evidence/T-03349-security.md), [hardening](tasks/evidence/T-03350-documentation-hardening.md)
 - T-03333..T-03340 observability: [research](tasks/evidence/T-03333-research.md), [spec](tasks/evidence/T-03334-spec.md), [implementation](tasks/evidence/T-03336-observability-implementation.md), [unit](tasks/evidence/T-03337-observability-unit-test.md), [integration](tasks/evidence/T-03338-observability-integration.md), [security](tasks/evidence/T-03339-security.md), [hardening](tasks/evidence/T-03340-observability-hardening.md)
 - T-03323..T-03330 security policy: [research](tasks/evidence/T-03323-research.md), [spec](tasks/evidence/T-03324-spec.md), [implementation](tasks/evidence/T-03326-security-policy-implementation.md), [unit](tasks/evidence/T-03327-security-policy-unit-test.md), [integration](tasks/evidence/T-03328-security-policy-integration.md), [security](tasks/evidence/T-03329-security.md), [hardening](tasks/evidence/T-03330-security-policy-hardening.md)
 - T-03313..T-03320 automated tests: [research](tasks/evidence/T-03313-research.md), [spec](tasks/evidence/T-03314-spec.md), [implementation](tasks/evidence/T-03316-automated-tests-implementation.md), [unit](tasks/evidence/T-03317-automated-tests-unit-test.md), [integration](tasks/evidence/T-03318-automated-tests-integration.md), [security](tasks/evidence/T-03319-security.md), [hardening](tasks/evidence/T-03320-automated-tests-hardening.md)

@@ -352,6 +352,16 @@ default_timeout_ms_per_step          30000.0    [1000.0..120000.0]  AIOSH_AGENT_
 
 Every `*_ERR_*` constant must also have a meaning in `agent_loop_doc.ERROR_MEANINGS`; that is checked in both directions.
 
+## 5d. Recovery & validation (T-03353..T-03362)
+
+Loop state is in-memory. A process that dies mid-loop leaves an **orphaned run**: a `start` row and steps, but no terminal row.
+- `aios_agent_loop_validate(grace_s=900)` / `python -m aiosh_mcp.agent_loop_cli validate-ring [--grace S] [--json]` (read-only).
+  It reports orphaned runs and structural problems, and checks the chain. The CLI exits 1 when anything is wrong.
+- `aios_agent_loop_recover(capability_token, grace_s=900)` / `python -m aiosh_mcp.agent_loop_cli recover --token-env VAR [--grace S]`.
+  It redeems a grant scoped to `aios.agent_loop.recover`, then closes each orphan with exactly one `aios.agent_loop.recovered` row.
+  It is idempotent and never touches runs the server still holds.
+- Breaker terminations write an `aios.agent_loop.failed` row, so they are not mistaken for orphans. `metrics` reports `orphaned_runs`, and health is `degraded` while any exist.
+
 ## 6. Error codes
 
 | Code | Meaning |

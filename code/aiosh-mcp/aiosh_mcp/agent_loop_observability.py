@@ -169,6 +169,7 @@ def health(ring: Dict[str, Any], live: Optional[Dict[str, Any]] = None, config_d
     if ring.get("error") or counters.get("audit_failures", 0) > 0:
         return "failing"
     if (config_degraded or counters.get("gate_unavailable", 0) > 0 or ring.get("degraded_config_rows", 0) > 0
+            or ring.get("orphaned_runs", 0) > 0
             or ring.get("refusals", {}).get("gate_unavailable", 0) > 0):
         return "degraded"
     return "ok"

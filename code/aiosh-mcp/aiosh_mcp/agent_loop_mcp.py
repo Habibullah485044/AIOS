@@ -80,6 +80,8 @@ TOOL_ANNOTATIONS: Dict[str, ToolAnnotations] = {
     "aios_agent_loop_config": READ_ONLY,
     "aios_agent_loop_metrics": READ_ONLY,
     "aios_agent_loop_doc": READ_ONLY,
+    "aios_agent_loop_validate": READ_ONLY,
+    "aios_agent_loop_recover": MUTATING,
 }
 
 MAX_LIST_LOOPS = MAX_REGISTRY_CAPACITY
@@ -272,12 +274,46 @@ def register_agent_loop_mcp_tools(
                 ring = ring_metrics(db_path, window)
                 # Health always looks at the default window, so a caller cannot hide signals with a tiny one.
                 basis = ring if window >= DEFAULT_WINDOW else ring_metrics(db_path, DEFAULT_WINDOW)
+                from aiosh_mcp.agent_loop_recovery import RecoveryError, validate_ring
+                try:   # orphaned runs (T-03358) degrade health until recovered
+                    ring["orphaned_runs"] = basis["orphaned_runs"] = len(
+                        validate_ring(db_path, 900, svc().live_run_ids())["orphaned"])
+                except RecoveryError:
+                    ring["orphaned_runs"] = basis["orphaned_runs"] = None
             except ObservabilityReadError as exc:
                 ring = basis = {"error": str(exc)}
             return _ok({"ring": ring, "live": live,
                         "health": health(basis, live, config_degraded=bool(resolved["errors"]))})
         # One metrics scan at a time, on its own limiter: tokenless calls cannot exhaust the shared pool.
         return await _run(work, False, timeout_s, metrics_limiter)
+
+    @mcp_app.tool(name="aios_agent_loop_validate", annotations=TOOL_ANNOTATIONS["aios_agent_loop_validate"])
+    async def aios_agent_loop_validate(grace_s: Annotated[float, Field(ge=0, le=86400 * 30)] = 900) -> dict:
+        """Validates every loop run in the audit ring (T-03358): orphaned runs (no terminal row, older than
+        grace_s, not live here), structural problems, and chain verification. Read-only, no token."""
+        from aiosh_mcp.agent_loop_recovery import RecoveryError, validate_ring
+
+        def work() -> Dict[str, Any]:
+            try:
+                return _ok(validate_ring(db_path, grace_s, svc().live_run_ids()))
+            except RecoveryError as exc:
+                return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code).to_dict()
+        return await _run(work, False, timeout_s, metrics_limiter)
+
+    @mcp_app.tool(name="aios_agent_loop_recover", annotations=TOOL_ANNOTATIONS["aios_agent_loop_recover"])
+    async def aios_agent_loop_recover(capability_token: TokenArg = "",
+                                      grace_s: Annotated[float, Field(ge=0, le=86400 * 30)] = 900) -> dict:
+        """Closes orphaned runs honestly (T-03358): one aios.agent_loop.recovered row per run whose process
+        ended without a terminal row. Mutating: redeems a grant scoped to aios.agent_loop.recover. Never
+        touches runs this server still holds; idempotent."""
+        from aiosh_mcp.agent_loop_recovery import RecoveryError, recover_orphans
+
+        def work() -> Dict[str, Any]:
+            try:
+                return _ok(recover_orphans(db_path, capability_token, grace_s, svc().live_run_ids()))
+            except RecoveryError as exc:
+                return LoopResultEnvelope(ok=False, error=str(exc), error_code=exc.code).to_dict()
+        return await run(work, mutating=True)
 
     @mcp_app.tool(name="aios_agent_loop_doc", annotations=TOOL_ANNOTATIONS["aios_agent_loop_doc"])
     async def aios_agent_loop_doc(

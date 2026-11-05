@@ -659,12 +659,16 @@ def write_audit_row(
     head read. A caller that already holds a write transaction (e.g.
     ``grant_redeem`` after its UPDATE) is already serialised.
     """
-    ensure_pep_schema(conn)  # no-op if CLI has already created the table.
-    ensure_audit_schema(conn)  # Sprint 2 migration: add classifier columns.
     began = False
     if not conn.in_transaction:
+        ensure_pep_schema(conn)  # no-op if CLI has already created the table.
+        ensure_audit_schema(conn)  # Sprint 2 migration: add classifier columns.
         conn.execute("BEGIN IMMEDIATE")
         began = True
+    # else: the caller holds a write transaction (check-then-write under BEGIN IMMEDIATE).
+    # The schema helpers use executescript(), which COMMITs any open transaction first and
+    # would silently drop the caller's lock between its check and this insert (security
+    # review T-03359 #2). open_db() / the gate already ensured the schema.
     try:
         row = _insert_audit_row(conn, proto, prev_hash=prev_hash)
         conn.commit()

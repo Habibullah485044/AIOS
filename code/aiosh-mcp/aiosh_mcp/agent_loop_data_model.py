@@ -131,8 +131,12 @@ class LoopConfig:
     def validate_bounds(self) -> None:
         """Enforces parameter bounds and loop_id syntax."""
         # fullmatch on the raw value: a stripped or `$`-before-newline match let "id " alias "id".
-        if not isinstance(self.loop_id, str) or not LOOP_ID_PATTERN.fullmatch(self.loop_id):
-            raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: invalid loop_id syntax: {self.loop_id}")
+        # A secret-shaped id would be stored masked, aliasing every such loop (T-03359 #5).
+        if (not isinstance(self.loop_id, str) or not LOOP_ID_PATTERN.fullmatch(self.loop_id)
+                or SECRET_PATTERN.search(self.loop_id)):
+            # The rejected value is echoed masked: it may be a credential pasted as an id.
+            raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: invalid loop_id syntax: "
+                             f"{mask_secrets(str(self.loop_id))[:80]}")
         if not (1 <= self.max_iterations <= 100):
             raise ValueError(f"{LOOPDATA_ERR_BOUNDS_EXCEEDED}: max_iterations must be in [1, 100]")
         if not (100 <= self.max_total_tokens <= 1000000):

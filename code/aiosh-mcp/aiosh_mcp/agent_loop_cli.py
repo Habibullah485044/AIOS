@@ -190,6 +190,7 @@ def _build_parser() -> _Parser:
 
     vr = sub.add_parser("validate-ring", add_help=False)
     vr.add_argument("--grace", type=float, default=900.0)
+    vr.add_argument("--chain", action="store_true", help="also re-verify the audit hash chain")
     vr.add_argument("--json", action="store_true")
 
     rc = sub.add_parser("recover", add_help=False)
@@ -309,7 +310,7 @@ def dispatch_cli(
                 raise _UsageError("--grace must be in [0, 2592000] seconds")
             try:
                 if ns.subcommand == "validate-ring":
-                    rep = validate_ring(db_path, ns.grace)
+                    rep = validate_ring(db_path, ns.grace, verify_chain=ns.chain)
                     return CliResult(EXIT_SUCCESS if rep["ok"] else EXIT_FAILURE, "validate-ring", data=rep,
                                      error_code=None if rep["ok"] else "LOOPREC_PROBLEMS",
                                      error=None if rep["ok"] else

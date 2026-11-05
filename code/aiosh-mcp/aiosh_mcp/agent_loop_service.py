@@ -38,7 +38,7 @@ from aiosh_mcp.agent_loop_data_model import (
     MAX_REGISTRY_CAPACITY,
 )
 from aiosh_mcp.agent_loop_observability import log_event
-from aiosh_mcp.agent_loop_gate import BudgetExhausted, CapabilityRefused, LoopIdTaken, PepCapabilityGate
+from aiosh_mcp.agent_loop_gate import BudgetExhausted, CapabilityRefused, LoopIdTaken, PepCapabilityGate, RunRecovered
 from aiosh_mcp.agent_loop_policy import (
     LOOPPOL_ERR_IRREVERSIBLE_BUDGET,
     args_digest,
@@ -160,6 +160,12 @@ class AgentLoopService:
                              args={"run_id": self._runs.get(snap.loop_id), **(args or {})}, **extra)
         except BudgetExhausted:
             raise
+        except RunRecovered as exc:
+            # Another process closed this run as orphaned: stop, write nothing more (T-03359).
+            if not snap.is_terminated:
+                snap.transition_to(LoopState.ABORTED,
+                                   terminal_reason=f"{LOOPSERV_ERR_TERMINATED}: run was closed by recovery")
+            raise AgentLoopServiceError(LOOPSERV_ERR_TERMINATED, str(exc), snap.loop_id) from exc
         except Exception as exc:
             self._counters["audit_failures"] += 1
             log_event("audit_failure", snap.loop_id, self._runs.get(snap.loop_id), "error",

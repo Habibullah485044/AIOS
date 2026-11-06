@@ -206,6 +206,47 @@ CLI limitations:
 - **`stats` is not available from the CLI.** Server counters live in the server process.
 - **No TS `aiosh tools` command yet.** TS can read `export` output.
 
+## 6d. MCP API: decide, stats and catalog-driven annotations (T-03393..T-03402)
+Two more read-only MCP tools (no token):
+- `aios_tool_registry_decide(name, require_grant=false)` returns the core service's decision for a call to `name`, with
+  `target_checked: false`. It uses **its own** counters, so callers cannot inflate or probe the server's dispatch telemetry.
+- `aios_tool_registry_stats()` returns this server's dispatch and agent-loop registry counters: mode, decisions, disagreements by kind,
+  unregistered decisions with per-process keyed hashes and never names, and the logged/suppressed disagreement lines.
+
+```json
+{"name": "aios_tool_registry_decide", "arguments": {"name": "aios_pentest_nmap"}}
+```
+```json
+{"name": "aios_tool_registry_stats", "arguments": {}}
+```
+
+**Annotations for every served tool.** At startup, after all registrations, `apply_catalog_annotations` gives each served tool MCP
+`ToolAnnotations` derived from its catalog entry. Before this only 14 of 69 tools had any. Clients may skip confirmation prompts for
+`readOnlyHint=true` tools, so the pass **only ever makes a tool look more careful**:
+- `readOnlyHint=true` is set only if **all** of the following hold:
+  - the entry is `read_only`;
+  - it requires no grant;
+  - its category is one of `audit`, `agent_loop`, `mcp_core`, `model_backend`, `fs.read`, `service`;
+  - its `scope_kind` is `none`;
+  - its input schema has **no grant/token argument** (`grant_id`, `caller_grant_id`, `capability_token`, `token`, `*_grant_id`) and **no
+    path argument** (`path`, `file`, `dir`, `*_path`, …);
+  - an existing annotation does not say otherwise (an explicit `false`, or a destructive or non-idempotent claim).
+- `destructiveHint` and `openWorldHint` stay `true` if either side says so (an omitted hint counts as MCP's default, `true`).
+  `idempotentHint` is claimed only if both sides claim it.
+- An annotation that is already equivalent is left untouched (the agent-loop module's own annotations).
+- A broken catalog changes nothing. A tool whose schema cannot be read gets no read-only hint. One failing tool is left as it was, and
+  the pass continues.
+
+Result on the live server: all **71** tools are annotated, and **35** are advertised read-only. Each of the 35 was verified read-only by
+reading its code and probing it (T-03399).
+
+API limitations:
+- **Annotations are hints for clients.** Server enforcement (PEP grants, the classifier, the irreversible budget) is unaffected either way.
+- **Follow-ups (outside the registry):** confine the path arguments of `aios_mcp_recovery_check`, `aios_model_validate_config` and
+  `aios_restraint_prove` to `$AIOSH_HOME`, and bound the segment scans of `aios_audit_verify(full)` / `aios_audit_seen(exact)`.
+  Until then those tools are deliberately *not* advertised read-only.
+- The TS and Rust MCP manifests are not annotated from the catalog.
+
 ## 7. Known limitations
 - **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
   compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
@@ -239,3 +280,10 @@ CLI: [research](tasks/evidence/T-03383-research.md), [spec](tasks/evidence/T-033
 [unit](tasks/evidence/T-03387-tool-registry-cli-unit-test.md),
 [integration](tasks/evidence/T-03388-tool-registry-cli-integration.md),
 [security](tasks/evidence/T-03389-security.md), [hardening](tasks/evidence/T-03390-tool-registry-cli-hardening.md)
+
+API: [research](tasks/evidence/T-03393-research.md), [spec](tasks/evidence/T-03394-spec.md),
+[scaffold](tasks/evidence/T-03395-tool-registry-api-scaffold.md),
+[implementation](tasks/evidence/T-03396-tool-registry-api-implementation.md),
+[unit](tasks/evidence/T-03397-tool-registry-api-unit-test.md),
+[integration](tasks/evidence/T-03398-tool-registry-api-integration.md),
+[security](tasks/evidence/T-03399-security.md), [hardening](tasks/evidence/T-03400-tool-registry-api-hardening.md)

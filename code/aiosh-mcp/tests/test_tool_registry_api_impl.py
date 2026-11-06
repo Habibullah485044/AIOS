@@ -28,11 +28,11 @@ def test_new_tools_are_served_read_only():
         assert C.resolve(name) is not None and C.resolve(name).effect is Effect.READ_ONLY
 
 
-def test_decide_tool_uses_the_server_service():
+def test_decide_tool_does_not_touch_server_telemetry():
     before = trs.service().stats()["decisions"]
     d = TOOLS[api.DECIDE_TOOL].fn(name="pentest.tshark")["data"]
     assert d["canonical"] == "pentest.tshark" and d["scope_kinds"] == ["network", "path"] and d["target_checked"] is False
-    assert trs.service().stats()["decisions"] == before + 1
+    assert trs.service().stats()["decisions"] == before          # T-03399 F3: decide has its own counters
 
 
 def test_stats_tool_shape():

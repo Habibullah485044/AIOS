@@ -47,6 +47,6 @@ async def test_client_sees_catalog_annotations_and_registry_tools(tmp_path):
     assert decision["ok"] is True and decision["data"]["canonical"] == "pentest.nmap"
     assert decision["data"]["irreversible"] is True and decision["data"]["target_checked"] is False
     service = stats["data"]["service"]
-    assert service["decisions"] >= 2 and service["unregistered"] >= 1 and service["mode"] == "shadow"
+    assert service["mode"] == "shadow" and service["catalog_entries"] == len(C)   # decide calls are not counted (T-03399)
     assert "unknown.integration" not in json.dumps(stats)
     assert too_long.isError is True                                         # schema bound enforced over the wire

@@ -354,8 +354,9 @@ _SEED: Tuple[ToolEntry, ...] = (
     _e("aios.anchor.verify", ("aios_anchor_verify",), "Verify chain anchors", Category.AUDIT, _R),
     _e("aios.audit.seen", ("aios_audit_seen",), "Audit membership query", Category.AUDIT, _R),
     _e("aios.audit.segments", ("aios_audit_segments",), "List audit segments", Category.AUDIT, _R),
-    _e("aios.restraint.prove", ("aios_restraint_prove",), "Prove a grant was not used", Category.AUDIT, _R),
-    _e("aios.restraint.verify", ("aios_restraint_verify",), "Verify a restraint proof", Category.AUDIT, _R),
+    # additive, not read-only: an optional caller_grant_id is redeemed (consumed) by dispatch (T-03399 F1)
+    _e("aios.restraint.prove", ("aios_restraint_prove",), "Prove a grant was not used", Category.AUDIT, _A),
+    _e("aios.restraint.verify", ("aios_restraint_verify",), "Verify a restraint proof", Category.AUDIT, _A),
     _e("pep.capability.redeem", (), "Redeem a PEP capability", Category.ADMIN, _A, grant=True),
     # services with per-action grants
     _e("aios.task", ("aios_task",), "Task ledger control", Category.SERVICE, _A),

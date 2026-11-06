@@ -1536,3 +1536,10 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   grant through dispatch. A client that auto-approves read-only tools could therefore have consumed a single-use grant without a human prompt. Fixed: no tool with a
   grant, token or path argument is ever advertised read-only.
 - Verification: tool_registry 421 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03412 - AI Control Plane Tool Registry & Taxonomy / configuration: Verification & Evidence (2026-11-06)
+- Milestone closeout for registry configuration (T-03403..T-03412). Configuration can only **raise** enforcement: strict mode adds grant requirements (I-2) and
+  irreversibility. The mode is strictest-wins across sources, and any configured file or path that cannot be used counts as strict.
+- The independent review closed an SMB/NTLM credential leak in the path guard shared with the agent-loop config (`\??\UNC\…`), and the
+  fail-open paths by which a bad config could lower a requested strict mode.
+- Verification: tool_registry 504 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

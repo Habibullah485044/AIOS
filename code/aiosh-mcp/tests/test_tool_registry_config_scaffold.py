@@ -26,7 +26,6 @@ def test_defaults_match_the_service_constants():
     assert cfg.FIELDS["unregistered_samples"].default == trs.MAX_UNREGISTERED_SAMPLES
 
 
-def test_stubs_fail_loudly():
-    for call in (cfg.resolve, cfg.process_config, cfg.reset_process_config):
-        with pytest.raises(NotImplementedError, match="T-03406"):
-            call()
+def test_scaffold_stubs_are_implemented():
+    """The T-03405 stubs raised NotImplementedError; T-03406 implemented them."""
+    assert set(cfg.resolve()["config"]) == {"mode", *cfg.FIELDS}

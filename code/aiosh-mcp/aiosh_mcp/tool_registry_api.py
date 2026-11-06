@@ -178,6 +178,8 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
             resolved = process_config()
             return {"ok": True, "data": {"service": trs.service().stats(), "reports": trs.report_stats(),
                                          "config": {"values": resolved["config"], "sources": resolved["sources"]},
-                                         "config_errors": resolved["errors"]}}
+                                         # codes only: messages can name keys of whatever file the env
+                                         # points at (T-03409 #9)
+                                         "config_errors": sorted({e.split(":", 1)[0] for e in resolved["errors"]})}}
         except Exception as exc:
             return _unavailable(exc)

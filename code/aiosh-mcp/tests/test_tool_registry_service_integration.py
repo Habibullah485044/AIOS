@@ -74,6 +74,8 @@ def test_agent_loop_step_shadow_and_strict(home, monkeypatch):
     assert shadow.irreversible is False                      # legacy decision unchanged
     monkeypatch.setattr(trs, "_SERVICE", None)
     monkeypatch.setenv(trs.ENV_MODE, "strict")
+    from aiosh_mcp.tool_registry_config import reset_process_config
+    reset_process_config()                                   # config is resolved once per process (T-03409)
     strict = evaluate_step("aios.mystery.read", ["/tmp/x"], {"path": "/tmp/x"})
     assert strict.irreversible is True                       # unregistered counts against the budget in strict
     assert evaluate_step("pentest.nmap", ["10.0.0.5"], {"target": "10.0.0.5"}).irreversible is True

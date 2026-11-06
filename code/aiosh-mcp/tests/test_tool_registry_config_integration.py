@@ -43,5 +43,5 @@ async def test_env_strict_beats_a_file_shadow(tmp_path):
 @pytest.mark.anyio
 async def test_a_bad_file_is_reported_and_the_server_still_serves(tmp_path):
     data = await server_stats(tmp_path, {"catalog": [], "mode": "strict"})
-    assert data["service"]["mode"] == "shadow"                       # the whole file was ignored
-    assert any(e.startswith("TOOLREGCONF_ERR_LOCKED") for e in data["config_errors"])
+    assert data["service"]["mode"] == "strict"                       # file ignored, but it cannot loosen (T-03409 #2)
+    assert "TOOLREGCONF_ERR_LOCKED" in data["config_errors"]

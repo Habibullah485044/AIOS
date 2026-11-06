@@ -13,6 +13,7 @@ from aiosh_mcp import tool_registry_config as cfg
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path / "home"))
     for var in (cfg.ENV_CONFIG, cfg.ENV_MODE, *(f.env for f in cfg.FIELDS.values())):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)
@@ -79,9 +80,7 @@ def test_resolve_never_raises_even_if_internals_fail(env, monkeypatch):
         raise RuntimeError("bug")
     monkeypatch.setattr(cfg, "_resolve", boom)
     r = cfg.resolve()
-    assert r["config"]["mode"] == "shadow" and r["errors"][0].startswith("TOOLREGCONF_ERR_IO")
-    env.setenv(cfg.ENV_MODE, "strict")
-    assert cfg.resolve()["config"]["mode"] == "strict"            # even the fallback fails closed
+    assert r["config"]["mode"] == "strict" and r["errors"][0].startswith("TOOLREGCONF_ERR_IO")   # fails closed (T-03409 #8)
 
 
 def test_process_config_is_resolved_once(env, monkeypatch):

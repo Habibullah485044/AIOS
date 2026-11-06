@@ -7,7 +7,7 @@ from aiosh_mcp import tool_registry_config as cfg
 
 def test_keys_bounds_and_env_names_match_spec():
     assert {k: (f.default, f.lo, f.hi, f.env) for k, f in cfg.FIELDS.items()} == {
-        "report_max_lines": (32, 0, 1000, "AIOSH_TOOL_REGISTRY_REPORT_MAX_LINES"),
+        "report_max_lines": (32, 1, 1000, "AIOSH_TOOL_REGISTRY_REPORT_MAX_LINES"),
         "unregistered_samples": (50, 0, 200, "AIOSH_TOOL_REGISTRY_UNREGISTERED_SAMPLES")}
     assert cfg.MODES == ("shadow", "strict") and cfg.ENV_MODE == "AIOSH_TOOL_REGISTRY_MODE"
     assert cfg.MAX_CONFIG_FILE_BYTES == 64 * 1024 and cfg.ENV_CONFIG == "AIOSH_TOOL_REGISTRY_CONFIG"

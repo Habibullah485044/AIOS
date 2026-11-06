@@ -84,11 +84,14 @@ def test_modes():
 
 
 def test_mode_from_env(monkeypatch):
+    from aiosh_mcp.tool_registry_config import reset_process_config
     monkeypatch.setenv(svc.ENV_MODE, "strict")
     assert ToolRegistryService().decide("pentest.nmap").mode == "strict"
     monkeypatch.setenv(svc.ENV_MODE, "bogus")
+    reset_process_config()                                         # config is resolved once per process (T-03409)
     assert ToolRegistryService().mode == "strict"                  # unrecognised env value fails closed (T-03379)
     monkeypatch.delenv(svc.ENV_MODE)
+    reset_process_config()
     assert ToolRegistryService().decide("pentest.nmap").mode == "shadow"
 
 

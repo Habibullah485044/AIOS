@@ -98,8 +98,8 @@ def intended_mode() -> str:
     if value and value not in MODES:
         _warn_once("mode", f"{ENV_MODE}={raw[:32]!r} is not one of {', '.join(MODES)}; using strict (fail closed)")
     # T-03406: env, config file and default combined, strictest wins (TOOLREGCONF-INV1); never raises.
-    from aiosh_mcp.tool_registry_config import resolve
-    return resolve()["config"]["mode"]
+    from aiosh_mcp.tool_registry_config import process_config
+    return process_config()["config"]["mode"]       # one resolution per process (T-03409 #4, #5)
 
 
 def _mode(mode: Optional[str]) -> str:
@@ -152,8 +152,8 @@ class ToolRegistryService:
         self._unregistered = 0
         self._by_kind: Dict[str, int] = {k: 0 for k in DISAGREEMENT_KINDS}
         self._samples: List[str] = []
-        from aiosh_mcp.tool_registry_config import resolve
-        self._max_samples = int(resolve()["config"]["unregistered_samples"])   # read at construction
+        from aiosh_mcp.tool_registry_config import process_config
+        self._max_samples = int(process_config()["config"]["unregistered_samples"])
 
     @property
     def mode(self) -> str:

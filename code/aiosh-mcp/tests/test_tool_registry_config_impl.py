@@ -10,6 +10,7 @@ from aiosh_mcp import tool_registry_service as trs
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path / "home"))
     for var in (cfg.ENV_CONFIG, cfg.ENV_MODE, *(f.env for f in cfg.FIELDS.values())):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.chdir(tmp_path)                              # no default docs/tool_registry_config.json here
@@ -92,8 +93,8 @@ def test_oversize_and_hygiene(env, tmp_path):
 
 
 def test_default_file_is_used_when_present(env, tmp_path):
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "tool_registry_config.json").write_text('{"mode": "strict"}', encoding="utf-8")
+    env.setenv("AIOSH_HOME", str(tmp_path))                     # default file lives next to the audit DB (T-03409 #5)
+    (tmp_path / "tool_registry_config.json").write_text('{"mode": "strict"}', encoding="utf-8")
     r = cfg.resolve()
     assert r["config"]["mode"] == "strict" and r["sources"]["mode"] == "file"
 

@@ -24,7 +24,13 @@ TOOLREGCONF_ERR_BOUNDS = "TOOLREGCONF_ERR_BOUNDS"
 TOOLREGCONF_ERR_ENV = "TOOLREGCONF_ERR_ENV"
 
 ENV_CONFIG = "AIOSH_TOOL_REGISTRY_CONFIG"
-DEFAULT_CONFIG_PATH = "docs/tool_registry_config.json"
+#: Default file name under $AIOSH_HOME (T-03409 #5: never relative to the server's working directory).
+DEFAULT_CONFIG_NAME = "tool_registry_config.json"
+
+
+def default_config_path() -> str:
+    from aiosh_mcp import audit_client
+    return os.path.join(os.path.dirname(os.path.abspath(audit_client.default_db_path())), DEFAULT_CONFIG_NAME)
 MAX_CONFIG_FILE_BYTES = 64 * 1024
 MAX_CONFIG_PATH_LEN = 1024
 MODES = ("shadow", "strict")
@@ -41,13 +47,23 @@ class IntField:
 
 #: Numeric tunables (spec §1). ``mode`` is handled separately (strictest wins).
 FIELDS: Dict[str, IntField] = {
-    "report_max_lines": IntField(32, 0, 1000, "AIOSH_TOOL_REGISTRY_REPORT_MAX_LINES"),
+    "report_max_lines": IntField(32, 1, 1000, "AIOSH_TOOL_REGISTRY_REPORT_MAX_LINES"),   # >= 1 (T-03409 #6)
     "unregistered_samples": IntField(50, 0, 200, "AIOSH_TOOL_REGISTRY_UNREGISTERED_SAMPLES"),
 }
 ENV_MODE = "AIOSH_TOOL_REGISTRY_MODE"
 #: Security policy: not representable in configuration (TOOLREGCONF-INV2).
 LOCKED_KEYS: Tuple[str, ...] = ("catalog", "entries", "read_only_hint_categories", "grant_params", "path_params",
                                 "irreversible_names", "irreversible_prefixes")
+
+
+def _no_duplicates(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    """Duplicate keys are ambiguous (a reviewer sees the first, json keeps the last): reject (T-03409 #7)."""
+    out: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"duplicate key {str(key)[:40]!r}")
+        out[key] = value
+    return out
 
 
 class _ConfigError(Exception):
@@ -92,7 +108,7 @@ def _read_file(path: str) -> Dict[str, Any]:
     if len(raw) > MAX_CONFIG_FILE_BYTES:
         raise _ConfigError(TOOLREGCONF_ERR_FILE_SIZE, f"{name} exceeds {MAX_CONFIG_FILE_BYTES} bytes")
     try:
-        doc = json.loads(raw.decode("utf-8"))
+        doc = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_no_duplicates)   # BOM ok (T-03409 #2)
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise _ConfigError(TOOLREGCONF_ERR_PARSE, f"{name} is not valid JSON ({type(exc).__name__})") from exc
     if not isinstance(doc, dict):
@@ -109,25 +125,31 @@ def _read_file(path: str) -> Dict[str, Any]:
     return doc
 
 
+#: Placed in the file values when a configured file could not be used: an unreadable or rejected file
+#: may have been asking for strict, so it counts as strict (T-03409 #2, #3). It never loosens anything.
+_UNTRUSTED_FILE = {"mode": "strict"}
+
+
 def _file(errors: List[str]) -> Tuple[Dict[str, Any], Optional[str]]:
     from aiosh_mcp.agent_loop_config import hygiene_ok
     path: Optional[str] = None
-    if ENV_CONFIG in os.environ:
-        env_path = os.environ[ENV_CONFIG]
-        if hygiene_ok(env_path):
-            path = env_path.strip()
-        else:
-            errors.append(_err(TOOLREGCONF_ERR_IO, f"{ENV_CONFIG} rejected by path hygiene"))
-            return {}, None
-    elif os.path.isfile(DEFAULT_CONFIG_PATH):
-        path = DEFAULT_CONFIG_PATH
+    env_path = os.environ.get(ENV_CONFIG, "")
+    if env_path.strip():
+        if not hygiene_ok(env_path):
+            errors.append(_err(TOOLREGCONF_ERR_IO, f"{ENV_CONFIG} rejected by path hygiene; mode strict"))
+            return dict(_UNTRUSTED_FILE), None
+        path = env_path.strip()
+    else:
+        candidate = default_config_path()
+        if os.path.isfile(candidate):
+            path = candidate
     if path is None:
         return {}, None
     try:
         return _read_file(path), path
     except _ConfigError as exc:
-        errors.append(_err(exc.code, str(exc).split(": ", 1)[1]))
-        return {}, path                      # the whole file is ignored
+        errors.append(_err(exc.code, str(exc).split(": ", 1)[1] + "; file ignored, mode strict"))
+        return dict(_UNTRUSTED_FILE), path      # numbers: defaults; mode: fail closed
 
 
 def resolve(arg_mode: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -135,8 +157,7 @@ def resolve(arg_mode: Optional[str] = None, overrides: Optional[Dict[str, Any]] 
     try:
         return _resolve(arg_mode, overrides)
     except Exception as exc:  # defensive: configuration must never break the registry
-        return {"config": {"mode": "shadow" if os.environ.get(ENV_MODE, "") == "" else "strict",
-                           **{k: f.default for k, f in FIELDS.items()}},
+        return {"config": {"mode": "strict", **{k: f.default for k, f in FIELDS.items()}},   # fail closed (#8)
                 "sources": {}, "errors": [_err(TOOLREGCONF_ERR_IO, f"resolution failed ({type(exc).__name__})")],
                 "path": None}
 

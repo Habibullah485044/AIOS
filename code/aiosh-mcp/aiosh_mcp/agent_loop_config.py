@@ -115,10 +115,21 @@ def hygiene_ok(value: Any) -> bool:
 def _special_path_reason(path: str) -> Optional[str]:
     """Why ``path`` must not be opened at all, or None (T-03309: hangs, device I/O, SMB/NTLM leaks)."""
     norm = path.replace("\\", "/")
-    if norm.startswith("//"):
+    # "//" covers \\server\share and \\?\ / \\.\; "/??/" is the NT object-manager prefix (\??\UNC\host\...,
+    # \??\C:\...), which Windows opens like the device namespace (T-03409 #1: SMB / NTLM leak).
+    if norm.startswith("//") or norm.startswith("/??/") or norm.startswith("??/"):
         return "UNC / device namespace paths are not allowed"
-    if _WIN_DEVICE.match(os.path.basename(norm.rstrip("/"))):
+    # Windows ignores trailing spaces, dots and a colon on device names ("CON .json", "nul:") (T-03409 #10).
+    base = os.path.basename(norm.rstrip("/"))
+    if _WIN_DEVICE.match(base) or _WIN_DEVICE.match(base.split(".")[0].rstrip(" :")) or \
+            _WIN_DEVICE.match(base.rstrip(" .:")):
         return "Windows device names are not allowed"
+    try:  # a link or junction whose target is a network path is refused too
+        real = os.path.realpath(path)
+    except (OSError, ValueError):
+        return None
+    if real.replace("\\", "/").startswith(("//", "/??/")):
+        return "path resolves to a network or device location"
     return None
 
 

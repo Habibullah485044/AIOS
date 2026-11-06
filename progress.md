@@ -2118,3 +2118,8 @@ All edits are docs / control-plane only.
 
 - MCP `aios_tool_registry_decide` / `_stats`. Catalog-driven, never-relaxing annotations on all served tools (read-only hints only under a strict conjunction).
 - The independent audit closed a grant-burning path via read-only-advertised restraint tools. PRs #512..#521.
+
+## 2026-11-06 — Tool Registry & Taxonomy configuration epic closed (T-03403..T-03412)
+
+- `tool_registry_config`: strictest-wins mode across argument/env/file, bounded tunables, locked security keys, problems visible on stderr and in stats.
+- The independent review fixed an SMB/NTLM leak in the shared path guard and five fail-open config paths. PRs #522..#531.

@@ -37,7 +37,8 @@ enforcement must come from a server-side source like this one.
 5. `fs.write` and `system` categories ⇒ irreversible.
 6. `network` category ⇒ network scope.
 7. **Never weaker than today's name rules:** a name that `audit_client.grant_check` or `agent_loop_policy` treats as
-   irreversible (`pentest.*`, `fs.write*`, `process.*`, `shell.*`, `system.reboot`, `system.shutdown`, case-insensitive) must be
+   irreversible (`pentest.*`, the bare `pentest`, `fs.write*`, `process.*`, `shell.*`, `system.reboot`, `system.shutdown`,
+   case-insensitive) must be
    irreversible and require a grant.
 
 **Names** (TOOLREG-INV2) are unique across the catalog after NFKC, case-folding, and treating `.`, `_` and `-` as one separator. An

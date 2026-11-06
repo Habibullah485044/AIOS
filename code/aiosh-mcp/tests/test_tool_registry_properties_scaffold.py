@@ -1,7 +1,5 @@
 """Scaffold tests for the tool registry property tests (T-03415; spec T-03414)."""
 
-import pytest
-
 import tool_registry_model as M
 
 
@@ -20,6 +18,6 @@ def test_oracles_are_declared():
         assert callable(getattr(M, name)), name
 
 
-def test_stubs_fail_loudly():
-    with pytest.raises(NotImplementedError, match="T-03416"):
-        M.legacy_floor("x")
+def test_scaffold_stubs_are_implemented():
+    """The T-03415 stubs raised NotImplementedError; T-03416 implemented them."""
+    assert M.legacy_floor("pentest.nmap") == (True, True) and M.legacy_floor("aios.x") == (False, False)

@@ -11,8 +11,7 @@ def test_constants_match_spec():
     assert set(api.READ_ONLY_HINT_CATEGORIES) <= {c.value for c in Category}
 
 
-def test_stubs_fail_loudly():
-    for call in (lambda: api.more_cautious(None, None, False), lambda: api.apply_catalog_annotations(None),
-                 lambda: api.register_tool_registry_api_tools(None)):
-        with pytest.raises(NotImplementedError, match="T-03396"):
-            call()
+def test_scaffold_stubs_are_implemented():
+    """The T-03395 stubs raised NotImplementedError; T-03396 implemented them."""
+    from mcp.types import ToolAnnotations
+    assert api.more_cautious(None, ToolAnnotations(readOnlyHint=True), True).readOnlyHint is True

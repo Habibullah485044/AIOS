@@ -74,7 +74,7 @@ def test_apply_is_idempotent():
         app.add_tool(lambda: {}, name=name)
     first = api.apply_catalog_annotations(app)
     second = api.apply_catalog_annotations(app)
-    assert first["applied"] == 3 and second == {"applied": 0, "unchanged": 3, "skipped_unregistered": 0}
+    assert first["applied"] == 3 and second == {"applied": 0, "unchanged": 3, "skipped_unregistered": 0, "errors": 0}
 
 
 def test_live_server_pass_is_a_fixed_point():

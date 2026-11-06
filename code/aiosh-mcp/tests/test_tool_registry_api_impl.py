@@ -94,7 +94,7 @@ def test_apply_on_a_fresh_server_reports_counts():
         return {}
 
     counts = api.apply_catalog_annotations(app)
-    assert counts == {"applied": 1, "unchanged": 0, "skipped_unregistered": 1}
+    assert counts == {"applied": 1, "unchanged": 0, "skipped_unregistered": 1, "errors": 0}
     tools = {t.name: t for t in app._tool_manager.list_tools()}
     assert tools["aios_audit_tail"].annotations.readOnlyHint is True and tools["not_in_catalog"].annotations is None
 

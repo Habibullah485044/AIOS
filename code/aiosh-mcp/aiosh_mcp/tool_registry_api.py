@@ -36,7 +36,14 @@ PATH_PARAMS = ("path", "paths", "file", "files", "dir", "directory", "target_pat
 
 def unsafe_for_read_only_hint(parameters: Any) -> bool:
     """True if a tool's input schema has a grant/token or path-like argument (T-03399 F1, F4)."""
-    props = (parameters or {}).get("properties") or {}
+    # T-03400: an input schema we cannot read is treated as unsafe (fail closed: no read-only hint).
+    if not isinstance(parameters, dict):
+        return True
+    props = parameters.get("properties")
+    if props is None:
+        return False
+    if not isinstance(props, (dict, list, tuple)):
+        return True
     for name in props:
         n = str(name).casefold()
         if n in GRANT_PARAMS or n in PATH_PARAMS or n.endswith("_path") or n.endswith("_grant_id"):
@@ -95,17 +102,23 @@ def apply_catalog_annotations(mcp_app: Any) -> Dict[str, Any]:
     except ToolRegistryError:
         print(f"aiosh-mcp: {TOOLREG_ERR_UNAVAILABLE}: tool annotations left unchanged", file=sys.stderr)
         return {"error": TOOLREG_ERR_UNAVAILABLE}
-    counts = {"applied": 0, "unchanged": 0, "skipped_unregistered": 0}
+    counts = {"applied": 0, "unchanged": 0, "skipped_unregistered": 0, "errors": 0}
     for tool in mcp_app._tool_manager.list_tools():
-        entry = catalog.resolve(tool.name)
-        if entry is None:
-            counts["skipped_unregistered"] += 1
+        try:
+            entry = catalog.resolve(tool.name)
+            if entry is None:
+                counts["skipped_unregistered"] += 1
+                continue
+            allow = (entry.effect is Effect.READ_ONLY and not entry.requires_grant
+                     and entry.category.value in READ_ONLY_HINT_CATEGORIES
+                     and entry.scope_kind is ScopeKind.NONE                      # T-03399 F4
+                     and not unsafe_for_read_only_hint(tool.parameters))        # T-03399 F1, F4
+            merged = more_cautious(tool.annotations, catalog.annotations(tool.name), allow)
+        except Exception as exc:  # T-03400: one odd tool must not abort server import; leave it as it was
+            counts["errors"] += 1
+            print(f"aiosh-mcp: tool annotations unchanged for {str(tool.name)[:64]!r} ({type(exc).__name__})",
+                  file=sys.stderr)
             continue
-        allow = (entry.effect is Effect.READ_ONLY and not entry.requires_grant
-                 and entry.category.value in READ_ONLY_HINT_CATEGORIES
-                 and entry.scope_kind is ScopeKind.NONE                      # T-03399 F4
-                 and not unsafe_for_read_only_hint(tool.parameters))        # T-03399 F1, F4
-        merged = more_cautious(tool.annotations, catalog.annotations(tool.name), allow)
         if merged is tool.annotations:
             counts["unchanged"] += 1
         else:

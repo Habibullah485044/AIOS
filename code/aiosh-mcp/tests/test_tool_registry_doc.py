@@ -19,8 +19,10 @@ TEXT = DOC.read_text(encoding="utf-8")
 
 def test_every_error_code_documented_both_ways():
     from aiosh_mcp import tool_registry_service as svc
-    codes = {v for mod in (reg, svc) for k, v in vars(mod).items() if k.startswith(("TOOLREG_ERR_", "TOOLSVC_ERR_"))}
-    documented = set(re.findall(r"`((?:TOOLREG|TOOLSVC)_ERR_[A-Z_]+)`", TEXT))
+    from aiosh_mcp import tool_registry_cli as cli
+    codes = {v for mod in (reg, svc, cli) for k, v in vars(mod).items()
+             if k.startswith(("TOOLREG_ERR_", "TOOLSVC_ERR_", "TOOLCLI_ERR_"))}
+    documented = set(re.findall(r"`((?:TOOLREG|TOOLSVC|TOOLCLI)_ERR_[A-Z_]+)`", TEXT))
     assert codes == documented
 
 
@@ -50,3 +52,26 @@ def test_json_tool_calls_match_the_live_schema():
     assert calls
     for call in calls:
         tools[call["name"]].fn_metadata.arg_model.model_validate(call["arguments"])
+
+
+CLI_LINES = [line for block in re.findall(r"```bash\n(.*?)```", TEXT, re.S) for line in block.splitlines()
+             if line.startswith("python -m aiosh_mcp.tool_registry_cli")]
+
+
+@pytest.mark.parametrize("line", CLI_LINES)
+def test_documented_cli_commands_run_with_the_stated_exit_code(line, tmp_path):
+    import shlex
+    command, _, comment = line.partition("#")
+    expected = int(re.search(r"exit (\d+)", comment).group(1))
+    env = {k: v for k, v in os.environ.items() if k != "AIOSH_TOOL_REGISTRY_MODE"}
+    out = subprocess.run([sys.executable, *shlex.split(command)[1:]], cwd=PKG_ROOT, capture_output=True, text=True,
+                         timeout=120, env=dict(env, AIOSH_HOME=str(tmp_path)))
+    assert out.returncode == expected, (line, out.stderr[-500:])
+    assert "Traceback" not in out.stderr
+
+
+def test_every_cli_subcommand_is_documented():
+    from aiosh_mcp import tool_registry_cli as cli
+    assert len(CLI_LINES) >= len(cli.SUBCOMMANDS)
+    for sub in cli.SUBCOMMANDS:
+        assert any(f"tool_registry_cli {sub}" in line for line in CLI_LINES), sub

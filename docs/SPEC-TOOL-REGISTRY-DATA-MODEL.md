@@ -164,6 +164,48 @@ Service limitations:
 - Expect strict to refuse calls that pass today. Examples: unregistered tool names, and grant-free calls to tools the catalog marks
   grant-required.
 
+## 6c. Operator CLI: `aiosh-tool-registry` (T-03383..T-03392)
+`python -m aiosh_mcp.tool_registry_cli` is always available. The console script `aiosh-tool-registry` appears after
+`pip install -e code/aiosh-mcp`. The CLI is read-only: no DB, no audit rows, no network. Its only write is `export --out`.
+
+Run from `code/aiosh-mcp` (the doc test executes every command below and checks the exit code in the comment):
+```bash
+python -m aiosh_mcp.tool_registry_cli get aios_pentest_nmap          # exit 0: canonical pentest.nmap, irreversible
+python -m aiosh_mcp.tool_registry_cli check aios.fs.read nope.tool   # exit 1: one name is not registered
+python -m aiosh_mcp.tool_registry_cli decide pentest.tshark --json   # exit 0: scope_kinds network+path, target_checked false
+python -m aiosh_mcp.tool_registry_cli list --category pentest        # exit 0
+python -m aiosh_mcp.tool_registry_cli export                         # exit 0: canonical JSON on stdout
+python -m aiosh_mcp.tool_registry_cli --help                         # exit 0
+```
+
+| Subcommand | Does | Exit |
+|---|---|---|
+| `list [--category C]` | every registered tool (or one category) | 0 |
+| `get <name>` | one tool by canonical or MCP name. Unregistered names get the fail-closed profile | 0, or **1** if unregistered |
+| `decide <name> [--require-grant] [--mode shadow\|strict]` | the core service's decision (§6b). `--target` is accepted, but decisions are per name (`target_checked: false`) | 0 |
+| `export [--out FILE]` | canonical JSON on stdout, or written atomically to FILE (temp file + rename; directories, symlinks and devices refused; ≤ 4 MiB) | 0, or 1 on I/O error |
+| `check <name>…` | 1..256 names; for scripts and CI | 0 if all registered, else **1** |
+
+Every subcommand takes `--json` for a machine envelope `{"ok", "subcommand", "data", "error_code", "error"}`.
+Exit codes: `0` ok, `1` negative result or I/O error, `2` usage, `130` interrupted.
+Human output is ASCII: control, bidi and non-ASCII characters are shown escaped (`\u6f22`), never raw.
+Errors go to stderr, so `export > catalog.json` never writes an error into the file. A closed pipe (`| head`) stops quietly.
+
+| Code | When |
+|---|---|
+| `TOOLCLI_ERR_USAGE` | bad arguments, a NUL byte, > 256 names, a name > 256 chars, an empty `--out` (exit 2) |
+| `TOOLCLI_ERR_IO` | `export --out` cannot write, the target is not a regular file, or the export exceeds 4 MiB (exit 1) |
+| `TOOLCLI_ERR_UNAVAILABLE` | the catalog failed to build (exit 1) |
+| `TOOLCLI_ERR_INTERRUPTED` | Ctrl-C (exit 130); nothing is left behind |
+
+CLI limitations:
+- **`export --out` replaces the file:**
+  - on Windows the new file gets default ACLs, and explicit ACEs on the old file are not kept;
+  - on POSIX the old file's mode is kept;
+  - any writable regular file you name is replaced, as with `> file`.
+- **`stats` is not available from the CLI.** Server counters live in the server process.
+- **No TS `aiosh tools` command yet.** TS can read `export` output.
+
 ## 7. Known limitations
 - **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
   compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
@@ -190,3 +232,10 @@ Core service: [research](tasks/evidence/T-03373-research.md), [spec](tasks/evide
 [unit](tasks/evidence/T-03377-tool-registry-core-service-unit-test.md),
 [integration](tasks/evidence/T-03378-tool-registry-core-service-integration.md),
 [security](tasks/evidence/T-03379-security.md), [hardening](tasks/evidence/T-03380-tool-registry-core-service-hardening.md)
+
+CLI: [research](tasks/evidence/T-03383-research.md), [spec](tasks/evidence/T-03384-spec.md),
+[scaffold](tasks/evidence/T-03385-tool-registry-cli-scaffold.md),
+[implementation](tasks/evidence/T-03386-tool-registry-cli-implementation.md),
+[unit](tasks/evidence/T-03387-tool-registry-cli-unit-test.md),
+[integration](tasks/evidence/T-03388-tool-registry-cli-integration.md),
+[security](tasks/evidence/T-03389-security.md), [hardening](tasks/evidence/T-03390-tool-registry-cli-hardening.md)

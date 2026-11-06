@@ -140,8 +140,14 @@ def _file(errors: List[str]) -> Tuple[Dict[str, Any], Optional[str]]:
             return dict(_UNTRUSTED_FILE), None
         path = env_path.strip()
     else:
-        candidate = default_config_path()
-        if os.path.isfile(candidate):
+        try:
+            candidate = default_config_path()
+            exists = os.path.isfile(candidate)
+        except (OSError, ValueError) as exc:  # T-03410: isolate; env values still apply
+            errors.append(_err(TOOLREGCONF_ERR_IO, f"default config location unavailable ({type(exc).__name__}); "
+                                                   f"mode strict"))
+            return dict(_UNTRUSTED_FILE), None
+        if exists:
             path = candidate
     if path is None:
         return {}, None
@@ -197,13 +203,33 @@ _PROCESS: Optional[Dict[str, Any]] = None
 _LOCK = threading.Lock()
 
 
+def _announce(resolved: Dict[str, Any]) -> None:
+    """Configuration problems are told to the operator once, on stderr (never stdout, never an audit row).
+
+    T-03410: a rejected file silently forcing strict mode would look like unexplained refusals.
+    """
+    import sys
+    stream = sys.stderr
+    if not resolved["errors"] or stream is None or stream is sys.stdout:
+        return
+    try:
+        mode = resolved["config"]["mode"]
+        print(f"aiosh-mcp: tool registry config: {len(resolved['errors'])} problem(s); mode={mode}", file=stream)
+        for error in resolved["errors"][:10]:
+            print(f"aiosh-mcp:   {error!r}"[:MAX_ERROR_CHARS + 40], file=stream)
+        stream.flush()
+    except (OSError, ValueError):
+        pass
+
+
 def process_config() -> Dict[str, Any]:
-    """Resolved once per process."""
+    """Resolved once per process; problems are reported once on stderr."""
     global _PROCESS
     if _PROCESS is None:
         with _LOCK:
             if _PROCESS is None:
                 _PROCESS = resolve()
+                _announce(_PROCESS)
     return _PROCESS
 
 

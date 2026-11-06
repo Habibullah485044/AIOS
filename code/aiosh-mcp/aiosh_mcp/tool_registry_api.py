@@ -174,6 +174,10 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
         decisions (with keyed hashes, never names), and how many disagreement lines were logged or
         suppressed. Read-only, no token."""
         try:
-            return {"ok": True, "data": {"service": trs.service().stats(), "reports": trs.report_stats()}}
+            from aiosh_mcp.tool_registry_config import process_config
+            resolved = process_config()
+            return {"ok": True, "data": {"service": trs.service().stats(), "reports": trs.report_stats(),
+                                         "config": {"values": resolved["config"], "sources": resolved["sources"]},
+                                         "config_errors": resolved["errors"]}}
         except Exception as exc:
             return _unavailable(exc)

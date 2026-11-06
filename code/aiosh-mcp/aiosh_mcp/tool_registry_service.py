@@ -95,11 +95,11 @@ def intended_mode() -> str:
     """
     raw = os.environ.get(ENV_MODE, "")
     value = _normal(raw) if isinstance(raw, str) else ""
-    if value in ("", DEFAULT_MODE):
-        return DEFAULT_MODE
-    if value not in MODES:
+    if value and value not in MODES:
         _warn_once("mode", f"{ENV_MODE}={raw[:32]!r} is not one of {', '.join(MODES)}; using strict (fail closed)")
-    return "strict"
+    # T-03406: env, config file and default combined, strictest wins (TOOLREGCONF-INV1); never raises.
+    from aiosh_mcp.tool_registry_config import resolve
+    return resolve()["config"]["mode"]
 
 
 def _mode(mode: Optional[str]) -> str:
@@ -152,6 +152,8 @@ class ToolRegistryService:
         self._unregistered = 0
         self._by_kind: Dict[str, int] = {k: 0 for k in DISAGREEMENT_KINDS}
         self._samples: List[str] = []
+        from aiosh_mcp.tool_registry_config import resolve
+        self._max_samples = int(resolve()["config"]["unregistered_samples"])   # read at construction
 
     @property
     def mode(self) -> str:
@@ -196,7 +198,7 @@ class ToolRegistryService:
             if not decision.registered:
                 self._unregistered += 1
                 h = _hash(name)
-                if len(self._samples) < MAX_UNREGISTERED_SAMPLES and h not in self._samples:
+                if len(self._samples) < self._max_samples and h not in self._samples:
                     self._samples.append(h)
 
     def enforcement(self, decision: ToolDecision) -> Dict[str, Any]:
@@ -229,19 +231,25 @@ def report(decision: ToolDecision, tool: Any, surface: str) -> None:
     with _REPORT_LOCK:
         if key in _REPORTED:
             return
-        if _REPORT_STATE["lines"] >= MAX_REPORT_LINES:
+        cap = _report_cap()
+        if _REPORT_STATE["lines"] >= cap:
             _REPORT_STATE["suppressed"] += 1
             return
         _REPORTED.add(key)
         _REPORT_STATE["lines"] += 1
-        last = _REPORT_STATE["lines"] == MAX_REPORT_LINES
+        last = _REPORT_STATE["lines"] == cap
     line = {"event": LOG_EVENT, "surface": surface, "tool": shown,
             # T-03379 #5: canonical can be the raw (unregistered) name, so it is masked too
             "canonical": mask_secrets(decision.canonical)[:MAX_LOGGED_TOOL_LEN],
             "disagreements": list(decision.disagreements), "mode": decision.mode}
     if last:
-        line["note"] = f"report limit ({MAX_REPORT_LINES}) reached; further disagreements are counted in stats only"
+        line["note"] = f"report limit ({cap}) reached; further disagreements are counted in stats only"
     _stderr_line(json.dumps(line, ensure_ascii=True))
+
+
+def _report_cap() -> int:
+    from aiosh_mcp.tool_registry_config import process_config
+    return int(process_config()["config"]["report_max_lines"])
 
 
 def report_stats() -> Dict[str, int]:

@@ -1529,3 +1529,10 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   Its only write is an operator-chosen `export --out` file.
 - The independent review (T-03389) found output-safety and robustness defects, all fixed, and no state change beyond the export file.
 - Verification: tool_registry 361 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03402 - AI Control Plane Tool Registry & Taxonomy / API surface: Verification & Evidence (2026-11-06)
+- Milestone closeout for the registry MCP API (T-03393..T-03402). Server enforcement is unchanged; MCP `ToolAnnotations` now come from the catalog.
+- **I-2 relevance:** the independent audit found that two tools advertised read-only (`aios_restraint_prove` / `_verify`) redeem a caller
+  grant through dispatch. A client that auto-approves read-only tools could therefore have consumed a single-use grant without a human prompt. Fixed: no tool with a
+  grant, token or path argument is ever advertised read-only.
+- Verification: tool_registry 421 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

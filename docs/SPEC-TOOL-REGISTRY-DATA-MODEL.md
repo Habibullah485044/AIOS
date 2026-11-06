@@ -100,7 +100,7 @@ MCP (read-only, no token):
 Errors are `ToolRegistryError(code, message)`. Messages echo names only with control and bidi characters stripped, truncated to 80 chars.
 
 ## 6. Coverage and drift checks
-- The default catalog has **71 entries** and covers **every one of the 69 served MCP tools** plus every literal audit name
+- The default catalog has **73 entries** and covers **every one of the 71 served MCP tools** plus every literal audit name
   (T-03380). The integration test **fails** if a served tool has no entry. Multi-action tools (`aios.task`,
   `aios.compliance`, `aios.runbook`, `aios.scan`) are classified by their most consequential action for `effect`. Their
   `requires_grant` is the action-independent minimum, because their own gates require grants per action.

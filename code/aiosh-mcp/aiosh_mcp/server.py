@@ -937,6 +937,12 @@ agent_loop_service_mod.register_agent_loop_service_tools(mcp)
 from . import tool_registry_data_model as tool_registry_data_model_mod
 tool_registry_data_model_mod.register_tool_registry_tools(mcp)
 
+# T-03396: registry decision/stats tools, then catalog-driven annotations for every served tool. The
+# annotation pass runs after all registrations and can only make a tool look more careful (TOOLAPI-INV2).
+from . import tool_registry_api as tool_registry_api_mod
+tool_registry_api_mod.register_tool_registry_api_tools(mcp)
+tool_registry_api_mod.apply_catalog_annotations(mcp)
+
 
 
 

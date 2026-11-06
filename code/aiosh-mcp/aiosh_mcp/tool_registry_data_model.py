@@ -411,6 +411,9 @@ _SEED: Tuple[ToolEntry, ...] = (
     # the registry's own read-only MCP tools (T-03368)
     _e("aios.tool_registry.list", ("aios_tool_registry_list",), "List the tool catalog", Category.MCP_CORE, _R),
     _e("aios.tool_registry.get", ("aios_tool_registry_get",), "Look up a tool's taxonomy", Category.MCP_CORE, _R),
+    _e("aios.tool_registry.decide", ("aios_tool_registry_decide",), "Registry decision for a tool", Category.MCP_CORE,
+       _R),
+    _e("aios.tool_registry.stats", ("aios_tool_registry_stats",), "Registry counters", Category.MCP_CORE, _R),
     _e("fs.write", (), "Write a file", Category.FS_WRITE, _D, irreversible=True, scope=ScopeKind.PATH),
     _e("system.reboot", (), "Reboot the system", Category.SYSTEM, _D, irreversible=True),
     _e("system.shutdown", (), "Shut the system down", Category.SYSTEM, _D, irreversible=True),

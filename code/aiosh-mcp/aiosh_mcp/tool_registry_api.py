@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from aiosh_mcp.tool_registry_data_model import (
     TOOLREG_ERR_UNAVAILABLE,
     Effect,
+    ScopeKind,
     ToolRegistryError,
     default_catalog,
 )
@@ -26,6 +27,21 @@ DECIDE_TOOL = "aios_tool_registry_decide"
 STATS_TOOL = "aios_tool_registry_stats"
 #: Categories in which a read-only, grant-free entry may be advertised as readOnlyHint=true (spec §2).
 READ_ONLY_HINT_CATEGORIES = ("audit", "agent_loop", "mcp_core", "model_backend", "fs.read", "service")
+#: Parameters that disqualify a tool from readOnlyHint=true whatever the catalog says (T-03399):
+#: a grant/token argument means a call can redeem (consume) a grant; a path argument means it can read
+#: arbitrary files. Clients may auto-approve read-only tools, so neither may be advertised as read-only.
+GRANT_PARAMS = ("grant_id", "caller_grant_id", "capability_token", "token")
+PATH_PARAMS = ("path", "paths", "file", "files", "dir", "directory", "target_path")
+
+
+def unsafe_for_read_only_hint(parameters: Any) -> bool:
+    """True if a tool's input schema has a grant/token or path-like argument (T-03399 F1, F4)."""
+    props = (parameters or {}).get("properties") or {}
+    for name in props:
+        n = str(name).casefold()
+        if n in GRANT_PARAMS or n in PATH_PARAMS or n.endswith("_path") or n.endswith("_grant_id"):
+            return True
+    return False
 
 
 def _effective(a: Optional[Any]) -> Tuple[bool, Optional[bool], Optional[bool], bool]:
@@ -51,8 +67,12 @@ def more_cautious(existing: Optional[Any], derived: Any, allow_read_only: bool) 
     old = _effective(existing)
     new = _effective(derived)
     explicit_false = existing is not None and existing.readOnlyHint is False
-    ro = bool(allow_read_only and new[0] and not explicit_false and (existing is None or old[0] or
-                                                                      existing.readOnlyHint is None))
+    # T-03399 F2: an annotation that leaves readOnlyHint unset but claims destructive / non-idempotent behaviour
+    # has an opinion: it must not be turned into a read-only one.
+    claims_effects = existing is not None and existing.readOnlyHint is None and (
+        existing.destructiveHint is True or existing.idempotentHint is False)
+    ro = bool(allow_read_only and new[0] and not explicit_false and not claims_effects and
+              (existing is None or old[0] or existing.readOnlyHint is None))
     if ro:
         merged = (True, None, None, old[3] or new[3])
     else:
@@ -82,7 +102,9 @@ def apply_catalog_annotations(mcp_app: Any) -> Dict[str, Any]:
             counts["skipped_unregistered"] += 1
             continue
         allow = (entry.effect is Effect.READ_ONLY and not entry.requires_grant
-                 and entry.category.value in READ_ONLY_HINT_CATEGORIES)
+                 and entry.category.value in READ_ONLY_HINT_CATEGORIES
+                 and entry.scope_kind is ScopeKind.NONE                      # T-03399 F4
+                 and not unsafe_for_read_only_hint(tool.parameters))        # T-03399 F1, F4
         merged = more_cautious(tool.annotations, catalog.annotations(tool.name), allow)
         if merged is tool.annotations:
             counts["unchanged"] += 1
@@ -103,6 +125,15 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
 
     from aiosh_mcp import tool_registry_service as trs
 
+    decide_service: Dict[str, Any] = {}
+
+    def own_service() -> Any:
+        # T-03399 F3: decide() gets its own counters (same catalog and mode as the server), so a caller cannot
+        # inflate the dispatch disagreement counts or fill the unregistered samples, nor probe them (S1).
+        if "svc" not in decide_service:
+            decide_service["svc"] = trs.ToolRegistryService(mode=trs.service().mode)
+        return decide_service["svc"]
+
     def ann(name: str) -> Any:
         try:
             return default_catalog().annotations(name)
@@ -115,7 +146,7 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
         registered, requires_grant, irreversible, scope kinds, disagreements with the legacy rules.
         Decisions are per tool name (target_checked=false). Read-only, no token."""
         try:
-            d = trs.service().decide(name, require_grant=bool(require_grant))
+            d = own_service().decide(name, require_grant=bool(require_grant))
         except Exception as exc:  # broken catalog or service: explicit, never a crash
             return _unavailable(exc)
         return {"ok": True, "data": {"canonical": d.canonical, "registered": d.registered,

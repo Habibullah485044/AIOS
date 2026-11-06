@@ -31,11 +31,11 @@ def test_decide_require_grant_and_unknown_names():
     assert u["registered"] is False and u["requires_grant"] is True and "unregistered" in u["disagreements"]
 
 
-def test_stats_counts_decisions_and_never_holds_names():
+def test_decide_calls_are_not_counted_and_stats_never_hold_names():
     before = STATS.fn()["data"]["service"]
     DECIDE.fn(name="aios.secret_name_x")
     after = STATS.fn()["data"]["service"]
-    assert after["decisions"] == before["decisions"] + 1 and after["unregistered"] == before["unregistered"] + 1
+    assert after == before                                       # T-03399 F3/S1: no pollution, no membership oracle
     assert "secret_name_x" not in str(after)
 
 

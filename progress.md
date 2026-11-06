@@ -2113,3 +2113,8 @@ All edits are docs / control-plane only.
 
 - `aiosh-tool-registry` (list/get/decide/export/check): a read-only operator CLI over the catalog. Atomic export, exit codes for scripts, ASCII-safe output.
 - The independent review fixed a Windows closed-pipe crash, terminal-escape injection and temp-file leaks. PRs #502..#511.
+
+## 2026-11-06 — Tool Registry & Taxonomy API surface epic closed (T-03393..T-03402)
+
+- MCP `aios_tool_registry_decide` / `_stats`. Catalog-driven, never-relaxing annotations on all served tools (read-only hints only under a strict conjunction).
+- The independent audit closed a grant-burning path via read-only-advertised restraint tools. PRs #512..#521.

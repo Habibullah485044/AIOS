@@ -20,9 +20,10 @@ TEXT = DOC.read_text(encoding="utf-8")
 def test_every_error_code_documented_both_ways():
     from aiosh_mcp import tool_registry_service as svc
     from aiosh_mcp import tool_registry_cli as cli
-    codes = {v for mod in (reg, svc, cli) for k, v in vars(mod).items()
-             if k.startswith(("TOOLREG_ERR_", "TOOLSVC_ERR_", "TOOLCLI_ERR_"))}
-    documented = set(re.findall(r"`((?:TOOLREG|TOOLSVC|TOOLCLI)_ERR_[A-Z_]+)`", TEXT))
+    from aiosh_mcp import tool_registry_config as conf
+    codes = {v for mod in (reg, svc, cli, conf) for k, v in vars(mod).items()
+             if k.startswith(("TOOLREG_ERR_", "TOOLSVC_ERR_", "TOOLCLI_ERR_", "TOOLREGCONF_ERR_"))}
+    documented = set(re.findall(r"`((?:TOOLREG|TOOLSVC|TOOLCLI|TOOLREGCONF)_ERR_[A-Z_]+)`", TEXT))
     assert codes == documented
 
 
@@ -48,7 +49,7 @@ def test_python_example_runs_and_prints_what_the_doc_says(tmp_path, block):
 
 def test_json_tool_calls_match_the_live_schema():
     tools = {t.name: t for t in mcp._tool_manager.list_tools()}
-    calls = [json.loads(b) for b in re.findall(r"```json\n(.*?)```", TEXT, re.S)]
+    calls = [c for c in (json.loads(b) for b in re.findall(r"```json\n(.*?)```", TEXT, re.S)) if "name" in c]
     assert calls
     for call in calls:
         tools[call["name"]].fn_metadata.arg_model.model_validate(call["arguments"])
@@ -88,3 +89,18 @@ def test_documented_annotation_policy_matches_the_code():
     served = server_app._tool_manager.list_tools()
     read_only = sum(1 for t in served if t.annotations and t.annotations.readOnlyHint)
     assert f"all **{len(served)}** tools are annotated" in TEXT and f"**{read_only}** are advertised read-only" in TEXT
+
+
+
+def test_documented_config_matches_the_code(tmp_path, monkeypatch):
+    from aiosh_mcp import tool_registry_config as conf
+    for key, field in conf.FIELDS.items():
+        assert f"| `{key}` | {field.default} | {field.lo}..{field.hi} | `{field.env}` |" in TEXT, key
+    for key in conf.LOCKED_KEYS:
+        assert f"`{key}`" in TEXT, key
+    example = next(json.loads(b) for b in re.findall(r"```json\n(.*?)```", TEXT, re.S) if "mode" in b and "name" not in b)
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps(example), encoding="utf-8")
+    monkeypatch.setenv(conf.ENV_CONFIG, str(path))
+    resolved = conf.resolve()
+    assert resolved["errors"] == [] and resolved["config"] == example     # the documented example is valid as written

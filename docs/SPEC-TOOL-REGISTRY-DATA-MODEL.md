@@ -247,6 +247,52 @@ API limitations:
   Until then those tools are deliberately *not* advertised read-only.
 - The TS and Rust MCP manifests are not annotated from the catalog.
 
+## 6e. Configuration (T-03403..T-03412)
+Module `code/aiosh-mcp/aiosh_mcp/tool_registry_config.py`. It is resolved **once per process** (when the server first needs it) and read by every
+consumer. Resolving never raises, writes nothing, and writes no audit row.
+
+| Key | Default | Bounds | Env |
+|---|---|---|---|
+| `mode` | `shadow` | `shadow` \| `strict` | `AIOSH_TOOL_REGISTRY_MODE` |
+| `report_max_lines` | 32 | 1..1000 | `AIOSH_TOOL_REGISTRY_REPORT_MAX_LINES` |
+| `unregistered_samples` | 50 | 0..200 | `AIOSH_TOOL_REGISTRY_UNREGISTERED_SAMPLES` |
+
+**Config file:** the path in `AIOSH_TOOL_REGISTRY_CONFIG`, else `$AIOSH_HOME/tool_registry_config.json` if present (never the working
+directory). The file must be a JSON object, at most 64 KiB, UTF-8 (a BOM is fine), a regular file, with no duplicate keys. UNC, `\\?\`,
+`\??\` and device paths (`CON`, `NUL`, `COM1`, …) are refused.
+
+```json
+{"mode": "strict", "report_max_lines": 64, "unregistered_samples": 100}
+```
+
+**Precedence:**
+- **Numbers:** argument → env → file → default, then clamped to bounds. A clamp is reported.
+- **Mode: strictest wins.** If any source says `strict`, or anything unrecognised, the mode is strict. A file cannot downgrade an env `strict`, and
+  vice versa.
+- **A config you asked for but which cannot be used counts as strict.** That covers an unreadable, rejected or oversize file, and a missing or refused env path. Its
+  numbers fall back to defaults. Configuration can raise enforcement, never silently lower it.
+
+**Locked keys:** security policy is not configurable by any channel. These keys reject the whole file: `catalog`, `entries`,
+`read_only_hint_categories`, `grant_params`, `path_params`, `irreversible_names`, `irreversible_prefixes`.
+
+**Seeing it:** problems are printed **once** on stderr at start-up, with the count, the resulting mode and the error lines.
+`aios_tool_registry_stats` shows the values, the source of each, and the error **codes**.
+
+| Code | When |
+|---|---|
+| `TOOLREGCONF_ERR_IO` | file unreadable, missing (env path), not a regular file, refused by path rules, or default location unavailable |
+| `TOOLREGCONF_ERR_FILE_SIZE` | file over 64 KiB |
+| `TOOLREGCONF_ERR_PARSE` | not valid JSON, not an object, duplicate keys, or a value of the wrong type |
+| `TOOLREGCONF_ERR_UNKNOWN_KEY` | a key that is not in the table above |
+| `TOOLREGCONF_ERR_LOCKED` | a locked key |
+| `TOOLREGCONF_ERR_BOUNDS` | a number out of bounds (clamped) |
+| `TOOLREGCONF_ERR_ENV` | an env value is not an integer (that key is ignored) |
+
+Configuration limitations:
+- Changes take effect on the **next server start**. There is no reload.
+- `unregistered_samples=0` is allowed. It only turns off the hashed samples; the counters remain.
+- Windows file ACLs on the config file are not checked. Protect `$AIOSH_HOME` like the audit DB it sits beside.
+
 ## 7. Known limitations
 - **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
   compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
@@ -287,3 +333,10 @@ API: [research](tasks/evidence/T-03393-research.md), [spec](tasks/evidence/T-033
 [unit](tasks/evidence/T-03397-tool-registry-api-unit-test.md),
 [integration](tasks/evidence/T-03398-tool-registry-api-integration.md),
 [security](tasks/evidence/T-03399-security.md), [hardening](tasks/evidence/T-03400-tool-registry-api-hardening.md)
+
+Configuration: [research](tasks/evidence/T-03403-research.md), [spec](tasks/evidence/T-03404-spec.md),
+[scaffold](tasks/evidence/T-03405-tool-registry-config-scaffold.md),
+[implementation](tasks/evidence/T-03406-tool-registry-config-implementation.md),
+[unit](tasks/evidence/T-03407-tool-registry-config-unit-test.md),
+[integration](tasks/evidence/T-03408-tool-registry-config-integration.md),
+[security](tasks/evidence/T-03409-security.md), [hardening](tasks/evidence/T-03410-tool-registry-config-hardening.md)

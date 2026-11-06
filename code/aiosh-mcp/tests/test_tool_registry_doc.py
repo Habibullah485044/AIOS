@@ -75,3 +75,16 @@ def test_every_cli_subcommand_is_documented():
     assert len(CLI_LINES) >= len(cli.SUBCOMMANDS)
     for sub in cli.SUBCOMMANDS:
         assert any(f"tool_registry_cli {sub}" in line for line in CLI_LINES), sub
+
+
+
+def test_documented_annotation_policy_matches_the_code():
+    from aiosh_mcp import tool_registry_api as api
+    from aiosh_mcp.server import mcp as server_app
+    for category in api.READ_ONLY_HINT_CATEGORIES:
+        assert f"`{category}`" in TEXT, category
+    for param in ("grant_id", "caller_grant_id", "capability_token", "token"):
+        assert f"`{param}`" in TEXT, param
+    served = server_app._tool_manager.list_tools()
+    read_only = sum(1 for t in served if t.annotations and t.annotations.readOnlyHint)
+    assert f"all **{len(served)}** tools are annotated" in TEXT and f"**{read_only}** are advertised read-only" in TEXT

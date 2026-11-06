@@ -1523,3 +1523,9 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   while its lock was held. It also fixed strict mode being silently disabled by a typo.
 - Verification: tool_registry 287 passed, battery 557 passed, full suite no new failures (shadow invariant), conformance C1..C6 PASS,
   demo_por.py PASSED.
+
+## T-03392 - AI Control Plane Tool Registry & Taxonomy / CLI surface: Verification & Evidence (2026-11-06)
+- Milestone closeout for the tool registry CLI (T-03383..T-03392). Read-only operator surface: no grant, audit, PEP or dispatch change.
+  Its only write is an operator-chosen `export --out` file.
+- The independent review (T-03389) found output-safety and robustness defects, all fixed, and no state change beyond the export file.
+- Verification: tool_registry 361 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

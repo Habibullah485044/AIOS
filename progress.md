@@ -2108,3 +2108,8 @@ All edits are docs / control-plane only.
 
 - `tool_registry_service` compares the catalog with the legacy name rules on every dispatch and agent-loop step. Shadow by default; opt-in strict only tightens.
 - Catalog coverage is complete (69/69 served tools). The independent review fixed a shadow-mode stderr stall and a silent strict-mode disable. PRs #492..#501.
+
+## 2026-11-06 — Tool Registry & Taxonomy CLI surface epic closed (T-03383..T-03392)
+
+- `aiosh-tool-registry` (list/get/decide/export/check): a read-only operator CLI over the catalog. Atomic export, exit codes for scripts, ASCII-safe output.
+- The independent review fixed a Windows closed-pipe crash, terminal-escape injection and temp-file leaks. PRs #502..#511.

@@ -20,20 +20,10 @@ def test_verdict_is_immutable():
         v.requires_grant = False
 
 
-@pytest.mark.parametrize("call", [
-    lambda: pol.policy_revision(),
-    lambda: pol.evaluate("aios.fs.read", surface="dispatch"),
-    lambda: pol.grant_reason_suffix(pol.PolicyVerdict(True, False, True, "strict", "trp-0")),
-])
-def test_stubs_fail_loudly(call):
-    with pytest.raises(NotImplementedError, match="T-03426"):
-        call()
-
-
-def test_no_consumer_wired_yet():
-    """Until T-03426 the stubs must not sit on a production path (dispatch and the agent loop would raise)."""
+def test_consumers_use_the_single_policy_point():
+    """T-03426 wired the module into dispatch and the agent loop (the scaffold kept it off the path)."""
     from pathlib import Path
     import aiosh_mcp
     root = Path(aiosh_mcp.__file__).parent
     for name in ("_dispatch.py", "agent_loop_policy.py"):
-        assert "tool_registry_policy" not in (root / name).read_text(encoding="utf-8"), name
+        assert "tool_registry_policy import evaluate" in (root / name).read_text(encoding="utf-8"), name

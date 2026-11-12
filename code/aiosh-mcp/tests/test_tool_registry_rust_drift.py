@@ -24,12 +24,30 @@ CATALOG_WEAKER: set = set()
 _UNDERSTOOD = re.compile(r'tool\s*==\s*"[^"]*"|tool\.starts_with\("[^"]*"\)|\|\||return\s+false\s*;|\bif\b|[{}()\s]')
 
 
-def rust_rule():
-    body = PEP_RS.read_text(encoding="utf-8").split("pub fn is_irreversible(tool: &str) -> bool {", 1)[1]
+#: pep.rs is ~64 KiB today; anything far larger is not the file this parser was written for (T-03420).
+MAX_PEP_RS_BYTES = 1024 * 1024
+_SIGNATURE = "pub fn is_irreversible(tool: &str) -> bool {"
+
+
+def rust_rule(path: Path = None):
+    """Parse ``is_irreversible`` from pep.rs. Every way the file can differ from what is modelled fails loudly
+    with the reason (T-03420): missing or oversize file, zero or several definitions, no closing brace, and
+    zero or several early ``return false;`` blocks."""
+    path = PEP_RS if path is None else path
+    assert path.is_file(), f"drift check needs {path} (the Rust PEP source); it is part of the repository"
+    size = path.stat().st_size
+    assert size <= MAX_PEP_RS_BYTES, f"{path} is {size} bytes, over the {MAX_PEP_RS_BYTES}-byte cap"
+    text = path.read_text(encoding="utf-8")
+    found = text.count(_SIGNATURE)
+    assert found == 1, f"{path} must define `{_SIGNATURE}` exactly once, found {found}"
+    body = text.split(_SIGNATURE, 1)[1]
+    assert "\n}\n" in body, f"{path}: is_irreversible has no closing brace at column 0"
     body = body.split("\n}\n", 1)[0]
     code = "\n".join(line.split("//", 1)[0] for line in body.splitlines())
     leftover = _UNDERSTOOD.sub("", code)
     assert leftover == "", f"pep.rs is_irreversible uses a construct the drift parser does not model: {leftover[:80]!r}"
+    returns = code.count("return false;")
+    assert returns == 1, f"{path}: is_irreversible must have exactly one early `return false;` block, found {returns}"
     early, rest = code.split("return false;", 1)
     not_exact = set(re.findall(r'tool == "([^"]+)"', early))
     not_prefix = tuple(re.findall(r'tool\.starts_with\("([^"]+)"\)', early))

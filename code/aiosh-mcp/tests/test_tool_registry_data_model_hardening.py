@@ -59,10 +59,12 @@ def test_largest_possible_catalog_stays_bounded():
     big = ToolCatalog(_max_entry(i) for i in range(reg.MAX_CATALOG_ENTRIES))
     size = len(big.export_json().encode())
     assert size < 1024 * 1024                                       # well under MCP's 10 MiB payload bound
-    started = time.perf_counter()
+    # CPU time of this process, not wall time: a busy host (T-03419 full run: 2.86 s wall while another job hashed
+    # 8643 files) must not fail a complexity bound (T-03420).
+    started = time.process_time()
     for i in range(20_000):
         big.profile(f"aios.h{i % 600:03d}." + "x" * 54)
-    assert time.perf_counter() - started < 2.0                       # O(1) lookups, misses included
+    assert time.process_time() - started < 2.0                       # O(1) lookups, misses included
 
 
 def test_registry_holds_no_resources():

@@ -44,10 +44,18 @@ _FORBIDDEN_TEXT = re.compile(
     "[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]")   # C0/C1, line/para separators, bidi marks and overrides (T-03389 #5)
 #: Categories whose tools are always irreversible (spec §2.3 rule 5).
 _IRREVERSIBLE_CATEGORIES = ("fs.write", "system")
-#: Names the *existing* enforcement rules treat as irreversible: the union of audit_client.grant_check and
-#: agent_loop_policy.is_irreversible (T-03369 #3). A catalog entry may be stricter, never weaker.
-IRREVERSIBLE_NAME_PREFIXES = ("pentest.", "fs.write", "process.", "shell.")
-IRREVERSIBLE_NAMES = ("system.reboot", "system.shutdown", "pentest")
+#: Names the *existing* enforcement rules treat as irreversible: the union of audit_client.grant_check,
+#: agent_loop_policy.is_irreversible (T-03369 #3) and the Rust PEP's pep::is_irreversible positive list
+#: (T-03419). A catalog entry may be stricter, never weaker. (Rust's reversible *exceptions* are not adopted.)
+IRREVERSIBLE_NAME_PREFIXES = ("pentest.", "fs.write", "process.", "shell.",
+                              # Rust aiosh-core/src/pep.rs is_irreversible
+                              "aios.backup.", "aios.release.", "aios.toolchain.set", "toolchain.set", "aios.doc.set",
+                              "doc.set", "aios.evidence.record", "evidence.record", "aios.evidence.set", "evidence.set",
+                              "aios.session.action", "session.action", "aios.session.create", "session.create")
+#: Bare family names: agent_loop_policy treats a prefix "x." as covering "x" itself (T-03419: process, shell).
+IRREVERSIBLE_NAMES = ("system.reboot", "system.shutdown", "pentest", "process", "shell",
+                      "aios.fs_layout.register", "aios.fs_layout.set_active", "aios.fs_layout.remove",
+                      "aios.fs_layout.import_fstab")
 #: Bare family names the agent-loop gate also treats as network tools (agent_loop_gate.tool_refusal).
 NETWORK_NAMES = ("pentest", "network")
 #: Prefix of the synthetic canonical name given to malformed unknown names (one per name, never registrable).
@@ -334,10 +342,12 @@ _SEED: Tuple[ToolEntry, ...] = (
     # ---- T-03380: every served MCP tool and every literal audit name ------------------------------------------
     # Multi-action tools (task, compliance, runbook, scan) are classified by their most consequential action
     # for `effect`; `requires_grant` is the action-independent minimum (their own gates require grants per action).
-    # release / backup: _dispatch(require_grant=True) (server.py:225,259)
-    _e("aios.release.generate", ("aios_release_generate",), "Package a release ISO", Category.SERVICE, _A, grant=True),
+    # release / backup: _dispatch(require_grant=True) (server.py:225,259). Irreversible (T-03419, as the Rust PEP):
+    # release overwrites aios_<os>_<version>.iso in place; backup copies data out (audit/memory included).
+    _e("aios.release.generate", ("aios_release_generate",), "Package a release ISO", Category.SERVICE, _A,
+       irreversible=True, grant=True),
     _e("aios.backup.create", ("aios_backup_create",), "Create a system backup zip", Category.SERVICE, _A,
-       scope=ScopeKind.PATH, grant=True),
+       irreversible=True, scope=ScopeKind.PATH, grant=True),
     # agent loop: read surfaces and the legacy data-model init (token-gated)
     _e("aios.agent_loop.config", ("aios_agent_loop_config",), "Agent-loop configuration", Category.AGENT_LOOP, _R),
     _e("aios.agent_loop.doc", ("aios_agent_loop_doc",), "Agent-loop reference", Category.AGENT_LOOP, _R),

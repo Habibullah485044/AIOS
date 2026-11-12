@@ -94,3 +94,17 @@ def test_str_subclass_cannot_resolve_to_another_entry():
     assert C.resolve(s) is None and C.get(s) is None
     p = C.profile(s)
     assert p.irreversible and p.requires_grant
+
+
+# T-03419: rule 7 covers the bare family names and the Rust PEP's irreversible names.
+@pytest.mark.parametrize("name", ["shell", "process", "aios.backup.x", "aios.release.y", "session.create",
+                                  "aios.fs_layout.register"])
+def test_rule_7_covers_bare_families_and_rust_names(name):
+    assert code_of(lambda: entry(canonical=name, category=Category.ADMIN, effect=Effect.ADDITIVE)) == \
+        "TOOLREG_ERR_INCONSISTENT"
+
+
+def test_backup_and_release_are_irreversible():
+    for name in ("aios.backup.create", "aios.release.generate"):
+        e = C.get(name)
+        assert e.irreversible and e.requires_grant, name

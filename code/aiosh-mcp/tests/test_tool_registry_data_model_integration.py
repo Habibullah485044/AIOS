@@ -86,4 +86,6 @@ def test_ts_pep_agrees_on_irreversibility(tmp_path):
     assert out.returncode == 0, out.stderr[-1000:]
     ts = dict(zip(names, json.loads(out.stdout.strip().splitlines()[-1])))
     disagree = {n: (C.get(n).irreversible, ts[n]) for n in names if C.get(n).irreversible != ts[n]}
-    assert disagree == {}, f"catalog vs TS isIrreversible: {disagree}"
+    # the catalog may be stricter than TS (backup/release follow the Rust PEP, T-03419), never weaker
+    assert all(cat and not ts_value for cat, ts_value in disagree.values()), f"catalog weaker than TS: {disagree}"
+    assert set(disagree) <= {"aios.backup.create", "aios.release.generate"}, f"new TS drift: {disagree}"

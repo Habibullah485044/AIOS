@@ -1543,3 +1543,10 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
 - The independent review closed an SMB/NTLM credential leak in the path guard shared with the agent-loop config (`\??\UNC\…`), and the
   fail-open paths by which a bad config could lower a requested strict mode.
 - Verification: tool_registry 504 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03422 - AI Control Plane Tool Registry & Taxonomy / automated tests: Verification & Evidence (2026-11-13)
+- Milestone closeout for the registry automated tests (T-03413..T-03422). Mostly test code. One catalog change touches I-2:
+  `aios.backup.create` and `aios.release.generate` are now **irreversible** (they already required a grant), as the Rust PEP has them. In strict
+  mode they now count against a grant's `max_irreversible` in the agent loop. Strict mode can still only tighten; shadow is unchanged.
+- The seed lock pins every entry's effect, irreversible, grant, scope and open-world flags, so weakening a grant requirement needs a visible test change.
+- Verification: tool_registry 619 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.

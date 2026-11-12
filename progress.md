@@ -2123,3 +2123,8 @@ All edits are docs / control-plane only.
 
 - `tool_registry_config`: strictest-wins mode across argument/env/file, bounded tunables, locked security keys, problems visible on stderr and in stats.
 - The independent review fixed an SMB/NTLM leak in the shared path guard and five fail-open config paths. PRs #522..#531.
+
+## 2026-11-13 — Tool Registry & Taxonomy automated tests epic closed (T-03413..T-03422)
+
+- Seeded, stdlib-only property tests P1–P6 check the catalog against oracles written from the doc. With them come a seed lock on every entry's security fields, a strict Rust `is_irreversible` drift check, capped knobs and a per-property watchdog.
+- The independent review made `aios.backup.create` / `aios.release.generate` irreversible (closing a strict-mode `max_irreversible` gap) and widened rule 7 to the Rust PEP list. PRs #532..#541.

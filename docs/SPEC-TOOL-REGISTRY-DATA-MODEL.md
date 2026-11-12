@@ -296,6 +296,53 @@ Configuration limitations:
 - `unregistered_samples=0` is allowed. It only turns off the hashed samples; the counters remain.
 - Windows file ACLs on the config file are not checked. Protect `$AIOSH_HOME` like the audit DB it sits beside.
 
+## 6f. Automated tests (T-03413..T-03422)
+Seeded property tests check the catalog, the name rules, the service decisions, the annotation merge, the configuration and the export
+against oracles written from **this doc**, not from the code. They live in `code/aiosh-mcp/tests/`. CI suite #35 (`-k tool_registry`)
+runs them with every other registry test. Stdlib only; no extra dependency.
+
+Run them from `code/aiosh-mcp`:
+```bash
+python -m pytest tests/ -k tool_registry -q                      # the whole registry battery (CI suite #35)
+python -m pytest tests/test_tool_registry_properties.py -q       # the properties only (P1–P6)
+AIOSH_TOOLREG_FUZZ_SEEDS=7 AIOSH_TOOLREG_FUZZ_N=2000 python -m pytest tests/test_tool_registry_properties.py -q
+```
+In PowerShell, set the variables first: `$env:AIOSH_TOOLREG_FUZZ_SEEDS = "7"`.
+
+| Property | Holds for every generated case |
+|---|---|
+| P1 | An entry is accepted **iff** it satisfies §2: the name and title rules, the alias bounds and rules 1–7. Every rule is broken on its own in every seed. |
+| P2 | A catalog is rejected (`TOOLREG_ERR_DUPLICATE`) **iff** two of its names share the §2 fold, other than an alias folding onto its own canonical name. |
+| P3 | `profile()` and `decide()` never raise. They are never weaker than the legacy name rules, the caller's `require_grant` or classifier C-3. |
+| P4 | The annotation merge never relaxes `existing` or the catalog-derived hints. |
+| P5 | Configuration resolution gives exactly what §6e says, in mode and in every number. |
+| P6 | `export_json()` round-trips byte for byte. |
+
+| Knob | Default | Bounds |
+|---|---|---|
+| `AIOSH_TOOLREG_FUZZ_SEEDS` | 1,2,3 | 1..64 integer seeds |
+| `AIOSH_TOOLREG_FUZZ_N` | 300 | 1..20000 cases per property and seed |
+| `AIOSH_TOOLREG_FUZZ_TIMEOUT_S` | 120 | (0, 3600] seconds per property test |
+
+A malformed, empty or out-of-bounds knob is an **error that names the variable**, never a skip. A failure prints
+`seed=… property=… case=…` and the input, and the same seed replays it exactly.
+
+Guards next to the properties:
+- **Seed lock** (`test_tool_registry_seed_lock.py`) pins effect, irreversible, grant, scope and open world for every seed entry. A change to
+  the security fields of the catalog must change this test in the same reviewed PR.
+- **Rust drift** (`test_tool_registry_rust_drift.py`) parses `aiosh-core/src/pep.rs::is_irreversible` and compares it with the catalog.
+  Known differences between catalog entries are listed in both directions (Rust weaker: `pentest.tshark`; catalog weaker: none), and any new one fails. The parser
+  refuses any construct or file shape it does not model.
+- **Watchdog.** A property test that runs past `AIOSH_TOOLREG_FUZZ_TIMEOUT_S` fails with a `TimeoutError` and its traceback, and the run goes
+  on. One stuck in C code is killed 30 s later with every thread's stack (exit status 1).
+
+Automated-test limitations:
+- **The oracles share the doc's mistakes.** They are written from this doc, so an error in the doc is in both and is not caught.
+- **Fixed default seeds.** CI explores the same 3 × 300 cases on every run. Widen locally with the knobs.
+- **Rust is compared by source, not by binary.** TS parity tests need `node` and a built `aiosh-cli/dist`; without them they skip.
+- **The hard-stage stack dump can be lost** under pytest's output capture. The exit status 1 is not.
+- **The watchdog covers the property module only.** The other registry tests are small and bounded by construction.
+
 ## 7. Known limitations
 - **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
   compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
@@ -343,3 +390,11 @@ Configuration: [research](tasks/evidence/T-03403-research.md), [spec](tasks/evid
 [unit](tasks/evidence/T-03407-tool-registry-config-unit-test.md),
 [integration](tasks/evidence/T-03408-tool-registry-config-integration.md),
 [security](tasks/evidence/T-03409-security.md), [hardening](tasks/evidence/T-03410-tool-registry-config-hardening.md)
+
+Automated tests: [research](tasks/evidence/T-03413-research.md), [spec](tasks/evidence/T-03414-spec.md),
+[scaffold](tasks/evidence/T-03415-tool-registry-tests-scaffold.md),
+[implementation](tasks/evidence/T-03416-tool-registry-tests-implementation.md),
+[unit](tasks/evidence/T-03417-tool-registry-tests-unit-test.md),
+[integration](tasks/evidence/T-03418-tool-registry-tests-integration.md),
+[security](tasks/evidence/T-03419-security.md), [hardening](tasks/evidence/T-03420-automated-tests-hardening.md),
+[documentation](tasks/evidence/T-03421-automated-tests-documentation.md)

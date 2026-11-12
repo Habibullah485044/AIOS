@@ -7,28 +7,106 @@ Spec: docs/tasks/evidence/T-03414-spec.md. Every oracle here is written from the
 
 from __future__ import annotations
 
+import _thread
+import contextlib
+import faulthandler
 import json
 import os
 import random
 import re
+import sys
+import threading
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 # ---- environment knobs (spec §3) ---------------------------------------------------------------------------------
 
+#: Upper bounds so a typo in CI cannot turn the suite into a days-long run (T-03420).
+MAX_SEEDS = 64
+MAX_CASES = 20_000
+#: Per-property watchdog (T-03420). Spec T-03414 §4 budgets the whole module at 30 s, so 120 s per property is a hang.
+DEFAULT_TIMEOUT_S = 120.0
+MAX_TIMEOUT_S = 3600.0
+#: After the soft timeout, a property stuck in C code gets this long before the process is killed.
+HARD_KILL_GRACE_S = 30.0
+
+
+def _knob(var: str, default: str) -> str:
+    return os.environ.get(var, default)
+
+
 def seeds() -> List[int]:
-    raw = os.environ.get("AIOSH_TOOLREG_FUZZ_SEEDS", "1,2,3")
-    out = [int(s) for s in raw.split(",") if s.strip()]
+    raw = _knob("AIOSH_TOOLREG_FUZZ_SEEDS", "1,2,3")
+    try:
+        out = [int(s) for s in raw.split(",") if s.strip()]
+    except ValueError:
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_SEEDS must be comma-separated integers, got {raw[:40]!r}") from None
     if not out:  # T-03419: an empty list used to skip every property silently
         raise ValueError("AIOSH_TOOLREG_FUZZ_SEEDS must name at least one seed")
+    if len(out) > MAX_SEEDS:
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_SEEDS names {len(out)} seeds; at most {MAX_SEEDS} are allowed")
     return out
 
 
 def n_cases() -> int:
-    n = int(os.environ.get("AIOSH_TOOLREG_FUZZ_N", "300"))
+    raw = _knob("AIOSH_TOOLREG_FUZZ_N", "300")
+    try:
+        n = int(raw)
+    except ValueError:
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_N must be an integer, got {raw[:40]!r}") from None
     if n < 1:
         raise ValueError("AIOSH_TOOLREG_FUZZ_N must be at least 1")
+    if n > MAX_CASES:
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_N={n} is above the cap of {MAX_CASES}")
     return n
+
+
+def timeout_s() -> float:
+    raw = _knob("AIOSH_TOOLREG_FUZZ_TIMEOUT_S", str(DEFAULT_TIMEOUT_S))
+    try:
+        t = float(raw)
+    except ValueError:
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_TIMEOUT_S must be a number of seconds, got {raw[:40]!r}") from None
+    if not 0 < t <= MAX_TIMEOUT_S:  # also rejects nan and inf
+        raise ValueError(f"AIOSH_TOOLREG_FUZZ_TIMEOUT_S must be in (0, {MAX_TIMEOUT_S:g}], got {raw[:40]!r}")
+    return t
+
+
+@contextlib.contextmanager
+def watchdog(seconds: float, what: str = "property", grace: float = HARD_KILL_GRACE_S):
+    """Fail a block that runs longer than ``seconds``, with its location (T-03420).
+
+    Soft stage: a daemon thread interrupts the main thread, and the resulting KeyboardInterrupt becomes a
+    ``TimeoutError`` that pytest reports as an ordinary failure, traceback included. That works whenever the
+    block is running Python code, which is where a property loop spends its time.
+    Hard stage: if the block is stuck in C code and ignores the interrupt, ``faulthandler`` dumps every thread's
+    stack to stderr and exits the process with status 1 after ``grace`` more seconds. CI sees a failure, not a hang.
+    Both stages are cancelled when the block ends, so a passing block costs one short-lived thread.
+    """
+    done = threading.Event()
+    fired = threading.Event()
+
+    def _bark() -> None:
+        if not done.wait(seconds):
+            fired.set()
+            _thread.interrupt_main()
+
+    hard = sys.__stderr__ is not None and grace > 0
+    if hard:
+        faulthandler.dump_traceback_later(seconds + grace, exit=True, file=sys.__stderr__)
+    dog = threading.Thread(target=_bark, name="toolreg-watchdog", daemon=True)
+    dog.start()
+    try:
+        yield
+    except KeyboardInterrupt as exc:
+        if fired.is_set():
+            raise TimeoutError(f"{what} ran longer than {seconds:g}s (AIOSH_TOOLREG_FUZZ_TIMEOUT_S)") from exc
+        raise
+    finally:
+        done.set()
+        if hard:
+            faulthandler.cancel_dump_traceback_later()
+        dog.join(5)
 
 
 # ---- doc §2: the taxonomy ----------------------------------------------------------------------------------------

@@ -30,6 +30,11 @@ def _isolated_home(tmp_path, monkeypatch):
     monkeypatch.delenv(conf.ENV_CONFIG, raising=False)
     monkeypatch.delenv(conf.ENV_MODE, raising=False)
     conf.reset_process_config()
+
+
+#: A hung property fails with its location instead of stalling CI (T-03420; conftest.pytest_runtest_call).
+pytestmark = pytest.mark.toolreg_watchdog
+M.timeout_s()                       # a bad AIOSH_TOOLREG_FUZZ_TIMEOUT_S fails at collection, not mid-run
 N = M.n_cases()
 
 

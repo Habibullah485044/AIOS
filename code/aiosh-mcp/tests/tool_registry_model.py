@@ -18,11 +18,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 def seeds() -> List[int]:
     raw = os.environ.get("AIOSH_TOOLREG_FUZZ_SEEDS", "1,2,3")
-    return [int(s) for s in raw.split(",") if s.strip()]
+    out = [int(s) for s in raw.split(",") if s.strip()]
+    if not out:  # T-03419: an empty list used to skip every property silently
+        raise ValueError("AIOSH_TOOLREG_FUZZ_SEEDS must name at least one seed")
+    return out
 
 
 def n_cases() -> int:
-    return int(os.environ.get("AIOSH_TOOLREG_FUZZ_N", "300"))
+    n = int(os.environ.get("AIOSH_TOOLREG_FUZZ_N", "300"))
+    if n < 1:
+        raise ValueError("AIOSH_TOOLREG_FUZZ_N must be at least 1")
+    return n
 
 
 # ---- doc §2: the taxonomy ----------------------------------------------------------------------------------------
@@ -34,9 +40,13 @@ SCOPES = ("none", "path", "network")
 CANONICAL = re.compile(r"^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$")
 MCP_NAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
 MAX_NAME, MAX_TITLE, MAX_ALIASES = 64, 64, 8
-#: Rule 7 (doc §2): names today's enforcement treats as irreversible, case-insensitive.
-IRREVERSIBLE_PREFIXES = ("pentest.", "fs.write", "process.", "shell.")
-IRREVERSIBLE_EXACT = ("system.reboot", "system.shutdown", "pentest")
+#: Rule 7 (doc §2): names today's enforcement (Python, agent loop, Rust PEP) treats as irreversible, case-insensitive.
+IRREVERSIBLE_PREFIXES = ("pentest.", "fs.write", "process.", "shell.", "aios.backup.", "aios.release.",
+                         "aios.toolchain.set", "toolchain.set", "aios.doc.set", "doc.set", "aios.evidence.record",
+                         "evidence.record", "aios.evidence.set", "evidence.set", "aios.session.action", "session.action",
+                         "aios.session.create", "session.create")
+IRREVERSIBLE_EXACT = ("system.reboot", "system.shutdown", "pentest", "process", "shell", "aios.fs_layout.register",
+                      "aios.fs_layout.set_active", "aios.fs_layout.remove", "aios.fs_layout.import_fstab")
 #: grant_check's own (case-sensitive) grant set (T-03374 §2 / T-03376 legacy rules).
 GRANT_PREFIXES = ("pentest.", "fs.write")
 GRANT_EXACT = ("system.reboot", "system.shutdown")
@@ -79,7 +89,7 @@ def entry_should_be_valid(kw: Dict[str, Any]) -> bool:
 
 _NAME_PARTS = ("aios", "fs", "read", "write", "x", "tool", "net", "a1", "b-c", "d_e")
 _RISKY = ("pentest.", "fs.write", "process.", "shell.", "system.reboot", "system.shutdown", "network.", "pentest",
-          "system.", "PENTEST.", "Fs.Write")
+          "system.", "PENTEST.", "Fs.Write", "process", "shell", "aios.backup.", "aios.release.", "session.create")
 
 
 def gen_canonical(rng: random.Random) -> Any:
@@ -94,7 +104,92 @@ def gen_canonical(rng: random.Random) -> Any:
                        "pentest", "system.reboot", None, 7])
 
 
+def gen_valid_kwargs(rng: random.Random) -> Dict[str, Any]:
+    """An entry that satisfies every doc rule, built by construction (T-03419: P1 used to be ~1% valid)."""
+    while True:
+        name = gen_canonical(rng)
+        if type(name) is str and 1 <= len(name) <= MAX_NAME and CANONICAL.fullmatch(name):
+            break
+    category = rng.choice(CATEGORIES)
+    scope = "network" if category == "network" else rng.choice(SCOPES)
+    if category == "pentest" and scope == "none":
+        scope = rng.choice(["path", "network"])
+    must_irrev = category in ("pentest", "fs.write", "system") or irreversible_by_name(name)
+    irrev = must_irrev or rng.random() < 0.3
+    effect = rng.choice(["additive", "destructive"] if irrev else EFFECTS)
+    return {
+        "canonical": name,
+        "mcp_names": tuple(rng.choice(["a_b", "A.B-c", "x" * 64, "ok", "Tool-1"]) for _ in range(rng.randint(0, 3))),
+        "title": rng.choice(["Title", "t" * 64, "ok ü", "Read a file"]),
+        "category": category,
+        "effect": effect,
+        "irreversible": irrev,
+        "scope_kind": scope,
+        "open_world": scope == "network" or rng.random() < 0.3,
+        "requires_grant": irrev or rng.random() < 0.5,
+        "idempotent": effect != "read_only" and rng.random() < 0.3,
+    }
+
+
+#: One-field perturbations: each may or may not break a rule; the oracle decides which.
+_PERTURB = {
+    "canonical": lambda rng: gen_canonical(rng),
+    "mcp_names": lambda rng: rng.choice([("a b",), ("a",) * 9, ["a"], ("x" * 65,), ("",), ("ok",)]),
+    "title": lambda rng: rng.choice(["", "t" * 65, "a​b", "a‮b", "ab", "a b", 5, "fine"]),
+    # biased towards the categories that carry rules 4-6, so each rule is also broken on its own
+    "category": lambda rng: rng.choice(("system", "fs.write", "network") * 3 + ("pentest",) * 6 + CATEGORIES),
+    "effect": lambda rng: rng.choice(EFFECTS),
+    "irreversible": lambda rng: rng.choice([True, False, 1]),
+    "scope_kind": lambda rng: rng.choice(("none", "none") + SCOPES),
+    "open_world": lambda rng: rng.choice([True, False]),
+    "requires_grant": lambda rng: rng.choice([True, False, 0]),
+    "idempotent": lambda rng: rng.choice([True, False]),
+}
+
+
+_PLAIN_CATEGORIES = ("fs.read", "process", "audit", "gui", "agent_loop", "model_backend", "mcp_core", "service",
+                     "admin")
+
+
+def gen_rule_breaker(rng: random.Random, rule: int) -> Dict[str, Any]:
+    """A plain valid entry with exactly doc rule ``rule`` broken (T-03419: every rule must be tested alone)."""
+    name = "aios." + ".".join(rng.choice(("a1", "tool", "x", "d_e")) for _ in range(rng.randint(1, 2)))
+    kw = {"canonical": name, "mcp_names": (), "title": "Plain", "category": rng.choice(_PLAIN_CATEGORIES),
+          "effect": "additive", "irreversible": False, "scope_kind": "none", "open_world": False,
+          "requires_grant": False, "idempotent": False}
+    if rule == 1:
+        kw.update(effect="read_only", idempotent=True)
+    elif rule == 2:
+        kw.update(irreversible=True, requires_grant=False)
+    elif rule == 3:
+        kw.update(scope_kind="network", open_world=False)
+    elif rule == 4:
+        kw.update(category="pentest", irreversible=True, requires_grant=True, scope_kind="none")
+    elif rule == 5:
+        kw.update(category=rng.choice(("system", "fs.write")))
+    elif rule == 6:
+        kw.update(category="network", scope_kind=rng.choice(("none", "path")))
+    elif rule == 7:
+        kw.update(canonical=rng.choice(("shell.run", "process", "aios.backup.x", "pentest", "session.create")))
+    return kw
+
+
 def gen_kwargs(rng: random.Random) -> Dict[str, Any]:
+    """Targeted single-rule breaks, valid entries with one field changed, and fully random entries."""
+    roll = rng.random()
+    if roll < 0.3:
+        return gen_rule_breaker(rng, rng.randint(1, 7))
+    if roll < 0.75:
+        kw = gen_valid_kwargs(rng)
+        field = rng.choice(sorted(_PERTURB))
+        kw[field] = _PERTURB[field](rng)
+        return kw
+    if roll < 0.85:
+        return gen_valid_kwargs(rng)
+    return gen_random_kwargs(rng)
+
+
+def gen_random_kwargs(rng: random.Random) -> Dict[str, Any]:
     aliases: Any = tuple(rng.choice(["a_b", "A.B-c", "x" * 64, "x" * 65, "", "a b", "a/b", "ok"])
                          for _ in range(rng.randint(0, 9)))
     if rng.random() < 0.03:
@@ -120,17 +215,20 @@ def fold(name: str) -> str:
 
 
 def catalog_should_collide(entries: List[Tuple[str, Tuple[str, ...]]]) -> bool:
-    """True iff two names share a fold, unless one is the *own canonical* of the other's entry (doc §2)."""
-    seen: Dict[str, Tuple[int, bool]] = {}
-    for idx, (canonical, aliases) in enumerate(entries):
-        for pos, name in enumerate((canonical, *aliases)):
-            key = fold(name)
-            if key in seen:
-                prev_idx, prev_is_canonical = seen[key]
-                if not (prev_idx == idx and (prev_is_canonical or pos == 0)):
-                    return True
-            else:
-                seen[key] = (idx, pos == 0)
+    """Doc §2: two names collide when they share a fold, except an alias folding onto its *own* canonical.
+
+    Stated pairwise over every name (T-03419: the old oracle copied the implementation's single pass).
+    """
+    names = [(i, j, n) for i, (c, aliases) in enumerate(entries) for j, n in enumerate((c, *aliases))]
+    for a in range(len(names)):
+        for b in range(a + 1, len(names)):
+            (ia, ja, na), (ib, jb, nb) = names[a], names[b]
+            if fold(na) != fold(nb):
+                continue
+            # names of one entry that are all spellings of *its* canonical are the same name (doc §2 example)
+            own_canonical = ia == ib and fold(na) == fold(entries[ia][0])
+            if not own_canonical:
+                return True
     return False
 
 
@@ -141,7 +239,8 @@ def gen_name_set(rng: random.Random) -> List[Tuple[str, Tuple[str, ...]]]:
         stem = rng.choice(stems)
         canonical = stem if rng.random() < 0.7 else stem.replace(".", rng.choice(["_", "-", "."]))
         variants = [stem.replace(".", "_"), stem.replace(".", "-"), stem.upper().replace(".", "_"), stem + "_x",
-                    "other_" + stem.replace(".", "_")]
+                    "other_" + stem.replace(".", "_"), stem.replace(".", "__"), stem.replace(".", "-."),
+                    stem.replace(".", "_.")]
         aliases = tuple(rng.choice(variants) for _ in range(rng.randint(0, 2)))
         out.append((canonical, aliases))
     return out

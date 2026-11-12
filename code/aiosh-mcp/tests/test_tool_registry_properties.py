@@ -21,6 +21,15 @@ from aiosh_mcp.tool_registry_service import ToolRegistryService
 DOC_FIELDS = {"canonical", "mcp_names", "title", "category", "effect", "irreversible", "scope_kind", "open_world",
               "requires_grant", "idempotent"}
 SEEDS = M.seeds()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """No host config can influence a property (T-03419 hygiene)."""
+    monkeypatch.setenv("AIOSH_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(conf.ENV_CONFIG, raising=False)
+    monkeypatch.delenv(conf.ENV_MODE, raising=False)
+    conf.reset_process_config()
 N = M.n_cases()
 
 
@@ -45,7 +54,7 @@ def test_p1_entry_validity_matches_the_doc(seed):
             actual = False
         assert actual == expected, f"seed={seed} property=P1 case={case} expected_valid={expected} input={kw!r}"
         accepted += actual
-    assert 0 < accepted < N, f"seed={seed}: generator too one-sided ({accepted}/{N} valid)"
+    assert N * 0.2 <= accepted <= N * 0.8 or N < 50, f"seed={seed}: generator too one-sided ({accepted}/{N} valid)"
 
 
 @pytest.mark.parametrize("seed", SEEDS)
@@ -81,8 +90,11 @@ def test_p3_profiles_and_decisions_are_never_weaker(seed):
         name = M.gen_query_name(rng, registered)
         grant, irrev = M.legacy_floor(name)
         p = catalog.profile(name)
-        d = svc.decide(name, "t")
-        where = f"seed={seed} property=P3 case={case} name={name!r}"
+        caller_grant, c3 = rng.random() < 0.3, rng.random() < 0.3
+        d = svc.decide(name, "t", classification={"c_flags": {"c3": c3}}, require_grant=caller_grant)
+        where = f"seed={seed} property=P3 case={case} name={name!r} require_grant={caller_grant} c3={c3}"
+        assert d.requires_grant or not caller_grant, where                # the caller's flag is never dropped
+        assert d.irreversible or not c3, where                            # classifier C-3 is never dropped
         assert p.requires_grant >= grant and p.irreversible >= irrev, where
         assert d.requires_grant >= grant and d.irreversible >= irrev, where
         assert d.requires_grant >= p.requires_grant and d.irreversible >= p.irreversible, where   # stricter of both
@@ -94,18 +106,23 @@ def test_p3_profiles_and_decisions_are_never_weaker(seed):
 def test_p4_annotation_merge_never_relaxes(seed):
     rng = random.Random(seed)
     for case in range(N):
-        existing, derived, allow = M.gen_annotation(rng), M.gen_annotation(rng), rng.random() < 0.5
-        if derived is None:
-            continue
+        existing, derived, allow = M.gen_annotation(rng), None, rng.random() < 0.5
+        while derived is None:                                         # the catalog always derives one
+            derived = M.gen_annotation(rng)
         merged = api.more_cautious(existing, derived, allow)
-        old, new = M.caution(existing), M.caution(merged)
+        old, new, cat = M.caution(existing), M.caution(merged), M.caution(derived)
         where = f"seed={seed} property=P4 case={case} existing={existing!r} derived={derived!r} allow={allow}"
         if new[0]:
             assert allow and derived.readOnlyHint is True and not M.contrary_claim(existing), where
-        elif not old[0]:
-            assert new[1] or not old[1], where                            # destructive never dropped
-            assert not new[2] or old[2], where                            # idempotent never newly claimed
-        assert new[3] or not old[3], where                                # open world is sticky
+        else:
+            # doc §6d: destructive and open world stay true if *either* side says so; idempotent only if both do
+            if not old[0]:
+                assert new[1] or not old[1], where
+            if not cat[0]:
+                assert new[1] or not cat[1], where
+            assert not new[2] or (bool(old[2]) and bool(cat[2])), where
+        assert new[3] or not old[3], where                                # open world sticky, both sides
+        assert new[3] or not cat[3], where
 
 
 @pytest.mark.parametrize("seed", SEEDS)
@@ -140,21 +157,25 @@ def test_p5_configuration_follows_the_doc(seed, tmp_path, monkeypatch):
         for key, value in src["env_nums"].items():
             if value is not None:
                 monkeypatch.setenv(M.ENV_NUM[key], value)
-        got = conf.resolve(arg_mode=src["arg_mode"])["config"]
-        assert got == M.expected_config(src), f"seed={seed} property=P5 case={case} input={src!r}"
+        resolved = conf.resolve(arg_mode=src["arg_mode"])
+        assert resolved["config"] == M.expected_config(src), f"seed={seed} property=P5 case={case} input={src!r}"
+        if kind == "bad":                                              # refused before any open (T-03419)
+            assert any("path hygiene" in e for e in resolved["errors"]), f"seed={seed} P5 case={case}"
 
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_p6_export_round_trips(seed):
     rng = random.Random(seed)
+    sizes = []
     for case in range(max(1, N // 10)):
-        kws = [kw for kw in (M.gen_kwargs(rng) for _ in range(rng.randint(1, 30))) if M.entry_should_be_valid(kw)]
+        kws = [M.gen_valid_kwargs(rng) for _ in range(rng.randint(1, 40))]
         entries, seen = [], set()
         for kw in kws:
             keys = {M.fold(n) for n in (kw["canonical"], *kw["mcp_names"])}
             if not keys & seen and not M.catalog_should_collide([(kw["canonical"], kw["mcp_names"])]):                                            # keep one valid catalog
                 seen |= keys
                 entries.append(build(kw))
+        sizes.append(len(entries))
         exported = ToolCatalog(entries).export_json()
         doc = json.loads(exported)
         assert doc["schema_version"] == 1
@@ -164,3 +185,4 @@ def test_p6_export_round_trips(seed):
         where = f"seed={seed} property=P6 case={case}"
         assert list(rebuilt.entries()) == sorted(entries, key=lambda e: e.canonical), where   # every field survives
         assert rebuilt.export_json() == exported, where
+    assert max(sizes) >= 10 and sum(sizes) / len(sizes) >= 3, f"seed={seed}: catalogs too small {sizes}"

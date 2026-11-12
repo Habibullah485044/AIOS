@@ -142,8 +142,15 @@ def _grant_check_irreversible(tool):            # audit_client.grant_check, line
     return tool.startswith("pentest.") or tool.startswith("fs.write") or tool in ("system.reboot", "system.shutdown")
 
 
+#: Stricter than the Python name rules on purpose: the Rust PEP counts them irreversible (T-03419).
+STRICTER_THAN_PYTHON = {"aios.backup.create", "aios.release.generate"}
+
+
 @pytest.mark.parametrize("e", C.entries(), ids=lambda e: e.canonical)
 def test_catalog_agrees_with_existing_irreversible_rules(e):
+    if e.canonical in STRICTER_THAN_PYTHON:
+        assert e.irreversible and not _grant_check_irreversible(e.canonical)    # listed, not hidden
+        return
     assert e.irreversible == _grant_check_irreversible(e.canonical), "grant_check disagrees"
     assert e.irreversible == is_irreversible(e.canonical, {}), "agent_loop_policy disagrees"
 

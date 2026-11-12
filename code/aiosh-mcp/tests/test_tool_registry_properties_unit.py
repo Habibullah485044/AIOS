@@ -62,6 +62,8 @@ def test_fold_examples():
 
 @pytest.mark.parametrize("name,floor", [("pentest.nmap", (True, True)), ("fs.write", (True, True)),
                                         ("process.kill", (False, True)), ("PENTEST.x", (False, True)),
+                                        ("shell", (False, True)), ("process", (False, True)),
+                                        ("aios.backup.create", (False, True)), ("session.create.x", (False, True)),
                                         ("system.reboot", (True, True)), ("aios.x", (False, False)),
                                         (None, (False, False))])
 def test_legacy_floor_examples(name, floor):
@@ -102,24 +104,48 @@ def test_generators_are_deterministic():
     assert [M.gen_kwargs(a) for _ in range(50)] == [M.gen_kwargs(b) for _ in range(50)]
 
 
-def test_generator_reaches_every_rule():
-    rng = random.Random(1)
-    hit = set()
-    for _ in range(M.n_cases() * 3):
-        kw = M.gen_kwargs(rng)
-        base_ok = M.entry_should_be_valid({**kw, "effect": "additive", "irreversible": True, "requires_grant": True,
-                                           "category": "admin", "scope_kind": "path", "idempotent": False})
-        if not base_ok:
-            continue
-        for rule, broken in (
-                (1, kw["effect"] == "read_only" and (kw["irreversible"] is True or kw["idempotent"])),
-                (2, kw["irreversible"] is True and not kw["requires_grant"]),
-                (3, kw["scope_kind"] == "network" and not kw["open_world"]),
-                (4, kw["category"] == "pentest" and (kw["irreversible"] is not True or kw["scope_kind"] == "none")),
-                (5, kw["category"] in ("fs.write", "system") and kw["irreversible"] is not True),
-                (6, kw["category"] == "network" and kw["scope_kind"] != "network"),
-                (7, M.irreversible_by_name(kw["canonical"]) and not (kw["irreversible"] is True
-                                                                     and kw["requires_grant"]))):
-            if broken:
-                hit.add(rule)
-    assert hit == {1, 2, 3, 4, 5, 6, 7}
+RULES = {
+    1: lambda kw: not (kw["effect"] == "read_only" and (kw["irreversible"] or kw["idempotent"])),
+    2: lambda kw: not kw["irreversible"] or (kw["requires_grant"] and kw["effect"] != "read_only"),
+    3: lambda kw: kw["scope_kind"] != "network" or kw["open_world"],
+    4: lambda kw: kw["category"] != "pentest" or (kw["irreversible"] and kw["scope_kind"] != "none"),
+    5: lambda kw: kw["category"] not in ("fs.write", "system") or kw["irreversible"],
+    6: lambda kw: kw["category"] != "network" or kw["scope_kind"] == "network",
+    7: lambda kw: not M.irreversible_by_name(kw["canonical"]) or (kw["irreversible"] and kw["requires_grant"]),
+}
+
+
+def _well_typed(kw):
+    return (type(kw["canonical"]) is str and M.CANONICAL.fullmatch(kw["canonical"]) and len(kw["canonical"]) <= 64
+            and type(kw["mcp_names"]) is tuple and len(kw["mcp_names"]) <= 8
+            and all(type(a) is str and 1 <= len(a) <= 64 and M.MCP_NAME.fullmatch(a) for a in kw["mcp_names"])
+            and type(kw["title"]) is str and 1 <= len(kw["title"]) <= 64 and kw["title"].isprintable()
+            and all(type(kw[k]) is bool for k in ("irreversible", "open_world", "requires_grant", "idempotent")))
+
+
+def test_generator_breaks_every_rule_alone():
+    """T-03419: each rule must be the *only* broken rule in some case, or deleting it could pass P1 unnoticed."""
+    for seed in M.seeds():
+        rng = random.Random(seed)
+        alone = set()
+        for _ in range(M.n_cases()):
+            kw = M.gen_kwargs(rng)
+            if not _well_typed(kw):
+                continue
+            broken = [r for r, ok in RULES.items() if not ok(kw)]
+            if len(broken) == 1:
+                alone.add(broken[0])
+        assert alone == set(RULES), f"seed={seed}: rules never broken alone: {sorted(set(RULES) - alone)}"
+
+
+def test_valid_generator_is_always_valid():
+    rng = random.Random(7)
+    assert all(M.entry_should_be_valid(M.gen_valid_kwargs(rng)) for _ in range(2000))
+
+
+@pytest.mark.parametrize("var,value", [("AIOSH_TOOLREG_FUZZ_SEEDS", ","), ("AIOSH_TOOLREG_FUZZ_SEEDS", ""),
+                                       ("AIOSH_TOOLREG_FUZZ_N", "0")])
+def test_empty_knobs_are_errors_not_skips(var, value, monkeypatch):
+    monkeypatch.setenv(var, value)
+    with pytest.raises(ValueError):
+        M.seeds() if "SEEDS" in var else M.n_cases()

@@ -36,10 +36,12 @@ enforcement must come from a server-side source like this one.
 4. `pentest` ⇒ irreversible and path- or network-scoped. Offline tools such as `tshark -r` and `aircrack-ng` read a file, so they are path-scoped.
 5. `fs.write` and `system` categories ⇒ irreversible.
 6. `network` category ⇒ network scope.
-7. **Never weaker than today's name rules:** a name that `audit_client.grant_check` or `agent_loop_policy` treats as
-   irreversible (`pentest.*`, the bare `pentest`, `fs.write*`, `process.*`, `shell.*`, `system.reboot`, `system.shutdown`,
-   case-insensitive) must be
-   irreversible and require a grant.
+7. **Never weaker than today's name rules:** a name that `audit_client.grant_check`, `agent_loop_policy` or the Rust
+   PEP (`pep::is_irreversible`) treats as irreversible must be irreversible and require a grant (case-insensitive):
+   `pentest.*`, `fs.write*`, `process.*`, `shell.*` and the bare `pentest`, `process`, `shell`; `system.reboot`,
+   `system.shutdown`; and the Rust names `aios.backup.*`, `aios.release.*`, `[aios.]toolchain.set*`, `[aios.]doc.set*`,
+   `[aios.]evidence.record*`, `[aios.]evidence.set*`, `[aios.]session.action*`, `[aios.]session.create*` and
+   `aios.fs_layout.{register,set_active,remove,import_fstab}`. The Rust PEP's reversible *exceptions* are not adopted.
 
 **Names** (TOOLREG-INV2) are unique across the catalog after NFKC, case-folding, and treating `.`, `_` and `-` as one separator. An
 alias may fold onto its own canonical name (`aios_fs_read` ~ `aios.fs.read`); any other collision is rejected.

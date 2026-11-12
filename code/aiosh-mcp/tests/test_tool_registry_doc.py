@@ -104,3 +104,24 @@ def test_documented_config_matches_the_code(tmp_path, monkeypatch):
     monkeypatch.setenv(conf.ENV_CONFIG, str(path))
     resolved = conf.resolve()
     assert resolved["errors"] == [] and resolved["config"] == example     # the documented example is valid as written
+
+
+def test_documented_automated_tests_match_the_helpers(monkeypatch):
+    """§6f stays true to the test helpers (T-03421): knob table, defaults, grace period, file names, drift lists."""
+    import tool_registry_model as M
+    import test_tool_registry_rust_drift as D
+    section = TEXT.split("## 6f.", 1)[1].split("\n## ", 1)[0]
+    assert f"| `AIOSH_TOOLREG_FUZZ_SEEDS` | 1,2,3 | 1..{M.MAX_SEEDS} integer seeds |" in section
+    assert f"| `AIOSH_TOOLREG_FUZZ_N` | 300 | 1..{M.MAX_CASES} cases per property and seed |" in section
+    assert (f"| `AIOSH_TOOLREG_FUZZ_TIMEOUT_S` | {M.DEFAULT_TIMEOUT_S:g} | (0, {M.MAX_TIMEOUT_S:g}] seconds per property "
+            f"test |") in section
+    for var in ("AIOSH_TOOLREG_FUZZ_SEEDS", "AIOSH_TOOLREG_FUZZ_N", "AIOSH_TOOLREG_FUZZ_TIMEOUT_S"):
+        monkeypatch.delenv(var, raising=False)
+    assert (M.seeds(), M.n_cases(), M.timeout_s()) == ([1, 2, 3], 300, M.DEFAULT_TIMEOUT_S)   # the documented defaults
+    assert f"killed {M.HARD_KILL_GRACE_S:g} s later" in section
+    named = set(re.findall(r"(test_tool_registry_[a-z_]+\.py)", section))
+    assert named and all((PKG_ROOT / "tests" / name).is_file() for name in named), named
+    assert D.RUST_WEAKER == {"pentest.tshark"} and D.CATALOG_WEAKER == set()
+    assert "Rust weaker: `pentest.tshark`; catalog weaker: none" in section
+    for prop in ("P1", "P2", "P3", "P4", "P5", "P6"):
+        assert f"| {prop} |" in section, prop

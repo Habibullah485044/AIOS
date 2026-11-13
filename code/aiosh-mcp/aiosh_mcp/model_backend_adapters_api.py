@@ -202,12 +202,15 @@ class ModelBackendApiHandler:
         prompt = p.get("prompt")
         cap_token = p.get("capability_token")
 
-        # PoR Invariant I-2: capability token mandatory
-        if not cap_token or not str(cap_token).strip():
+        # PoR Invariant I-2: the token is a PEP grant, redeemed before acting (T-03429 F1)
+        from aiosh_mcp.capability_redeem import redeem_capability
+        refused = redeem_capability(cap_token, tool="model_backend.complete",
+                                    command=f"model_backend.complete {str(backend_id)[:128]}")
+        if refused:
             return make_jsonrpc_error(
                 req_id,
                 ERR_UNAUTHORIZED,
-                "MODSERV_ERR_UNAUTHORIZED: 'capability_token' required for inference completion",
+                f"MODSERV_ERR_UNAUTHORIZED: 'capability_token' required for inference completion: {refused}",
             )
 
         if not backend_id:
@@ -281,12 +284,15 @@ class ModelBackendApiHandler:
         model_name = p.get("model_name")
         cap_token = p.get("capability_token")
 
-        # PoR Invariant I-2: capability token mandatory
-        if not cap_token or not str(cap_token).strip():
+        # PoR Invariant I-2: the token is a PEP grant, redeemed before acting (T-03429 F1)
+        from aiosh_mcp.capability_redeem import redeem_capability
+        refused = redeem_capability(cap_token, tool="model_backend.register",
+                                    command=f"model_backend.register {str(backend_id)[:128]}")
+        if refused:
             return make_jsonrpc_error(
                 req_id,
                 ERR_UNAUTHORIZED,
-                "MODSERV_ERR_UNAUTHORIZED: 'capability_token' required for endpoint registration",
+                f"MODSERV_ERR_UNAUTHORIZED: 'capability_token' required for endpoint registration: {refused}",
             )
 
         if not backend_id or not provider_str or not model_name:

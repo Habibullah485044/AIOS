@@ -1550,3 +1550,17 @@ All agents (Gemini, Claude, or human developers) working on tasks within this fe
   mode they now count against a grant's `max_irreversible` in the agent loop. Strict mode can still only tighten; shadow is unchanged.
 - The seed lock pins every entry's effect, irreversible, grant, scope and open-world flags, so weakening a grant requirement needs a visible test change.
 - Verification: tool_registry 619 passed, battery 557 passed, full suite no new failures, conformance C1..C6 PASS, demo_por.py PASSED.
+
+## T-03432 - AI Control Plane Tool Registry & Taxonomy / security policy: Verification & Evidence (2026-11-13)
+- Milestone closeout for the registry security policy (T-03423..T-03432). It touches I-2 in two places:
+  - `tool_registry_policy.evaluate` now decides the registry's share of the dispatch grant gate and of agent-loop
+    irreversibility. It is OR-only and fails closed in strict, and redeem-before-act (Gate #2.5) is unchanged.
+  - **T-03429 F1 (Critical):** `aios_mcp_recovery_repair`, `aios_model_recover_config`,
+    `aios_model_endpoint_register`, `model_backend_register`, `aios_model_complete` and `model_backend_complete` treated
+    any non-empty string as a capability token. They now redeem a `pep_grants` grant via `aiosh_mcp/capability_redeem.py`
+    before acting, and each redemption writes a `pep.capability.redeem` audit row.
+- Verification: suite #35 694 passed; suite #34 558 passed; the capability suites 432 passed. Full suite: 0 failures
+  outside the 136 missing-binary failures and the 1 known baseline failure. PoR C1..C6 PASS; demo PROVABLY_RESTRAINED.
+- Open (not a bypass, no served consumer): the advisory `aios_mcp_policy_evaluate` and the Rust `recover_mcp_store` keep
+  non-empty token checks (T-03429 F2).
+- Evidence: docs/tasks/evidence/T-03432-verify.md, docs/tasks/evidence/T-03429-security.md.

@@ -2128,3 +2128,8 @@ All edits are docs / control-plane only.
 
 - Seeded, stdlib-only property tests P1–P6 check the catalog against oracles written from the doc. With them come a seed lock on every entry's security fields, a strict Rust `is_irreversible` drift check, capped knobs and a per-property watchdog.
 - The independent review made `aios.backup.create` / `aios.release.generate` irreversible (closing a strict-mode `max_irreversible` gap) and widened rule 7 to the Rust PEP list. PRs #532..#541.
+
+## 2026-11-13 — Tool Registry & Taxonomy security policy epic closed (T-03423..T-03432)
+
+- `tool_registry_policy` is the single policy point for dispatch, the agent loop, decide and stats. It is OR-only, fails closed iff strict, attributes refusals to a catalog `policy_revision`, and keeps shadow mode byte-identical.
+- The security review found and fixed a **Critical PoR I-2 bypass**: six model-backend and MCP-recovery paths accepted any non-empty capability token. They now redeem real PEP grants (scope, expiry, revocation, single use, audit row, fail closed). PRs #542..#551.

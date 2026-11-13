@@ -25,6 +25,28 @@ DB_TIMEOUT_S = 5.0
 CAPABILITY_ACTOR_ID = "agent:mcp@aiosh-mcp"
 
 
+#: Closed set of refusal classes (spec T-03434 §2.2).
+REFUSAL_CLASSES = ("missing", "malformed", "unknown_or_revoked", "expired", "already_redeemed", "scope",
+                   "unavailable", "other")
+#: Logger for masked refusal events; this library module adds no handlers.
+LOGGER_NAME = "aiosh_mcp.capability"
+
+
+def classify_refusal(reason: str) -> str:
+    """Maps a gate refusal reason to one of ``REFUSAL_CLASSES`` (T-03435 scaffold)."""
+    raise NotImplementedError("capability_redeem.classify_refusal lands in T-03436")
+
+
+def capability_stats() -> Dict[str, Any]:
+    """In-process redeemed/refused counters by tool and class (T-03435 scaffold)."""
+    raise NotImplementedError("capability_redeem.capability_stats lands in T-03436")
+
+
+def reset_stats() -> None:
+    """Zero the counters (tests)."""
+    raise NotImplementedError("capability_redeem.reset_stats lands in T-03436")
+
+
 def _mask(text: str) -> str:
     try:
         from aiosh_mcp.agent_loop_data_model import mask_secrets

@@ -212,9 +212,10 @@ CLI limitations:
 ## 6d. MCP API: decide, stats and catalog-driven annotations (T-03393..T-03402)
 Two more read-only MCP tools (no token):
 - `aios_tool_registry_decide(name, require_grant=false)` returns the core service's decision for a call to `name`, with
-  `target_checked: false`. It uses **its own** counters, so callers cannot inflate or probe the server's dispatch telemetry.
+  `target_checked: false`, plus a `policy` block saying what dispatch would enforce in this server's mode (§6g). It uses **its own** counters, so callers cannot inflate or probe the server's dispatch telemetry.
 - `aios_tool_registry_stats()` returns this server's dispatch and agent-loop registry counters: mode, decisions, disagreements by kind,
-  unregistered decisions with per-process keyed hashes and never names, and the logged/suppressed disagreement lines.
+  unregistered decisions with per-process keyed hashes and never names, the logged/suppressed disagreement lines, and the
+  catalog's `policy_revision` (§6g).
 
 ```json
 {"name": "aios_tool_registry_decide", "arguments": {"name": "aios_pentest_nmap"}}
@@ -343,6 +344,88 @@ Automated-test limitations:
 - **The hard-stage stack dump can be lost** under pytest's output capture. The exit status 1 is not.
 - **The watchdog covers the property module only.** The other registry tests are small and bounded by construction.
 
+## 6g. Security policy and capability tokens (T-03423..T-03432)
+`aiosh_mcp/tool_registry_policy.py` is the **one place** that decides what the registry adds to a call. Every surface uses it:
+
+| Surface | Uses |
+|---|---|
+| `_dispatch.dispatch()` (every PEP-gated MCP tool) | `evaluate(surface="dispatch")`, and `grant_reason_suffix()` on a refusal the registry caused |
+| Agent loop step classification | `evaluate(surface="agent_loop")` |
+| MCP `aios_tool_registry_decide` and CLI `decide` | `preview()`: the same rule, but pure (no report line, no state) |
+| MCP `aios_tool_registry_stats` | `policy_revision()` |
+
+The rules:
+- **Never weaker.** `requires_grant = caller_require_grant OR registry` and `irreversible = legacy OR registry`. A
+  caller's flags can only be raised (TOOLPOL-INV1).
+- **Shadow adds nothing.** In shadow mode (the default) the registry only compares, and verdicts and reason texts are
+  byte-identical to the legacy rules (TOOLPOL-INV2). In strict mode the catalog's grant and irreversible flags are added.
+  An unregistered name requires a grant (D4).
+- **Fails closed iff strict was intended.** If the catalog or service fails, strict requires a grant and counts the
+  step irreversible, and shadow keeps the legacy rules. If even the mode cannot be read, strict is assumed. One stderr
+  line per surface: `aiosh-mcp: tool registry: unavailable in dispatch (<Type>); …` (TOOLPOL-INV4).
+- **Attributed refusals.** A grant refusal that only the registry caused reads
+  `tool 'X' requires explicit PEP grant (tool registry strict, catalog trp-…)`, or
+  `… (tool registry unavailable, strict: fail closed)`. A caller's own requirement is never attributed to the registry
+  (TOOLPOL-INV3). No new audit rows: only the text of the existing refusal row changes.
+- **`policy_revision`** is `trp-` plus 16 hex of SHA-256 over every entry's canonical name, effect, irreversible, grant,
+  scope kind and open-world flag. It changes when a security field changes, and not for titles, aliases or entry order
+  (TOOLPOL-INV5).
+
+```python
+from aiosh_mcp import tool_registry_policy as pol
+from aiosh_mcp.tool_registry_service import ToolRegistryService
+rev = pol.policy_revision()
+print(rev.startswith("trp-"), len(rev))
+# -> True 20
+svc = ToolRegistryService(mode="strict")
+p = pol.preview(svc, svc.decide("aios.anchor.create"))
+print(p["enforced_requires_grant"], p["registry_added_grant"])
+# -> True True
+print(p["grant_reason_suffix"] == f" (tool registry strict, catalog {rev})")
+# -> True
+v = pol.evaluate("aios.anchor.create", surface="dispatch")
+print(v.mode, v.requires_grant, v.registry_added_grant)
+# -> shadow False False
+```
+```bash
+python -m aiosh_mcp.tool_registry_cli decide aios.anchor.create --mode strict --json   # exit 0: policy.registry_added_grant true
+```
+```json
+{"name": "aios_tool_registry_decide", "arguments": {"name": "aios.anchor.create", "require_grant": true}}
+```
+
+**Capability tokens are redeemed PEP grants (T-03429 F1).** These tools take a `capability_token`:
+`aios_mcp_recovery_repair`, `aios_model_recover_config`, `aios_model_endpoint_register`, `model_backend_register`,
+`aios_model_complete` and `model_backend_complete`.
+
+Before T-03429 they accepted any non-empty string. Now `aiosh_mcp/capability_redeem.py` redeems the token as a
+`pep_grants` grant id before acting, and checks that:
+- the grant exists, is unexpired and unrevoked;
+- `scope.tools` covers the tool's canonical name (for example `aios.mcp.recovery.repair` or `model_backend.complete`), and
+  `scope.paths` covers the target when set;
+- a single-use grant has not been used. It is consumed atomically: 12 racing callers, one success.
+
+Each redemption writes a `pep.capability.redeem` audit row. The gate fails closed:
+- a token over 512 chars or containing NUL, a command over 1024 chars or a target over 4096 chars is refused before any
+  DB access;
+- a locked DB is refused after `DB_TIMEOUT_S` (5 s);
+- an audit-write failure is refused, and the grant is rolled back.
+
+Refusals keep each tool's error code (`MCPRECV_ERR_UNAUTHORIZED`, `MODRECV_ERR_UNAUTHORIZED`, `MODADAPT_ERR_UNAUTHORIZED`,
+`MODSERV_ERR_UNAUTHORIZED`) and append a secret-masked reason.
+
+Security policy limitations:
+- **`aios_mcp_policy_evaluate` is advisory and still trusts any non-empty token.** It reports "capability token redeemed"
+  without redeeming. Nothing acts on its verdict (T-03429 F2).
+- **Rust `recover_mcp_store` and the Rust MCP policy engine keep the non-empty check.** No served surface calls them
+  (T-03429 F2).
+- **`policy_revision` is informational.** It is 64 bits, nothing is enforced from it, and it does not cover the legacy
+  name rules.
+- **Mode is per process.** Switching between shadow and strict needs a restart (or, in tests,
+  `tool_registry_policy.reset_process_state()` plus a config reset).
+- **Scope kinds are reported, not enforced** by the registry. Target checks stay with the PEP grant's
+  `scope.paths`/`scope.networks` (D5).
+
 ## 7. Known limitations
 - **Advisory by default.** The PEP, the agent-loop policy and dispatch still decide with their own name rules. The core service (§6b)
   compares the catalog with them in shadow mode, and can only tighten them in opt-in strict mode.
@@ -398,3 +481,12 @@ Automated tests: [research](tasks/evidence/T-03413-research.md), [spec](tasks/ev
 [integration](tasks/evidence/T-03418-tool-registry-tests-integration.md),
 [security](tasks/evidence/T-03419-security.md), [hardening](tasks/evidence/T-03420-automated-tests-hardening.md),
 [documentation](tasks/evidence/T-03421-automated-tests-documentation.md)
+
+Security policy: [research](tasks/evidence/T-03423-security-policy-research.md),
+[spec](tasks/evidence/T-03424-security-policy-specification.md),
+[scaffold](tasks/evidence/T-03425-security-policy-scaffold.md),
+[implementation](tasks/evidence/T-03426-security-policy-implementation.md),
+[unit](tasks/evidence/T-03427-security-policy-unit-test.md),
+[integration](tasks/evidence/T-03428-security-policy-integration.md),
+[security](tasks/evidence/T-03429-security.md), [hardening](tasks/evidence/T-03430-security-policy-hardening.md),
+[documentation](tasks/evidence/T-03431-security-policy-documentation.md)

@@ -125,3 +125,27 @@ def test_documented_automated_tests_match_the_helpers(monkeypatch):
     assert "Rust weaker: `pentest.tshark`; catalog weaker: none" in section
     for prop in ("P1", "P2", "P3", "P4", "P5", "P6"):
         assert f"| {prop} |" in section, prop
+
+
+def test_documented_security_policy_matches_the_code():
+    """§6g stays true to the policy and the capability gate (T-03431)."""
+    from aiosh_mcp import capability_redeem as cr
+    from aiosh_mcp import tool_registry_policy as pol
+    section = TEXT.split("## 6g.", 1)[1].split("\n## ", 1)[0]
+    for surface in pol.SURFACES:
+        assert f'surface="{surface}"' in section, surface
+    assert f"`{pol.REVISION_PREFIX}` plus {pol.REVISION_HEX_LEN} hex" in section
+    strict_suffix = pol.grant_reason_suffix(pol.PolicyVerdict(True, False, True, "strict", "trp-x"))
+    failed_suffix = pol.grant_reason_suffix(pol.PolicyVerdict(True, True, True, "strict", "", failure="OSError"))
+    assert strict_suffix.replace("trp-x", "trp-…").strip() in section
+    assert failed_suffix.strip() in section
+    for fact in (f"token over {cr.MAX_TOKEN_CHARS} chars", f"command over {cr.MAX_COMMAND_CHARS} chars",
+                 f"target over {cr.MAX_TARGET_CHARS} chars", f"`DB_TIMEOUT_S` ({cr.DB_TIMEOUT_S:g} s)"):
+        assert fact in section, fact
+    from aiosh_mcp.server import mcp as app
+    served = {t.name for t in app._tool_manager.list_tools()}
+    listed = section.split("**Capability tokens", 1)[1].split("Before T-03429", 1)[0]
+    tools = re.findall(r"`((?:aios|model)_[a-z_]+)`", listed)
+    assert len(tools) == 6 and all(t in served for t in tools), tools
+    for link in re.findall(r"\]\((tasks/evidence/T-034(?:2[3-9]|3[01])[^)]+)\)", TEXT):
+        assert (DOC.parent / link).is_file(), link

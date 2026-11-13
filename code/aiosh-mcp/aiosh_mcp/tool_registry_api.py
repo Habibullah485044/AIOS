@@ -160,10 +160,10 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
         registered, requires_grant, irreversible, scope kinds, disagreements with the legacy rules.
         Decisions are per tool name (target_checked=false). Read-only, no token."""
         try:
-            from aiosh_mcp.tool_registry_policy import preview
+            from aiosh_mcp import tool_registry_policy as policy
             svc = own_service()
             d = svc.decide(name, require_grant=bool(require_grant))
-            enforced = preview(svc, d, require_grant=bool(require_grant))        # T-03428: what dispatch enforces
+            enforced = policy.preview(svc, d, require_grant=bool(require_grant))        # T-03428: what dispatch enforces
         except Exception as exc:  # broken catalog or service: explicit, never a crash
             return _unavailable(exc)
         return {"ok": True, "data": {"canonical": d.canonical, "registered": d.registered,

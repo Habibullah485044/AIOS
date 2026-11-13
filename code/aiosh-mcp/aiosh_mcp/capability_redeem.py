@@ -17,6 +17,11 @@ from aiosh_mcp import audit_client
 
 #: Hard cap on a token's length; real grant ids are far shorter (mcp_server_core_policy uses the same bound).
 MAX_TOKEN_CHARS = 512
+#: Caps on what reaches the grant check and the audit row (T-03430); grant_redeem itself rejects > 8192.
+MAX_COMMAND_CHARS = 1024
+MAX_TARGET_CHARS = 4096
+#: Bounded wait for a locked audit DB, connect and busy handler alike (T-03430); then the action is refused.
+DB_TIMEOUT_S = 5.0
 CAPABILITY_ACTOR_ID = "agent:mcp@aiosh-mcp"
 
 
@@ -36,11 +41,16 @@ def redeem_capability(token: Any, *, tool: str, command: str = "", args: Optiona
     token = token.strip()
     if len(token) > MAX_TOKEN_CHARS or "\x00" in token:
         return "capability token is malformed"
+    command = command or tool
+    if (not isinstance(command, str) or len(command) > MAX_COMMAND_CHARS
+            or (target is not None and (not isinstance(target, str) or len(target) > MAX_TARGET_CHARS))):
+        return "capability request is malformed (command or target too long)"      # T-03430: before any DB access
     try:
-        with closing(audit_client.open_db(db_path)) as conn:
+        with closing(audit_client.open_db(db_path, timeout=DB_TIMEOUT_S)) as conn:
+            conn.execute(f"PRAGMA busy_timeout = {int(DB_TIMEOUT_S * 1000)}")        # bounded wait (T-03430)
             audit_client.ensure_pep_schema(conn)
             res = audit_client.grant_redeem(conn, token, actor_id=CAPABILITY_ACTOR_ID, tool=tool,
-                                            command=command or tool, args=dict(args or {}, grant_id=token),
+                                            command=command, args=dict(args or {}, grant_id=token),
                                             target=target)
     except Exception as exc:  # fail closed: no redemption, no action
         return f"capability check unavailable ({type(exc).__name__})"

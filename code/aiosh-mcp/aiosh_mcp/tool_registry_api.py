@@ -143,8 +143,9 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
     def own_service() -> Any:
         # T-03399 F3: decide() gets its own counters (same catalog and mode as the server), so a caller cannot
         # inflate the dispatch disagreement counts or fill the unregistered samples, nor probe them (S1).
-        if "svc" not in decide_service:
-            decide_service["svc"] = trs.ToolRegistryService(mode=trs.service().mode)
+        mode = trs.service().mode
+        if "svc" not in decide_service or decide_service["svc"].mode != mode:   # never a stale mode (T-03428)
+            decide_service["svc"] = trs.ToolRegistryService(mode=mode)
         return decide_service["svc"]
 
     def ann(name: str) -> Any:
@@ -159,14 +160,17 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
         registered, requires_grant, irreversible, scope kinds, disagreements with the legacy rules.
         Decisions are per tool name (target_checked=false). Read-only, no token."""
         try:
-            d = own_service().decide(name, require_grant=bool(require_grant))
+            from aiosh_mcp.tool_registry_policy import preview
+            svc = own_service()
+            d = svc.decide(name, require_grant=bool(require_grant))
+            enforced = preview(svc, d, require_grant=bool(require_grant))        # T-03428: what dispatch enforces
         except Exception as exc:  # broken catalog or service: explicit, never a crash
             return _unavailable(exc)
         return {"ok": True, "data": {"canonical": d.canonical, "registered": d.registered,
                                      "requires_grant": d.requires_grant, "irreversible": d.irreversible,
                                      "scope_kinds": [k.value for k in d.scope_kinds],
                                      "disagreements": list(d.disagreements), "mode": d.mode,
-                                     "target_checked": False}}
+                                     "target_checked": False, "policy": enforced}}
 
     @mcp_app.tool(name=STATS_TOOL, annotations=ann(STATS_TOOL))
     def aios_tool_registry_stats() -> dict:

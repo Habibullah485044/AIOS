@@ -69,9 +69,9 @@ def policy_revision(catalog: Optional[ToolCatalog] = None) -> str:
     return rev
 
 
-def _revision_or_empty() -> str:
+def _revision_or_empty(catalog: Optional[ToolCatalog] = None) -> str:
     try:
-        return policy_revision()
+        return policy_revision(catalog)
     except Exception:
         return ""
 
@@ -106,12 +106,7 @@ def evaluate(tool: Any, target: Any = None, *, surface: str, require_grant: bool
         svc = trs.service()
         decision = svc.decide(tool, target, classification=classification, require_grant=require_grant)
         trs.report(decision, tool, surface=surface)
-        added = svc.enforcement(decision)                 # {} in shadow (TOOLSVC-INV2)
-        grant = require_grant or bool(added.get("requires_grant"))
-        irreversible = legacy_irreversible or bool(added.get("irreversible"))
-        return PolicyVerdict(requires_grant=grant, irreversible=irreversible,
-                             registry_added_grant=grant and not require_grant, mode=svc.mode,
-                             revision=_revision_or_empty())
+        return _combine(svc, decision, require_grant, legacy_irreversible)
     except Exception as exc:  # never break a call; fail closed if strict was asked for (T-03379 #2, TOOLPOL-INV4)
         strict = _intended_strict()
         _announce_failure(surface, exc, strict)
@@ -120,6 +115,25 @@ def evaluate(tool: Any, target: Any = None, *, surface: str, require_grant: bool
                              registry_added_grant=grant and not require_grant,
                              mode="strict" if strict else "shadow", revision=_revision_or_empty(),
                              failure=type(exc).__name__)
+
+
+def _combine(svc: Any, decision: Any, require_grant: bool, legacy_irreversible: bool) -> PolicyVerdict:
+    """The single OR rule shared by evaluate() and preview(), so the two cannot drift (TOOLPOL-INV1)."""
+    added = svc.enforcement(decision)                     # {} in shadow (TOOLSVC-INV2)
+    grant = require_grant or bool(added.get("requires_grant"))
+    irreversible = legacy_irreversible or bool(added.get("irreversible"))
+    return PolicyVerdict(requires_grant=grant, irreversible=irreversible,
+                         registry_added_grant=grant and not require_grant, mode=svc.mode,
+                         revision=_revision_or_empty(getattr(svc, "_catalog", None)))
+
+
+def preview(svc: Any, decision: Any, *, require_grant: bool = False) -> Dict[str, Any]:
+    """What dispatch would enforce for ``decision`` under ``svc``'s mode (T-03428). Pure: no report line, no
+    failure announcement, no process state; for the read-only decide surfaces (MCP tool and CLI)."""
+    v = _combine(svc, decision, bool(require_grant), False)
+    return {"policy_revision": v.revision, "enforced_requires_grant": v.requires_grant,
+            "enforced_irreversible": v.irreversible, "registry_added_grant": v.registry_added_grant,
+            "grant_reason_suffix": grant_reason_suffix(v)}
 
 
 def grant_reason_suffix(verdict: PolicyVerdict) -> str:

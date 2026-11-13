@@ -206,9 +206,12 @@ def dispatch_cli(argv: List[str]) -> CliResult:
         return CliResult(EXIT_SUCCESS, "get", data=data, as_json=as_json)
     if ns.subcommand == "decide":
         from aiosh_mcp.tool_registry_service import ToolRegistryService
-        decision = ToolRegistryService(catalog, mode=ns.mode).decide(ns.name, ns.target, require_grant=ns.require_grant)
+        from aiosh_mcp.tool_registry_policy import preview
+        svc = ToolRegistryService(catalog, mode=ns.mode)
+        decision = svc.decide(ns.name, ns.target, require_grant=ns.require_grant)
         data = _decision_dict(decision)
         data["target_checked"] = False      # the decision is per tool name; targets are checked by the PEP (#11)
+        data["policy"] = preview(svc, decision, require_grant=ns.require_grant)        # T-03428
         return CliResult(EXIT_SUCCESS, "decide", data=data, as_json=as_json)
     if ns.subcommand == "export":
         text = catalog.export_json()
@@ -247,7 +250,8 @@ def _human(result: CliResult) -> List[str]:
         head = "registered" if d["registered"] else "NOT REGISTERED (fail-closed profile)"
         return [f"{e['canonical']}: {head}"] + [f"  {k}: {v}" for k, v in e.items() if k != "canonical"]
     if result.subcommand == "decide":
-        return [f"  {k}: {v}" for k, v in d.items()]
+        flat = [(k, v) for k, v in d.items() if k != "policy"] +                [(f"policy.{k}", v) for k, v in (d.get("policy") or {}).items()]
+        return [f"  {k}: {v!r}" if isinstance(v, str) and k.endswith("suffix") else f"  {k}: {v}" for k, v in flat]
     if result.subcommand == "check":
         return [f"{'ok  ' if r['registered'] else 'MISSING'} {r['name']} -> {r['canonical']}"
                 f"{'  (grant)' if r['requires_grant'] else ''}" for r in d["names"]]

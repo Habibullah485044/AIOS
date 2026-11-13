@@ -388,10 +388,12 @@ class ModelBackendRecoveryEngine:
     ) -> ModelRecoveryResult:
         """Quarantines corrupt configuration and initializes safe fallback (token-gated)."""
         # PoR Invariant I-2: state-changing recovery strictly requires capability token
-        if not capability_token or not capability_token.strip():
-            raise ValueError(f"{MODRECV_ERR_UNAUTHORIZED}: capability token required for recovery")
-
         target_path = validate_model_store_path(path)
+        from aiosh_mcp.capability_redeem import redeem_capability                          # T-03429 F1
+        refused = redeem_capability(capability_token, tool="aios.model.recover_config",
+                                    command="model.recover_config", target=str(target_path))
+        if refused:
+            raise ValueError(f"{MODRECV_ERR_UNAUTHORIZED}: capability token required for recovery: {refused}")
         timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         quarantine_path: Optional[str] = None
         backup_path: Optional[str] = None

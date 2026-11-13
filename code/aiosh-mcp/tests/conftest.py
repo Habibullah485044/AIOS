@@ -41,3 +41,33 @@ def _fresh_tool_registry_state():
     reset()
     yield
     reset()
+
+
+# ---- T-03429 F1: capability tokens are real PEP grants ---------------------------------------------------------
+#: Grant ids the model-backend and MCP-recovery tests already pass as their "valid" capability token. Since T-03429
+#: the token is redeemed against ``pep_grants``, so these tests get the grants minted (multi-use, because a test may
+#: reuse its token across calls) in an isolated AIOSH_HOME. Single-use, scope, expiry and revocation are pinned by
+#: tests/test_capability_redeem_security.py.
+SEEDED_CAPABILITY_TOKENS = (
+    "cap-token-integ-1", "cap-token-integ-2", "cap_cleanup_test_token", "cap_por_model_complete_001",
+    "cap_por_model_register_001", "cap_test_token_valid", "cap_valid_integration_token", "cap_valid_token_12345",
+    "grant-token-123", "por_cap_grant_repair_001", "token:valid-token-123", "valid-grant", "valid-token",
+    "valid-token-123", "token:admin-grant-12345",
+)
+CAPABILITY_TOOLS = ("aios.model.complete", "aios.model.endpoint.register", "model_backend.complete",
+                    "model_backend.register", "aios.mcp.recovery.repair", "aios.model.recover_config")
+_SEEDED_MODULE_PREFIXES = ("test_model_backend_adapters_", "test_mcp_server_core_recovery_")
+
+
+@pytest.fixture(autouse=True)
+def _seeded_capabilities(request, tmp_path_factory, monkeypatch):
+    if not request.module.__name__.rsplit(".", 1)[-1].startswith(_SEEDED_MODULE_PREFIXES):
+        yield
+        return
+    from agent_loop_grants import mint_grant
+    home = tmp_path_factory.mktemp("aiosh_home")
+    monkeypatch.setenv("AIOSH_HOME", str(home))
+    db = str(home / "audit.db")
+    for token in SEEDED_CAPABILITY_TOKENS:
+        mint_grant(db, token, tools=CAPABILITY_TOOLS, single_use=False)
+    yield

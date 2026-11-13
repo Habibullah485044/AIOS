@@ -379,10 +379,14 @@ def register_model_service_tools(mcp_app: Any) -> None:
         capability_token: str = "",
     ) -> dict:
         """Execute model completion across adapters. Requires capability token (PoR Invariant I-2)."""
-        if not capability_token or not capability_token.strip():
+        from aiosh_mcp.capability_redeem import redeem_capability
+        refused = redeem_capability(capability_token, tool="aios.model.complete",            # T-03429 F1
+                                    command=f"model.complete {str(model_id)[:128]}")
+        if refused:
             return {
                 "ok": False,
-                "error": "MODSERV_ERR_UNAUTHORIZED: capability token required for model completion (PoR Invariant I-2)",
+                "error": f"MODSERV_ERR_UNAUTHORIZED: capability token required for model completion "
+                         f"(PoR Invariant I-2): {refused}",
             }
         try:
             parsed_messages = [

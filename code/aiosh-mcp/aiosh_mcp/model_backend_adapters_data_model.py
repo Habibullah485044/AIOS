@@ -410,10 +410,14 @@ def register_model_adapter_tools(mcp_app: Any) -> None:
         capability_token: str = "",
     ) -> dict:
         """Register or update a model backend adapter endpoint. Requires capability token (PoR Invariant I-2)."""
-        if not capability_token or not capability_token.strip():
+        from aiosh_mcp.capability_redeem import redeem_capability
+        refused = redeem_capability(capability_token, tool="aios.model.endpoint.register",   # T-03429 F1
+                                    command=f"model.endpoint.register {str(backend_id)[:128]}")
+        if refused:
             return {
                 "ok": False,
-                "error": f"{MODADAPT_ERR_UNAUTHORIZED}: capability token required for endpoint registration (PoR Invariant I-2)",
+                "error": f"{MODADAPT_ERR_UNAUTHORIZED}: capability token required for endpoint registration "
+                         f"(PoR Invariant I-2): {refused}",
             }
         try:
             prov_enum = ModelProviderType(provider.lower())

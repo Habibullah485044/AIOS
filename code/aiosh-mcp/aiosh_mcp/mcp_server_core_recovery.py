@@ -257,10 +257,13 @@ def recover_mcp_store(path: str, capability_token: str) -> McpRecoveryResult:
     """Non-destructively recovers corrupted state via quarantine and reinitialization (MCPRECV-INV3, Invariant I-2)."""
     p = validate_store_path(path)
 
-    # Invariant I-2 Gating: capability token required for state-changing file mutations
-    if not capability_token or not capability_token.strip():
+    # Invariant I-2 Gating: the token is a PEP grant, redeemed before any file mutation (T-03429 F1)
+    from aiosh_mcp.capability_redeem import redeem_capability
+    refused = redeem_capability(capability_token, tool="aios.mcp.recovery.repair",
+                                command="mcp.recovery.repair", target=str(p))
+    if refused:
         raise PermissionError(
-            f"{MCPRECV_ERR_UNAUTHORIZED}: capability token required for state recovery (PoR Invariant I-2)"
+            f"{MCPRECV_ERR_UNAUTHORIZED}: capability token required for state recovery (PoR Invariant I-2): {refused}"
         )
 
     initial_report = validate_mcp_store(str(p))

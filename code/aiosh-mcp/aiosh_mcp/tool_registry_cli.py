@@ -206,12 +206,16 @@ def dispatch_cli(argv: List[str]) -> CliResult:
         return CliResult(EXIT_SUCCESS, "get", data=data, as_json=as_json)
     if ns.subcommand == "decide":
         from aiosh_mcp.tool_registry_service import ToolRegistryService
-        from aiosh_mcp.tool_registry_policy import preview
-        svc = ToolRegistryService(catalog, mode=ns.mode)
-        decision = svc.decide(ns.name, ns.target, require_grant=ns.require_grant)
-        data = _decision_dict(decision)
-        data["target_checked"] = False      # the decision is per tool name; targets are checked by the PEP (#11)
-        data["policy"] = preview(svc, decision, require_grant=ns.require_grant)        # T-03428
+        from aiosh_mcp import tool_registry_policy as policy
+        try:
+            svc = ToolRegistryService(catalog, mode=ns.mode)
+            decision = svc.decide(ns.name, ns.target, require_grant=ns.require_grant)
+            data = _decision_dict(decision)
+            data["target_checked"] = False  # the decision is per tool name; targets are checked by the PEP (#11)
+            data["policy"] = policy.preview(svc, decision, require_grant=ns.require_grant)        # T-03428
+        except Exception as exc:  # T-03430: an explicit envelope, never a traceback; the type only, no message text
+            return CliResult(EXIT_FAILURE, "decide", error_code=TOOLCLI_ERR_UNAVAILABLE, as_json=as_json,
+                             error=f"{TOOLCLI_ERR_UNAVAILABLE}: tool registry policy unavailable ({type(exc).__name__})")
         return CliResult(EXIT_SUCCESS, "decide", data=data, as_json=as_json)
     if ns.subcommand == "export":
         text = catalog.export_json()

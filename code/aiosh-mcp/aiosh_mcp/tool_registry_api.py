@@ -176,7 +176,9 @@ def register_tool_registry_api_tools(mcp_app: Any) -> None:
         try:
             from aiosh_mcp.tool_registry_config import process_config
             resolved = process_config()
+            from aiosh_mcp.tool_registry_policy import policy_revision
             return {"ok": True, "data": {"service": trs.service().stats(), "reports": trs.report_stats(),
+                                         "policy_revision": policy_revision(),         # T-03426 (TOOLPOL-INV5)
                                          "config": {"values": resolved["config"], "sources": resolved["sources"]},
                                          # codes only: messages can name keys of whatever file the env
                                          # points at (T-03409 #9)

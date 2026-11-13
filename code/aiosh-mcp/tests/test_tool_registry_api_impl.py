@@ -37,7 +37,7 @@ def test_decide_tool_does_not_touch_server_telemetry():
 
 def test_stats_tool_shape():
     s = TOOLS[api.STATS_TOOL].fn()["data"]
-    assert set(s) == {"service", "reports", "config", "config_errors"} and s["service"]["catalog_entries"] == len(C)
+    assert set(s) == {"service", "reports", "policy_revision", "config", "config_errors"} and s["service"]["catalog_entries"] == len(C)
     assert set(s["reports"]) == {"lines", "suppressed"}
 
 

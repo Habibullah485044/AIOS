@@ -9,6 +9,8 @@ from contextlib import closing
 
 import pytest
 
+from aiosh_mcp import tool_registry_policy
+
 from aiosh_mcp import _dispatch, audit_client
 from aiosh_mcp import tool_registry_service as trs
 from aiosh_mcp.agent_loop_policy import evaluate_step
@@ -61,7 +63,7 @@ def test_broken_registry_falls_back_to_legacy(home, capsys, monkeypatch):
     def boom():
         raise RuntimeError("catalog exploded")
     monkeypatch.setattr(trs, "service", boom)
-    monkeypatch.setattr(_dispatch, "_REGISTRY_FAILURE_LOGGED", False)
+    tool_registry_policy.reset_process_state()                 # once-per-surface failure line (T-03426)
     assert call("aios.mystery.read")["ok"] is True and call("aios.mystery.read")["ok"] is True
     err = capsys.readouterr().err
     assert err.count("tool registry unavailable in dispatch") == 1            # logged once

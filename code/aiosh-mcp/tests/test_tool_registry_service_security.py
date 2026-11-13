@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from aiosh_mcp import tool_registry_policy
+
 from aiosh_mcp import _dispatch
 from aiosh_mcp import tool_registry_service as trs
 from aiosh_mcp.agent_loop_policy import evaluate_step
@@ -27,7 +29,7 @@ def fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(trs, "_REPORTED", set(), raising=False)
     monkeypatch.setattr(trs, "_REPORT_STATE", {"lines": 0, "suppressed": 0}, raising=False)
     monkeypatch.setattr(trs, "_WARNED", set(), raising=False)
-    monkeypatch.setattr(_dispatch, "_REGISTRY_FAILURE_LOGGED", False)
+    tool_registry_policy.reset_process_state()                 # once-per-surface failure line (T-03426)
 
 
 # #1: an undrained stderr pipe must not stall tool calls.

@@ -29,7 +29,7 @@ def _fresh_tool_registry_state():
     The registry config is resolved once per process (T-03409 #4); the service singleton, its report de-duplication
     and its one-time warnings are process-wide too (T-03419 hygiene). Tests that change env vars need fresh ones.
     """
-    from aiosh_mcp import tool_registry_config, tool_registry_service
+    from aiosh_mcp import tool_registry_config, tool_registry_policy, tool_registry_service
     def reset():
         tool_registry_config.reset_process_config()
         tool_registry_service._SERVICE = None
@@ -37,6 +37,7 @@ def _fresh_tool_registry_state():
         tool_registry_service._REPORTED.clear()
         tool_registry_service._REPORT_STATE.update(lines=0, suppressed=0)
         tool_registry_service._WARNED.clear()
+        tool_registry_policy.reset_process_state()
     reset()
     yield
     reset()

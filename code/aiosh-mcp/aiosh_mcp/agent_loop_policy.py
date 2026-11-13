@@ -160,16 +160,8 @@ def evaluate_step(tool: Optional[str], targets: Any, args: Dict[str, Any]) -> St
 
 
 def _registry_irreversible(tool: str, targets: Sequence[Optional[str]], fields: Dict[str, Any], legacy: bool) -> bool:
-    """Tool registry (T-03378): shadow reports disagreements; strict can only mark a step irreversible."""
-    try:
-        from aiosh_mcp import tool_registry_service as trs
-        svc = trs.service()
-        decision = svc.decide(tool, targets[0] if targets else None, classification=fields)
-        trs.report(decision, tool, surface="agent_loop")
-        return bool(legacy or svc.enforcement(decision).get("irreversible"))
-    except Exception as exc:  # never break a loop step; fail closed if strict was asked for (T-03379 #2)
-        from aiosh_mcp import tool_registry_service as trs
-        strict = trs.intended_mode() == "strict"
-        trs._warn_once("agent_loop", f"unavailable in the agent loop ({type(exc).__name__}); "
-                                     f"{'strict: steps counted irreversible' if strict else 'legacy rules only'}")
-        return True if strict else legacy
+    """Tool registry (T-03378): shadow reports disagreements; strict can only mark a step irreversible. Decided by
+    the single policy point (T-03426), which never raises and fails closed if strict was asked for (T-03379 #2)."""
+    from aiosh_mcp.tool_registry_policy import evaluate
+    return evaluate(tool, targets[0] if targets else None, surface="agent_loop", legacy_irreversible=legacy,
+                    classification=fields).irreversible

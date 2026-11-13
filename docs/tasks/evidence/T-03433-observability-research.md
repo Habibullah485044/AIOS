@@ -82,3 +82,12 @@
   CLI DB-free. (Recommended.)
 - D6: No new dependency (F10). No decision latency histogram yet (F8): the decision is in-memory and sub-millisecond,
   so record it as a limitation rather than add a hot-path clock. (Recommended.)
+
+## Security audit (standing rule; added in T-03434)
+- **Research only; no code changed.**
+- **Security-relevant findings:**
+  - F6: forged or replayed capability tokens leave no trace;
+  - F4: repeated policy failures are indistinguishable from a single one.
+
+  Both are addressed by D1/D2 without new audit rows. D2's keyed-hash rule keeps tokens out of logs (OWASP).
+- **PoR (I-2):** nothing touched. **No bypass.**

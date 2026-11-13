@@ -145,6 +145,15 @@ def grant_reason_suffix(verdict: PolicyVerdict) -> str:
     return f" (tool registry strict, catalog {verdict.revision or 'unknown'})"
 
 
+#: Cap on distinct exception type names per surface in ``policy_stats`` (TOOLOBS-INV3); the rest are "other".
+MAX_FAILURE_TYPES = 16
+
+
+def policy_stats() -> Dict[str, Any]:
+    """Per-surface evaluation, enforcement and failure counters (T-03435 scaffold; spec T-03434 §2.1)."""
+    raise NotImplementedError("tool_registry_policy.policy_stats lands in T-03436")
+
+
 def reset_process_state() -> None:
     """Forget announced failures and cached revisions (tests; config is per process, like the service)."""
     with _LOCK:
